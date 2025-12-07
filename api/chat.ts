@@ -830,18 +830,20 @@ Keep responses conversational first, then add JSON action at the end.`;
                 }
 
                 // Re-prompt Gemini with research results
+                // NOTE: Do NOT ask for sourceUrl - LLM hallucinates them. We'll add verified sources later.
                 const researchPrompt = `${fullPrompt}\n${content}\n\n[SYSTEM: Research Results:\n${searchResults}\n\n⚠️ IMPORTANT: Extract up to 10 place recommendations from the research above.
 
 SOURCE PRIORITY:
 1. Prioritize places mentioned multiple times across sources
-2. Use the VERIFIED SOURCE URLS when available
-3. Use actual quotes from the research
-4. Do NOT make up URLs - only use URLs from the research above
+2. Use actual quotes from the research
+3. Note which source (subreddit name or publication) mentioned each place
 
 OUTPUT FORMAT:
 - Output a recommendPlaces action with up to 10 places
-- For sourceUrl, use URLs from VERIFIED SOURCE URLS section
-- Include sourceQuote from actual comments/articles]
+- For each place include: name, type, description, location
+- Include sourceName (e.g. "r/foodnyc", "Eater NY") 
+- Include sourceQuote (actual quote from research)
+- Do NOT include sourceUrl - leave it out entirely]
 
 Assistant (extracting places and outputting recommendPlaces):`;
 
