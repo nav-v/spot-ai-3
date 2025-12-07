@@ -311,19 +311,23 @@ const callGemini = async (prompt: string) => {
 const callGeminiWithSearch = async (query: string, queryType: string = 'food') => {
     console.log(`[Gemini Search] Query: "${query}" (type: ${queryType})`);
 
-    const searchPrompt = `Find the best ${queryType === 'food' ? 'restaurants and food spots' : 'events and activities'} for: ${query} in NYC.
+    const searchPrompt = `Search for: ${query} in NYC
 
-Provide a consolidated list of top 5 recommendations.
-For each recommendation, include:
-- Name
-- Location (neighborhood)
-- Brief, concise description
-- Citation: Which source mentioned it?
-- Source URL
+IMPORTANT: Prioritize Reddit results (r/foodnyc, r/AskNYC, r/nyc) when available. Use search queries like:
+- "${query} site:reddit.com"
+- "${query} reddit recommendations"
 
-IMPORTANT: 
-- Only recommend places found in the search results.
-- Keep descriptions concise.`;
+For each recommendation found, include:
+- Name of the place
+- Location (neighborhood in NYC)
+- Brief description (1-2 sentences)
+- Source: Cite the Reddit thread or article title
+- Source URL: The actual Reddit or article URL
+
+Provide up to 10 recommendations. Prioritize places mentioned multiple times or with high upvotes on Reddit.
+If Reddit results are limited, supplement with other trusted sources like Eater NY, TimeOut, Infatuation.
+
+CRITICAL: Only recommend places that appear in actual search results. Do not make up recommendations.`;
 
     try {
         const controller = new AbortController();
@@ -870,27 +874,26 @@ Keep responses conversational`;
                     // Re-prompt Gemini with research results
                     const currentMonth = new Date().toLocaleString('default', { month: 'long' });
 
-                    const isFoodQuery = queries.some((q: string) => /food|restaurant|eat|dinner|lunch|breakfast|brunch|cafe|bakery|bar|pizza|burger|sushi|steak|tacos|bagel|coffee|dessert|ice cream|pastry|croissant/i.test(q));
-                    const redditTarget = isFoodQuery ? "70%" : "55%";
-
                     const researchPrompt = `${fullPrompt}\n${content}\n\n[SYSTEM: Research Results for "${queries[0]}":\n${searchResults}\n\n⚠️ IMPORTANT: Extract up to 10 place recommendations from the research above:
  
 SOURCE PRIORITY:
-1. REDDIT IS KING: You MUST prioritize recommendations found in Reddit comments.
-2. BALANCE: Aim for at least ${redditTarget} of your recommendations to come from Reddit threads if available.
-3. ONLY use Web articles if you cannot find enough high-quality recommendations on Reddit.
+1. REDDIT FIRST: Prioritize any Reddit sources (r/foodnyc, r/AskNYC, r/nyc) found in the results.
+2. TRUSTED SOURCES: Eater NY, TimeOut, Infatuation, Secret NYC are also good sources.
+3. Use the actual source URLs from the research.
 
 EXTRACTION RULES:
-- For Reddit: extract place names from highly-upvoted comments. Use the Reddit thread URL as the sourceUrl.
-- For Web articles: extract place names and recommendations from the article summaries.
-- Use the source URL as sourceUrl and quote the relevant text.
+- Extract place names and the source that mentioned them
+- Use the actual URL from the research as sourceUrl
+- Quote the relevant recommendation text as sourceQuote
+- If a place is mentioned by multiple sources, note that
 
 OUTPUT FORMAT:
 - Output a recommendPlaces action with up to 10 places
 - Use REAL URLs from the research. Do NOT make up URLs.
+- Include: name, type, description, location, website, sourceUrl, sourceName, sourceQuote
 - If this is about EVENTS: Only include events happening in ${currentMonth} ${currentYear} or later.
 
-⚠️ DO NOT say "the search came up empty" if there are web results available. Use them!
+⚠️ DO NOT say "the search came up empty" if there are results available. Use them!
 Do NOT ask for clarification - give all recommendations NOW.]
 
 Assistant (extracting places from research and outputting recommendPlaces):`;
