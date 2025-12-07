@@ -421,17 +421,41 @@ async function searchWeb(query: string): Promise<{ text: string; sources: Verifi
     let allText = '';
     let allSources: VerifiedSource[] = [];
 
-    // For events only: scrape specific pages (skip for food to save time)
+    // For events: scrape the 3 trusted event sites directly via Firecrawl
     if (queryType === 'event' || queryType === 'show') {
-        console.log('[Web Search] Event query - scraping TimeOut...');
-        try {
-            const result = await scrapeWithFirecrawl('https://www.timeout.com/newyork/things-to-do/things-to-do-in-new-york-this-week');
-            if (result.success && result.data?.markdown) {
-                allText += `\n--- TimeOut NY ---\n${result.data.markdown.slice(0, 3000)}\n`;
-                allSources.push({ title: 'TimeOut NY', url: 'https://www.timeout.com/newyork/things-to-do' });
+        console.log('[Web Search] Event query - scraping TimeOut, Secret NYC, The Skint...');
+        
+        const eventSources = [
+            { name: 'TimeOut NY', url: 'https://www.timeout.com/newyork/things-to-do/things-to-do-in-new-york-this-week' },
+            { name: 'Secret NYC', url: 'https://secretnyc.co/what-to-do-this-weekend-nyc/' },
+            { name: 'The Skint', url: 'https://theskint.com/' }
+        ];
+
+        // Scrape all 3 in parallel
+        const scrapePromises = eventSources.map(async (source) => {
+            try {
+                console.log(`[Web Search] Scraping ${source.name}...`);
+                const result = await scrapeWithFirecrawl(source.url);
+                if (result.success && result.data?.markdown) {
+                    const content = result.data.markdown.slice(0, 3000);
+                    console.log(`[Web Search] Got ${content.length} chars from ${source.name}`);
+                    return { 
+                        text: `\n--- ${source.name} ---\n${content}\n`,
+                        source: { title: source.name, url: source.url }
+                    };
+                }
+            } catch (e: any) {
+                console.error(`[Web Search] ${source.name} error:`, e.message);
             }
-        } catch (e: any) {
-            console.error(`[Web Search] TimeOut error:`, e.message);
+            return null;
+        });
+
+        const scrapeResults = await Promise.all(scrapePromises);
+        for (const result of scrapeResults) {
+            if (result) {
+                allText += result.text;
+                allSources.push(result.source);
+            }
         }
     }
 
@@ -867,26 +891,26 @@ Assistant (extracting places and outputting recommendPlaces):`;
 
             // ============= ADD PLACE ACTION =============
             else if (action.action === 'addPlace' && action.placeName) {
-                const result = await findAndAddPlace(action.placeName, action.location, action, userId, token);
-                if (result.added) {
-                    actionResult = { added: true, place: result.place };
+                    const result = await findAndAddPlace(action.placeName, action.location, action, userId, token);
+                    if (result.added) {
+                        actionResult = { added: true, place: result.place };
                 } else {
                     actionResult = { added: false, message: result.message };
                 }
-            }
+                    }
 
             // ============= ADD MULTIPLE PLACES ACTION =============
             else if (action.action === 'addMultiplePlaces' && action.places) {
-                const results = [];
-                for (const p of action.places) {
-                    const result = await findAndAddPlace(p.name, p.location, p, userId, token);
-                    results.push({
-                        name: p.name,
-                        status: result.added ? 'added' : 'skipped',
-                        place: result.place
-                    });
-                }
-                actionResult = { type: 'batch_add', results };
+                    const results = [];
+                    for (const p of action.places) {
+                        const result = await findAndAddPlace(p.name, p.location, p, userId, token);
+                        results.push({
+                            name: p.name,
+                            status: result.added ? 'added' : 'skipped',
+                            place: result.place
+                        });
+                    }
+                    actionResult = { type: 'batch_add', results };
             }
 
             // ============= SCRAPE URL ACTION =============
