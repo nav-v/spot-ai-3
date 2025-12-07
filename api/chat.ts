@@ -829,23 +829,36 @@ Keep responses conversational first, then add JSON action at the end.`;
                     });
                 }
 
-                // Re-prompt Gemini with research results
-                // NOTE: Do NOT ask for sourceUrl - LLM hallucinates them. We'll add verified sources later.
-                const researchPrompt = `${fullPrompt}\n${content}\n\n[SYSTEM: Research Results:\n${searchResults}\n\n⚠️ IMPORTANT: Extract up to 10 place recommendations from the research above.
+                // Build verified sources list for LLM to use
+                const sourcesForLLM = webResults.sources.slice(0, 15).map((s, i) => 
+                    `[${i + 1}] "${s.title}" → ${s.url}`
+                ).join('\n');
 
-SOURCE PRIORITY:
-1. Prioritize places mentioned multiple times across sources
-2. Use actual quotes from the research
-3. Note which source (subreddit name or publication) mentioned each place
+                // Re-prompt Gemini with research results + verified sources
+                const researchPrompt = `${fullPrompt}\n${content}\n\n[SYSTEM: Research Results:\n${searchResults}\n\n
+=== VERIFIED SOURCE URLs (USE THESE ONLY) ===
+${sourcesForLLM}
 
-OUTPUT FORMAT:
-- Output a recommendPlaces action with up to 10 places
-- For each place include: name, type, description, location
-- Include sourceName (e.g. "r/foodnyc", "Eater NY") 
-- Include sourceQuote (actual quote from research)
-- Do NOT include sourceUrl - leave it out entirely]
+⚠️ IMPORTANT: Extract up to 10 place recommendations from the research above.
 
-Assistant (extracting places and outputting recommendPlaces):`;
+For EACH place, you MUST:
+1. Match it to ONE of the VERIFIED SOURCE URLs above
+2. Use the EXACT URL from the list - do not modify or make up URLs
+3. If a place isn't clearly from a verified source, skip it
+
+OUTPUT FORMAT - recommendPlaces action with these fields for each place:
+- name: place name
+- type: restaurant/cafe/bar/etc
+- description: why it's recommended (1-2 sentences)
+- location: neighborhood in NYC
+- sourceName: source name (e.g. "r/foodnyc", "Eater NY")
+- sourceQuote: actual quote from research about this place
+- sourceUrl: EXACT URL from VERIFIED SOURCE URLs list above (copy-paste it)
+- sourceIndex: the number [1-15] of which verified source you used
+
+Only include places you can match to a verified source!]
+
+Assistant (extracting places with verified sourceUrls):`;
 
                 const secondResponse = await getAI().models.generateContent({
                     model: 'gemini-2.0-flash',
@@ -859,45 +872,43 @@ Assistant (extracting places and outputting recommendPlaces):`;
                 // Check for recommendPlaces action
                 const secondExtracted = extractAction(content);
                 if (secondExtracted && secondExtracted.action.action === 'recommendPlaces') {
-                    // Get verified sources for matching
                     const verifiedSources = webResults.sources;
+                    const verifiedUrls = new Set(verifiedSources.map(s => s.url));
                     
-                    // Enrich with Google Places images AND match verified sources
+                    // Enrich with Google Places images, validate sourceUrls
                     const enrichedPlaces = await Promise.all(secondExtracted.action.places.map(async (p: any) => {
                         try {
                             const placeData = await searchGooglePlaces(p.name, p.location || 'New York, NY');
                             
-                            // Try to find a matching verified source for this place
-                            const placeNameLower = p.name.toLowerCase();
-                            const matchedSource = verifiedSources.find((s: VerifiedSource) => {
-                                const titleLower = s.title.toLowerCase();
-                                const urlLower = s.url.toLowerCase();
-                                // Match if source title/url contains place name or vice versa
-                                return titleLower.includes(placeNameLower) || 
-                                       placeNameLower.split(' ').some((word: string) => word.length > 3 && titleLower.includes(word));
-                            });
-                            
-                            // If no specific match, use a Reddit source as fallback
-                            const redditSource = verifiedSources.find((s: VerifiedSource) => 
-                                s.url.includes('reddit.com')
-                            );
-                            
-                            const sourceUrl = matchedSource?.url || redditSource?.url || null;
+                            // Validate that sourceUrl is actually from our verified sources
+                            let validatedSourceUrl = null;
+                            if (p.sourceUrl && verifiedUrls.has(p.sourceUrl)) {
+                                validatedSourceUrl = p.sourceUrl;
+                                console.log(`[Source Match] "${p.name}" → ${p.sourceUrl.substring(0, 50)}...`);
+                            } else if (p.sourceIndex && verifiedSources[p.sourceIndex - 1]) {
+                                // Fallback: use sourceIndex if provided
+                                validatedSourceUrl = verifiedSources[p.sourceIndex - 1].url;
+                                console.log(`[Source Match] "${p.name}" → index ${p.sourceIndex}`);
+                            } else {
+                                // Last resort: find any Reddit source
+                                const redditSource = verifiedSources.find(s => s.url.includes('reddit.com'));
+                                validatedSourceUrl = redditSource?.url || null;
+                                console.log(`[Source Match] "${p.name}" → fallback Reddit`);
+                            }
                             
                             if (placeData) {
-                                return { ...p, imageUrl: placeData.imageUrl, rating: placeData.rating, sourceUrl };
+                                return { ...p, imageUrl: placeData.imageUrl, rating: placeData.rating, sourceUrl: validatedSourceUrl };
                             }
-                            return { ...p, sourceUrl };
+                            return { ...p, sourceUrl: validatedSourceUrl };
                         } catch (e) {
                             return p;
                         }
                     }));
                     
-                    // Also include all verified sources in the response
                     actionResult = { 
                         type: 'recommendations', 
                         places: enrichedPlaces,
-                        verifiedSources: verifiedSources.slice(0, 10) // Top 10 sources
+                        verifiedSources: verifiedSources.slice(0, 10)
                     };
                 }
             }
