@@ -307,11 +307,8 @@ DO NOT include any URLs in your response - just the place names and descriptions
                 },
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: searchPrompt }] }],
-                    // Use both google_search and url_context for better results
-                    tools: [
-                        { google_search: {} },
-                        { url_context: {} }
-                    ],
+                    // google_search provides grounded results with verified URLs
+                    tools: [{ google_search: {} }],
                     generationConfig: {
                         temperature: 0.2,
                         maxOutputTokens: 2000
