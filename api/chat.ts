@@ -279,30 +279,21 @@ interface GeminiSearchResult {
 async function callGeminiWithSearch(query: string, queryType: string = 'food'): Promise<GeminiSearchResult> {
     console.log(`[Gemini Search] Query: "${query}" (type: ${queryType})`);
 
-    // Target specific subreddits via Google Search
-    const targetSubreddits = ['r/AskNYC', 'r/foodnyc', 'r/nyc'];
-    const subredditList = targetSubreddits.join(', ');
+    // Natural search pattern: query + subreddit names (how people actually search Google for Reddit)
+    const searchPrompt = `Search Google for: ${query} reddit r/AskNYC r/foodnyc r/nyc
 
-    // Craft a prompt that explicitly targets multiple Reddit threads
-    const searchPrompt = `Search for "${query}" recommendations in New York City.
+Find NYC recommendations from multiple Reddit threads in r/AskNYC, r/foodnyc, and r/nyc.
+Also search: ${query} Eater NY site:eater.com
 
-IMPORTANT: Search these specific Reddit communities:
-- site:reddit.com/r/AskNYC "${query}"
-- site:reddit.com/r/foodnyc "${query}"  
-- site:reddit.com/r/nyc "${query}"
-
-Find recommendations from AT LEAST 3 DIFFERENT Reddit threads across these subreddits.
-Also check Eater NY and The Infatuation for expert opinions.
-
-For each place mentioned, provide:
+For each place, provide:
 - Name of the place
-- Neighborhood in NYC  
-- Which subreddit/source mentioned it
-- Brief quote or reason why it's recommended
+- Neighborhood in NYC
+- Which source (subreddit or publication) mentioned it
+- Brief quote or reason why recommended
 
-List up to 10 specific places from MULTIPLE different threads/sources.
-DO NOT include URLs in your response - just names and descriptions.
-Prioritize places mentioned in multiple threads.`;
+List up to 10 places from DIFFERENT Reddit threads and sources.
+Prioritize places mentioned by multiple Redditors.
+DO NOT include URLs.`;
 
     try {
         const controller = new AbortController();
