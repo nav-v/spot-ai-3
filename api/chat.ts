@@ -335,11 +335,16 @@ Only include real places from search results.`;
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
         const groundingMetadata = data.candidates?.[0]?.groundingMetadata;
         
-        // Extract sources from groundingChunks
+        // Extract sources from groundingChunks - FILTER OUT Google's internal URLs
         const sources: VerifiedSource[] = [];
         if (groundingMetadata?.groundingChunks) {
             for (const chunk of groundingMetadata.groundingChunks) {
                 if (chunk.web?.uri && chunk.web?.title) {
+                    // Skip Google's internal vertex AI search URLs
+                    if (chunk.web.uri.includes('vertexaisearch.cloud.google.com')) {
+                        console.log(`[Gemini Search] Skipping internal URL: ${chunk.web.uri.substring(0, 50)}...`);
+                        continue;
+                    }
                     sources.push({ title: chunk.web.title, url: chunk.web.uri });
                 }
             }
@@ -925,45 +930,64 @@ Assistant (extracting places with cited sourceUrls):`;
 
                 // Check for recommendPlaces action
                 const secondExtracted = extractAction(content);
+                console.log(`[Research] Extracted action:`, secondExtracted?.action?.action);
+                console.log(`[Research] Places count:`, secondExtracted?.action?.places?.length || 0);
+                
                 if (secondExtracted && secondExtracted.action.action === 'recommendPlaces') {
                     const verifiedSources = webResults.sources;
-                    const verifiedUrls = new Set(verifiedSources.map(s => s.url));
+                    console.log(`[Research] Verified sources available: ${verifiedSources.length}`);
+                    verifiedSources.slice(0, 5).forEach((s, i) => console.log(`  [${i}] ${s.url.substring(0, 60)}...`));
                     
-                    // Enrich with Google Places images, validate sourceUrls
+                    // Enrich with Google Places images, add best available source
                     const enrichedPlaces = await Promise.all(secondExtracted.action.places.map(async (p: any) => {
                         try {
                             const placeData = await searchGooglePlaces(p.name, p.location || 'New York, NY');
                             
-                            // Validate that sourceUrl is actually from our verified sources
-                            let validatedSourceUrl = null;
-                            if (p.sourceUrl && verifiedUrls.has(p.sourceUrl)) {
-                                validatedSourceUrl = p.sourceUrl;
-                                console.log(`[Source Match] "${p.name}" → ${p.sourceUrl.substring(0, 50)}...`);
-                            } else if (p.sourceIndex && verifiedSources[p.sourceIndex - 1]) {
-                                // Fallback: use sourceIndex if provided
-                                validatedSourceUrl = verifiedSources[p.sourceIndex - 1].url;
-                                console.log(`[Source Match] "${p.name}" → index ${p.sourceIndex}`);
+                            // Try to find a good source URL - be lenient!
+                            let sourceUrl = p.sourceUrl || null;
+                            
+                            // If LLM provided a URL that looks like a real site (not vertex), use it
+                            if (sourceUrl && !sourceUrl.includes('vertexaisearch')) {
+                                console.log(`[Source] "${p.name}" → LLM provided: ${sourceUrl.substring(0, 50)}...`);
                             } else {
-                                // Last resort: find any Reddit source
-                                const redditSource = verifiedSources.find(s => s.url.includes('reddit.com'));
-                                validatedSourceUrl = redditSource?.url || null;
-                                console.log(`[Source Match] "${p.name}" → fallback Reddit`);
+                                // Fallback: find source that matches sourceName
+                                const sourceName = (p.sourceName || '').toLowerCase();
+                                let matchedSource = verifiedSources.find(s => {
+                                    const urlLower = s.url.toLowerCase();
+                                    if (sourceName.includes('reddit') && urlLower.includes('reddit.com')) return true;
+                                    if (sourceName.includes('eater') && urlLower.includes('eater.com')) return true;
+                                    if (sourceName.includes('infatuation') && urlLower.includes('theinfatuation.com')) return true;
+                                    return false;
+                                });
+                                
+                                // If no match, just use first available source
+                                if (!matchedSource && verifiedSources.length > 0) {
+                                    matchedSource = verifiedSources[0];
+                                }
+                                
+                                sourceUrl = matchedSource?.url || null;
+                                console.log(`[Source] "${p.name}" → fallback: ${sourceUrl?.substring(0, 50) || 'none'}...`);
                             }
                             
                             if (placeData) {
-                                return { ...p, imageUrl: placeData.imageUrl, rating: placeData.rating, sourceUrl: validatedSourceUrl };
+                                return { ...p, imageUrl: placeData.imageUrl, rating: placeData.rating, sourceUrl };
                             }
-                            return { ...p, sourceUrl: validatedSourceUrl };
+                            return { ...p, sourceUrl };
                         } catch (e) {
+                            console.error(`[Source] Error for "${p.name}":`, e);
                             return p;
                         }
                     }));
+                    
+                    console.log(`[Research] Final enriched places: ${enrichedPlaces.length}`);
                     
                     actionResult = { 
                         type: 'recommendations', 
                         places: enrichedPlaces,
                         verifiedSources: verifiedSources.slice(0, 10)
                     };
+                } else {
+                    console.log(`[Research] WARNING: No recommendPlaces action found in response`);
                 }
             }
 
