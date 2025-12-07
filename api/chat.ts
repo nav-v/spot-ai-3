@@ -117,24 +117,39 @@ async function scrapeWithFirecrawl(url: string) {
 
 async function searchRedditMultiQuery(queries: string[], subreddits: string[] = ['foodnyc', 'AskNYC']) {
     const results: any[] = [];
+    let blocked = false;
 
     console.log(`[Reddit] Running ${queries.length} queries across ${subreddits.length} subreddits`);
 
     for (const subreddit of subreddits) {
+        if (blocked) break; // Stop if we're being blocked
+        
         for (const query of queries) {
+            if (blocked) break;
+            
             try {
                 const searchUrl = `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&restrict_sr=1&limit=5&sort=relevance`;
                 console.log(`[Reddit] Searching r/${subreddit} for: ${query}`);
+
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
 
                 const response = await fetch(searchUrl, {
                     headers: {
                         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                         'Accept': 'application/json'
-                    }
+                    },
+                    signal: controller.signal
                 });
+
+                clearTimeout(timeoutId);
 
                 if (!response.ok) {
                     console.log(`[Reddit] r/${subreddit} returned ${response.status}`);
+                    if (response.status === 403 || response.status === 429) {
+                        blocked = true; // Reddit is blocking us, stop trying
+                        console.log(`[Reddit] Blocked by Reddit (${response.status}), skipping remaining queries`);
+                    }
                     continue;
                 }
 
@@ -159,6 +174,9 @@ async function searchRedditMultiQuery(queries: string[], subreddits: string[] = 
                 console.log(`[Reddit] Found ${posts.length} posts`);
             } catch (error: any) {
                 console.error(`[Reddit] Error:`, error.message);
+                if (error.name === 'AbortError') {
+                    console.log(`[Reddit] Request timed out, skipping`);
+                }
             }
         }
     }
@@ -370,17 +388,23 @@ async function searchWeb(query: string) {
 
     const eventKeywords = ['event', 'show', 'play', 'concert', 'market', 'festival', 'exhibit', 'museum',
         'theater', 'theatre', 'movie', 'things to do', 'activities', 'attraction', 'holiday', 'christmas',
-        'popup', 'pop-up', 'happening', 'weekend', 'tonight', 'this week', 'date night', 'date'];
+        'popup', 'pop-up', 'happening'];
 
     const foodKeywords = ['food', 'restaurant', 'eat', 'dinner', 'lunch', 'brunch', 'breakfast',
-        'pizza', 'sushi', 'burger', 'coffee', 'bar', 'drinks', 'cocktail', 'croissant', 'bakery', 'cafe'];
+        'pizza', 'sushi', 'burger', 'coffee', 'bar', 'drinks', 'cocktail', 'croissant', 'bakery', 'cafe',
+        'date night', 'romantic', 'date spot'];
 
     const isEventQuery = eventKeywords.some(kw => queryLower.includes(kw));
+    const isFoodQuery = foodKeywords.some(kw => queryLower.includes(kw));
     const isShowQuery = ['movie', 'film', 'cinema', 'theater', 'theatre', 'broadway', 'play', 'musical', 'show'].some(kw => queryLower.includes(kw));
 
+    // Food takes priority over events (e.g., "date night restaurant" = food)
     let queryType = 'food';
-    if (isShowQuery) queryType = 'show';
+    if (isFoodQuery) queryType = 'food';
+    else if (isShowQuery) queryType = 'show';
     else if (isEventQuery) queryType = 'event';
+    
+    console.log(`[Web Search] Query type detected: ${queryType}`);
 
     let allResults = '';
 
