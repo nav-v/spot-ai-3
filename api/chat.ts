@@ -279,19 +279,30 @@ interface GeminiSearchResult {
 async function callGeminiWithSearch(query: string, queryType: string = 'food'): Promise<GeminiSearchResult> {
     console.log(`[Gemini Search] Query: "${query}" (type: ${queryType})`);
 
-    // Simple prompt - DO NOT ask for URLs (model hallucinates them)
-    // We'll get verified URLs from groundingMetadata instead
-    const searchPrompt = `Find the best ${queryType === 'food' ? 'restaurants and food spots' : 'events and activities'} for: "${query}" in New York City.
+    // Target specific subreddits via Google Search
+    const targetSubreddits = ['r/AskNYC', 'r/foodnyc', 'r/nyc'];
+    const subredditList = targetSubreddits.join(', ');
 
-Search Reddit (r/foodnyc, r/AskNYC) and food blogs for recommendations.
+    // Craft a prompt that explicitly targets multiple Reddit threads
+    const searchPrompt = `Search for "${query}" recommendations in New York City.
 
-For each place, provide:
+IMPORTANT: Search these specific Reddit communities:
+- site:reddit.com/r/AskNYC "${query}"
+- site:reddit.com/r/foodnyc "${query}"  
+- site:reddit.com/r/nyc "${query}"
+
+Find recommendations from AT LEAST 3 DIFFERENT Reddit threads across these subreddits.
+Also check Eater NY and The Infatuation for expert opinions.
+
+For each place mentioned, provide:
 - Name of the place
-- Neighborhood in NYC
-- Brief reason why it's recommended (1-2 sentences)
+- Neighborhood in NYC  
+- Which subreddit/source mentioned it
+- Brief quote or reason why it's recommended
 
-List up to 8 specific places. Only include real places from your search results.
-DO NOT include any URLs in your response - just the place names and descriptions.`;
+List up to 10 specific places from MULTIPLE different threads/sources.
+DO NOT include URLs in your response - just names and descriptions.
+Prioritize places mentioned in multiple threads.`;
 
     try {
         const controller = new AbortController();
