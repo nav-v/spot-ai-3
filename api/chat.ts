@@ -276,28 +276,20 @@ interface GeminiSearchResult {
     searchQueries: string[];
 }
 
-async function callGeminiWithSearch(query: string, queryType: string = 'food'): Promise<GeminiSearchResult> {
-    console.log(`[Gemini Search] Query: "${query}" (type: ${queryType})`);
+// Single search helper
+async function singleGeminiSearch(searchQuery: string): Promise<{ text: string; sources: VerifiedSource[] }> {
+    const searchPrompt = `Search: "${searchQuery}"
 
-    // Natural search pattern: query + subreddit names (how people actually search Google for Reddit)
-    const searchPrompt = `Search Google for: ${query} reddit r/AskNYC r/foodnyc r/nyc
+List NYC places mentioned with:
+- Place name
+- Neighborhood
+- Why recommended (brief quote)
 
-Find NYC recommendations from multiple Reddit threads in r/AskNYC, r/foodnyc, and r/nyc.
-Also search: ${query} Eater NY site:eater.com
-
-For each place, provide:
-- Name of the place
-- Neighborhood in NYC
-- Which source (subreddit or publication) mentioned it
-- Brief quote or reason why recommended
-
-List up to 10 places from DIFFERENT Reddit threads and sources.
-Prioritize places mentioned by multiple Redditors.
-DO NOT include URLs.`;
+Only list real places from search results. No URLs.`;
 
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 25000); // 25s timeout
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
 
         const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`,
@@ -309,58 +301,74 @@ DO NOT include URLs.`;
                 },
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: searchPrompt }] }],
-                    // google_search provides grounded results with verified URLs
                     tools: [{ google_search: {} }],
-                    generationConfig: {
-                        temperature: 0.2,
-                        maxOutputTokens: 2000
-                    }
+                    generationConfig: { temperature: 0.2, maxOutputTokens: 1000 }
                 }),
                 signal: controller.signal
             }
         );
-
         clearTimeout(timeoutId);
 
         const data = await response.json();
-
         if (data.error) {
-            console.error(`[Gemini Search] API Error:`, data.error);
-            return { text: '', sources: [], searchQueries: [] };
+            console.error(`[Gemini Search] Error for "${searchQuery}":`, data.error.message);
+            return { text: '', sources: [] };
         }
 
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
         const groundingMetadata = data.candidates?.[0]?.groundingMetadata;
-
-        // Extract VERIFIED sources from groundingMetadata - these are REAL URLs!
+        
         const sources: VerifiedSource[] = [];
-        if (groundingMetadata?.groundingChunks?.length > 0) {
+        if (groundingMetadata?.groundingChunks) {
             for (const chunk of groundingMetadata.groundingChunks) {
                 if (chunk.web?.uri && chunk.web?.title) {
-                    // Filter out irrelevant results
-                    const url = chunk.web.uri;
-                    const title = chunk.web.title;
-                    
-                    // Skip if it's a search result page or irrelevant
-                    if (!url.includes('vertexaisearch.cloud.google.com') || title) {
-                        sources.push({ title, url });
-                    }
+                    sources.push({ title: chunk.web.title, url: chunk.web.uri });
                 }
             }
         }
 
-        // Get the search queries Gemini used (for debugging)
-        const searchQueries = groundingMetadata?.webSearchQueries || [];
-        
-        console.log(`[Gemini Search] Search queries used:`, searchQueries);
-        console.log(`[Gemini Search] Got ${text.length} chars with ${sources.length} verified sources:`);
-        sources.slice(0, 5).forEach((s, i) => console.log(`  [${i + 1}] ${s.title}`));
-
-        return { text, sources, searchQueries };
-    } catch (error: any) {
-        console.error(`[Gemini Search] Error:`, error.message);
-        return { text: '', sources: [], searchQueries: [] };
+        console.log(`[Gemini Search] "${searchQuery}" → ${sources.length} sources`);
+        return { text, sources };
+    } catch (e: any) {
+        console.error(`[Gemini Search] Failed "${searchQuery}":`, e.message);
+        return { text: '', sources: [] };
     }
+}
+
+async function callGeminiWithSearch(query: string, queryType: string = 'food'): Promise<GeminiSearchResult> {
+    console.log(`[Gemini Search] Running parallel searches for: "${query}"`);
+
+    // Run SEPARATE searches for each subreddit in PARALLEL
+    const searchQueries = [
+        `${query} r/AskNYC`,
+        `${query} r/foodnyc`,
+        `${query} r/nyc`,
+        `${query} site:eater.com NYC`
+    ];
+
+    console.log(`[Gemini Search] Queries:`, searchQueries);
+
+    // Run all searches in parallel
+    const results = await Promise.all(searchQueries.map(q => singleGeminiSearch(q)));
+
+    // Combine results
+    let combinedText = '';
+    let allSources: VerifiedSource[] = [];
+
+    results.forEach((result, i) => {
+        if (result.text) {
+            combinedText += `\n=== FROM: ${searchQueries[i]} ===\n${result.text}\n`;
+        }
+        allSources = [...allSources, ...result.sources];
+    });
+
+    console.log(`[Gemini Search] Combined: ${combinedText.length} chars, ${allSources.length} sources`);
+
+    return { 
+        text: combinedText, 
+        sources: allSources,
+        searchQueries 
+    };
 }
 
 async function searchWeb(query: string): Promise<{ text: string; sources: VerifiedSource[] }> {
