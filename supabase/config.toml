@@ -1,0 +1,4 @@
+project_id = "wykxgxoivxikquhlvakv"
+
+[functions.placebot-chat]
+verify_jwt = false

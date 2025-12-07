@@ -1,0 +1,91 @@
+import { Place, ChatMessage } from '@/types/places';
+
+export const samplePlaces: Place[] = [
+  {
+    id: '1',
+    name: 'Adda',
+    type: 'restaurant',
+    cuisine: 'Indian Food',
+    address: '107 1st Ave, New York, NY 10003',
+    description: 'Authentic Indian cuisine in a cozy setting. Known for their traditional dishes and warm atmosphere.',
+    coordinates: { lat: 40.7267, lng: -73.9877 },
+    isVisited: false,
+    isFavorite: true,
+    createdAt: new Date('2024-01-15'),
+  },
+  {
+    id: '2',
+    name: 'Joe\'s Pizza',
+    type: 'restaurant',
+    cuisine: 'Pizza',
+    address: '7 Carmine St, New York, NY 10014',
+    description: 'Iconic NYC pizza spot serving classic New York slices since 1975.',
+    coordinates: { lat: 40.7304, lng: -74.0021 },
+    isVisited: true,
+    isFavorite: true,
+    createdAt: new Date('2024-01-10'),
+  },
+  {
+    id: '3',
+    name: 'The High Line',
+    type: 'attraction',
+    address: 'New York, NY 10011',
+    description: 'Elevated linear park built on a historic freight rail line.',
+    coordinates: { lat: 40.7480, lng: -74.0048 },
+    isVisited: false,
+    isFavorite: false,
+    createdAt: new Date('2024-02-01'),
+  },
+  {
+    id: '4',
+    name: 'Devoción',
+    type: 'cafe',
+    cuisine: 'Coffee',
+    address: '69 Grand St, Brooklyn, NY 11249',
+    description: 'Colombian specialty coffee roaster with a beautiful greenhouse-like space.',
+    coordinates: { lat: 40.7143, lng: -73.9617 },
+    isVisited: false,
+    isFavorite: true,
+    createdAt: new Date('2024-02-05'),
+  },
+  {
+    id: '5',
+    name: 'Please Don\'t Tell',
+    type: 'bar',
+    address: '113 St Marks Pl, New York, NY 10009',
+    description: 'Famous speakeasy hidden behind a phone booth inside a hot dog shop.',
+    coordinates: { lat: 40.7275, lng: -73.9841 },
+    isVisited: true,
+    isFavorite: true,
+    createdAt: new Date('2024-01-20'),
+  },
+  {
+    id: '6',
+    name: 'Brooklyn Bridge',
+    type: 'attraction',
+    address: 'Brooklyn Bridge, New York, NY',
+    description: 'Iconic suspension bridge connecting Manhattan and Brooklyn.',
+    coordinates: { lat: 40.7061, lng: -73.9969 },
+    isVisited: true,
+    isFavorite: false,
+    createdAt: new Date('2024-01-05'),
+  },
+];
+
+export const initialChatMessages: ChatMessage[] = [
+  {
+    id: '1',
+    role: 'bot',
+    content: 'Hi! I\'m your place discovery assistant. Share Instagram or TikTok links with me, or ask about places to visit! 🗺️',
+    timestamp: new Date(),
+  },
+];
+
+export const botResponses: Record<string, string> = {
+  indian: 'You have been meaning to visit Adda, 107 1st Ave New York, NY 10003. Would you like me to show it on the map?',
+  dessert: 'You have three dessert places on your wish list! Would you like to see them all?',
+  pizza: 'Joe\'s Pizza on Carmine Street is a classic! You\'ve already visited it. Want to mark it as a favorite?',
+  coffee: 'Devoción in Brooklyn has amazing Colombian coffee! Here\'s the link: https://maps.app.goo.gl/example',
+  bar: 'Please Don\'t Tell is a secret speakeasy behind a phone booth. You visited it last month!',
+  likes: 'Here is your personal map of liked places: https://maps.app.goo.gl/yourmap',
+};
