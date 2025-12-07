@@ -336,18 +336,37 @@ Only list real places from search results. No URLs.`;
 }
 
 async function callGeminiWithSearch(query: string, queryType: string = 'food'): Promise<GeminiSearchResult> {
-    console.log(`[Gemini Search] Running parallel searches for: "${query}"`);
+    console.log(`[Gemini Search] Running parallel searches for: "${query}" (type: ${queryType})`);
 
-    // Run SEPARATE searches in PARALLEL: Reddit subreddits + trusted food publications
-    const searchQueries = [
-        // Reddit communities
-        `${query} r/AskNYC`,
-        `${query} r/foodnyc`,
-        `${query} r/nyc`,
-        // Trusted food publications
-        `${query} site:eater.com NYC`,
-        `${query} site:theinfatuation.com NYC`
-    ];
+    let searchQueries: string[];
+
+    if (queryType === 'food') {
+        // Food: Reddit food communities + trusted food publications
+        searchQueries = [
+            `${query} r/AskNYC`,
+            `${query} r/foodnyc`,
+            `${query} r/nyc`,
+            `${query} site:eater.com NYC`,
+            `${query} site:theinfatuation.com NYC`
+        ];
+    } else if (queryType === 'event' || queryType === 'show') {
+        // Events: Reddit + event publications
+        searchQueries = [
+            `${query} r/AskNYC`,
+            `${query} r/nyc`,
+            `${query} site:timeout.com/newyork`,
+            `${query} site:secretnyc.co`,
+            `${query} site:theskint.com`
+        ];
+    } else {
+        // General: Mix of Reddit and publications
+        searchQueries = [
+            `${query} r/AskNYC`,
+            `${query} r/nyc`,
+            `${query} site:timeout.com/newyork`,
+            `${query} site:eater.com NYC`
+        ];
+    }
 
     console.log(`[Gemini Search] Queries:`, searchQueries);
 
