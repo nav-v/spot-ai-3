@@ -859,19 +859,46 @@ Assistant (extracting places and outputting recommendPlaces):`;
                 // Check for recommendPlaces action
                 const secondExtracted = extractAction(content);
                 if (secondExtracted && secondExtracted.action.action === 'recommendPlaces') {
-                    // Enrich with Google Places images
+                    // Get verified sources for matching
+                    const verifiedSources = webResults.sources;
+                    
+                    // Enrich with Google Places images AND match verified sources
                     const enrichedPlaces = await Promise.all(secondExtracted.action.places.map(async (p: any) => {
                         try {
                             const placeData = await searchGooglePlaces(p.name, p.location || 'New York, NY');
+                            
+                            // Try to find a matching verified source for this place
+                            const placeNameLower = p.name.toLowerCase();
+                            const matchedSource = verifiedSources.find((s: VerifiedSource) => {
+                                const titleLower = s.title.toLowerCase();
+                                const urlLower = s.url.toLowerCase();
+                                // Match if source title/url contains place name or vice versa
+                                return titleLower.includes(placeNameLower) || 
+                                       placeNameLower.split(' ').some((word: string) => word.length > 3 && titleLower.includes(word));
+                            });
+                            
+                            // If no specific match, use a Reddit source as fallback
+                            const redditSource = verifiedSources.find((s: VerifiedSource) => 
+                                s.url.includes('reddit.com')
+                            );
+                            
+                            const sourceUrl = matchedSource?.url || redditSource?.url || null;
+                            
                             if (placeData) {
-                                return { ...p, imageUrl: placeData.imageUrl, rating: placeData.rating };
+                                return { ...p, imageUrl: placeData.imageUrl, rating: placeData.rating, sourceUrl };
                             }
-                            return p;
+                            return { ...p, sourceUrl };
                         } catch (e) {
                             return p;
                         }
                     }));
-                    actionResult = { type: 'recommendations', places: enrichedPlaces };
+                    
+                    // Also include all verified sources in the response
+                    actionResult = { 
+                        type: 'recommendations', 
+                        places: enrichedPlaces,
+                        verifiedSources: verifiedSources.slice(0, 10) // Top 10 sources
+                    };
                 }
             }
 
