@@ -272,20 +272,37 @@ interface VerifiedSource {
 
 interface GeminiSearchResult {
     text: string;
+    textWithCitations: string;  // Text with inline [1](url) citations
     sources: VerifiedSource[];
+    citations: GroundingCitation[];
     searchQueries: string[];
 }
 
-// Single search helper
-async function singleGeminiSearch(searchQuery: string): Promise<{ text: string; sources: VerifiedSource[] }> {
+// Citation structure from Gemini grounding
+interface GroundingCitation {
+    text: string;           // The text segment that is grounded
+    sourceIndex: number;    // Which chunk it references
+    startIndex?: number;
+    endIndex?: number;
+}
+
+interface SearchResultWithCitations {
+    text: string;
+    textWithCitations: string;  // Text with inline [1], [2] citations
+    sources: VerifiedSource[];
+    citations: GroundingCitation[];
+}
+
+// Single search helper - extracts native Gemini citations
+async function singleGeminiSearch(searchQuery: string): Promise<SearchResultWithCitations> {
     const searchPrompt = `Search: "${searchQuery}"
 
-List NYC places mentioned with:
+List NYC places mentioned. For each place include:
 - Place name
-- Neighborhood
-- Why recommended (brief quote)
+- Neighborhood  
+- Why it's recommended
 
-Only list real places from search results. No URLs.`;
+Only include real places from search results.`;
 
     try {
         const controller = new AbortController();
@@ -302,7 +319,7 @@ Only list real places from search results. No URLs.`;
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: searchPrompt }] }],
                     tools: [{ google_search: {} }],
-                    generationConfig: { temperature: 0.2, maxOutputTokens: 1000 }
+                    generationConfig: { temperature: 0.2, maxOutputTokens: 1500 }
                 }),
                 signal: controller.signal
             }
@@ -312,12 +329,13 @@ Only list real places from search results. No URLs.`;
         const data = await response.json();
         if (data.error) {
             console.error(`[Gemini Search] Error for "${searchQuery}":`, data.error.message);
-            return { text: '', sources: [] };
+            return { text: '', textWithCitations: '', sources: [], citations: [] };
         }
 
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
         const groundingMetadata = data.candidates?.[0]?.groundingMetadata;
         
+        // Extract sources from groundingChunks
         const sources: VerifiedSource[] = [];
         if (groundingMetadata?.groundingChunks) {
             for (const chunk of groundingMetadata.groundingChunks) {
@@ -327,11 +345,42 @@ Only list real places from search results. No URLs.`;
             }
         }
 
-        console.log(`[Gemini Search] "${searchQuery}" → ${sources.length} sources`);
-        return { text, sources };
+        // Extract citations from groundingSupports - this tells us which text is backed by which source!
+        const citations: GroundingCitation[] = [];
+        if (groundingMetadata?.groundingSupports) {
+            for (const support of groundingMetadata.groundingSupports) {
+                if (support.segment?.text && support.groundingChunkIndices?.length > 0) {
+                    citations.push({
+                        text: support.segment.text,
+                        sourceIndex: support.groundingChunkIndices[0],
+                        startIndex: support.segment.startIndex,
+                        endIndex: support.segment.endIndex
+                    });
+                }
+            }
+        }
+
+        // Build text with inline citations [1], [2], etc.
+        let textWithCitations = text;
+        // Sort citations by position (reverse order to not mess up indices)
+        const sortedCitations = [...citations].sort((a, b) => (b.endIndex || 0) - (a.endIndex || 0));
+        for (const citation of sortedCitations) {
+            if (citation.endIndex && sources[citation.sourceIndex]) {
+                const sourceNum = citation.sourceIndex + 1;
+                const url = sources[citation.sourceIndex].url;
+                // Insert citation link after the grounded text
+                const insertPos = citation.endIndex;
+                textWithCitations = textWithCitations.slice(0, insertPos) + 
+                    ` [${sourceNum}](${url})` + 
+                    textWithCitations.slice(insertPos);
+            }
+        }
+
+        console.log(`[Gemini Search] "${searchQuery}" → ${sources.length} sources, ${citations.length} citations`);
+        return { text, textWithCitations, sources, citations };
     } catch (e: any) {
         console.error(`[Gemini Search] Failed "${searchQuery}":`, e.message);
-        return { text: '', sources: [] };
+        return { text: '', textWithCitations: '', sources: [], citations: [] };
     }
 }
 
@@ -373,27 +422,39 @@ async function callGeminiWithSearch(query: string, queryType: string = 'food'): 
     // Run all searches in parallel
     const results = await Promise.all(searchQueries.map(q => singleGeminiSearch(q)));
 
-    // Combine results
+    // Combine results with citations
     let combinedText = '';
+    let combinedTextWithCitations = '';
     let allSources: VerifiedSource[] = [];
+    let allCitations: GroundingCitation[] = [];
 
     results.forEach((result, i) => {
         if (result.text) {
             combinedText += `\n=== FROM: ${searchQueries[i]} ===\n${result.text}\n`;
+            combinedTextWithCitations += `\n=== FROM: ${searchQueries[i]} ===\n${result.textWithCitations}\n`;
         }
+        // Track source offset for combined citations
+        const sourceOffset = allSources.length;
         allSources = [...allSources, ...result.sources];
+        // Adjust citation indices for combined list
+        allCitations = [...allCitations, ...result.citations.map(c => ({
+            ...c,
+            sourceIndex: c.sourceIndex + sourceOffset
+        }))];
     });
 
-    console.log(`[Gemini Search] Combined: ${combinedText.length} chars, ${allSources.length} sources`);
+    console.log(`[Gemini Search] Combined: ${combinedText.length} chars, ${allSources.length} sources, ${allCitations.length} citations`);
 
     return { 
-        text: combinedText, 
+        text: combinedText,
+        textWithCitations: combinedTextWithCitations,
         sources: allSources,
+        citations: allCitations,
         searchQueries 
     };
 }
 
-async function searchWeb(query: string): Promise<{ text: string; sources: VerifiedSource[] }> {
+async function searchWeb(query: string): Promise<{ text: string; textWithCitations: string; sources: VerifiedSource[]; citations: GroundingCitation[] }> {
     console.log(`[Web Search] Researching: ${query}`);
 
     const queryLower = query.toLowerCase();
@@ -459,19 +520,24 @@ async function searchWeb(query: string): Promise<{ text: string; sources: Verifi
         }
     }
 
-    // Use Gemini with Google Search + URL Context - returns verified sources!
+    // Use Gemini with Google Search - returns verified sources with citations!
     const geminiResult = await callGeminiWithSearch(query, queryType);
+    
+    let allTextWithCitations = allText; // Start with scraped content (no citations)
     
     if (geminiResult.text) {
         allText += `\n\n=== WEB SEARCH RESULTS ===\n${geminiResult.text}`;
+        allTextWithCitations += `\n\n=== WEB SEARCH RESULTS ===\n${geminiResult.textWithCitations}`;
     }
     
     // Add verified sources from Gemini's groundingMetadata
     allSources = [...allSources, ...geminiResult.sources];
 
     return { 
-        text: allText || "No results found.", 
-        sources: allSources 
+        text: allText || "No results found.",
+        textWithCitations: allTextWithCitations || "No results found.",
+        sources: allSources,
+        citations: geminiResult.citations
     };
 }
 
@@ -817,48 +883,36 @@ Keep responses conversational first, then add JSON action at the end.`;
                     searchResults += commentsResults.join('');
                 }
 
-                // Wait for web search (returns { text, sources } with verified URLs)
+                // Wait for web search - now includes citations!
                 const webResults = await webSearchPromise;
-                searchResults += '\n=== WEB RESEARCH ===\n' + webResults.text;
                 
-                // Add verified source URLs from Gemini's grounding
-                if (webResults.sources.length > 0) {
-                    searchResults += '\n\n=== VERIFIED SOURCE URLS ===\n';
-                    webResults.sources.forEach((s, i) => {
-                        searchResults += `[${i + 1}] ${s.title}: ${s.url}\n`;
-                    });
-                }
+                // Use textWithCitations which has inline [N](url) citations from Gemini grounding
+                searchResults += '\n=== WEB RESEARCH (with citations) ===\n' + webResults.textWithCitations;
+                
+                console.log(`[Research] ${webResults.citations.length} native Gemini citations found`);
 
-                // Build verified sources list for LLM to use
-                const sourcesForLLM = webResults.sources.slice(0, 15).map((s, i) => 
-                    `[${i + 1}] "${s.title}" → ${s.url}`
-                ).join('\n');
+                // Re-prompt Gemini with research that has INLINE citations
+                const researchPrompt = `${fullPrompt}\n${content}\n\n[SYSTEM: Research Results with Citations:\n${searchResults}\n\n
+⚠️ IMPORTANT: The research above contains INLINE CITATIONS like [1](url), [2](url), etc.
+These citations link text to their source URLs.
 
-                // Re-prompt Gemini with research results + verified sources
-                const researchPrompt = `${fullPrompt}\n${content}\n\n[SYSTEM: Research Results:\n${searchResults}\n\n
-=== VERIFIED SOURCE URLs (USE THESE ONLY) ===
-${sourcesForLLM}
+Extract up to 10 place recommendations. For each place:
+1. Find the citation [N](url) near where the place is mentioned
+2. Use THAT URL as the sourceUrl
+3. Only include places that have a citation nearby
 
-⚠️ IMPORTANT: Extract up to 10 place recommendations from the research above.
-
-For EACH place, you MUST:
-1. Match it to ONE of the VERIFIED SOURCE URLs above
-2. Use the EXACT URL from the list - do not modify or make up URLs
-3. If a place isn't clearly from a verified source, skip it
-
-OUTPUT FORMAT - recommendPlaces action with these fields for each place:
+OUTPUT FORMAT - recommendPlaces action:
 - name: place name
-- type: restaurant/cafe/bar/etc
-- description: why it's recommended (1-2 sentences)
+- type: restaurant/cafe/bar/etc  
+- description: why recommended (1-2 sentences)
 - location: neighborhood in NYC
-- sourceName: source name (e.g. "r/foodnyc", "Eater NY")
-- sourceQuote: actual quote from research about this place
-- sourceUrl: EXACT URL from VERIFIED SOURCE URLs list above (copy-paste it)
-- sourceIndex: the number [1-15] of which verified source you used
+- sourceName: derive from URL (e.g. "reddit.com" → "Reddit", "eater.com" → "Eater")
+- sourceQuote: the cited text about this place
+- sourceUrl: the URL from the citation [N](url) - COPY IT EXACTLY
 
-Only include places you can match to a verified source!]
+Only include places with nearby citations!]
 
-Assistant (extracting places with verified sourceUrls):`;
+Assistant (extracting places with cited sourceUrls):`;
 
                 const secondResponse = await getAI().models.generateContent({
                     model: 'gemini-2.0-flash',
