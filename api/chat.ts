@@ -338,12 +338,15 @@ Only list real places from search results. No URLs.`;
 async function callGeminiWithSearch(query: string, queryType: string = 'food'): Promise<GeminiSearchResult> {
     console.log(`[Gemini Search] Running parallel searches for: "${query}"`);
 
-    // Run SEPARATE searches for each subreddit in PARALLEL
+    // Run SEPARATE searches in PARALLEL: Reddit subreddits + trusted food publications
     const searchQueries = [
+        // Reddit communities
         `${query} r/AskNYC`,
         `${query} r/foodnyc`,
         `${query} r/nyc`,
-        `${query} site:eater.com NYC`
+        // Trusted food publications
+        `${query} site:eater.com NYC`,
+        `${query} site:theinfatuation.com NYC`
     ];
 
     console.log(`[Gemini Search] Queries:`, searchQueries);
