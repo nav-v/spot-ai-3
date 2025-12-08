@@ -268,8 +268,12 @@ export const MapView = ({
           </>
         )}
 
-        {/* Place markers - only show places with valid coordinates */}
-        {places.filter(p => p.coordinates?.lat && p.coordinates?.lng).map((place) => (
+        {/* Place markers - only show places with valid numeric coordinates */}
+        {places.filter(p => 
+          p.coordinates && 
+          typeof p.coordinates.lat === 'number' && !isNaN(p.coordinates.lat) &&
+          typeof p.coordinates.lng === 'number' && !isNaN(p.coordinates.lng)
+        ).map((place) => (
           <Marker
             key={place.id}
             position={[place.coordinates!.lat, place.coordinates!.lng]}
