@@ -935,7 +935,7 @@ Keep responses conversational`;
 
         // First Gemini call
         const response = await getAI().models.generateContent({
-            model: 'gemini-2.5-pro',
+            model: 'gemini-2.5-pro', // full planning
             contents: [{ role: 'user', parts: [{ text: fullPrompt }] }]
         });
 
@@ -1053,7 +1053,7 @@ Research data:\n${searchResults}\n
 Assistant:`;
 
                 const secondResponse = await getAI().models.generateContent({
-                    model: 'gemini-2.5-pro',
+                    model: 'gemini-2.5-flash', // faster extraction
                     contents: [{ role: 'user', parts: [{ text: researchPrompt }] }]
                 });
 
@@ -1229,7 +1229,7 @@ Return ONLY a JSON object: { "places": [{ "name": "...", "location": "...", "isE
 If no places found, return { "places": [] }.`;
 
                         const extractResponse = await getAI().models.generateContent({
-                            model: 'gemini-2.5-pro',
+                            model: 'gemini-2.5-flash', // faster extraction for social captions
                             contents: [{ role: 'user', parts: [{ text: extractPrompt }] }]
                         });
 
