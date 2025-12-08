@@ -339,8 +339,33 @@ Only include real places from search results.`;
         const sources: VerifiedSource[] = [];
         if (groundingMetadata?.groundingChunks) {
             for (const chunk of groundingMetadata.groundingChunks) {
-                if (chunk.web?.uri && chunk.web?.title) {
-                    sources.push({ title: chunk.web.title, url: chunk.web.uri });
+                if (chunk.web?.uri) {
+                    // Use title if available, otherwise try to extract from URI or use placeholder
+                    let title = chunk.web.title || '';
+                    
+                    // Log what we're getting
+                    console.log(`[Grounding] Chunk: title="${title}", uri="${chunk.web.uri?.substring(0, 60)}..."`);
+                    
+                    // If title is just a domain or empty, try to make it more useful
+                    if (!title || title.length < 10 || title === 'reddit.com') {
+                        // Will be enriched later with citation text
+                        title = `Source ${sources.length + 1}`;
+                    }
+                    
+                    sources.push({ title, url: chunk.web.uri });
+                }
+            }
+        }
+        
+        // Enrich source titles with citation text where possible
+        if (groundingMetadata?.groundingSupports && sources.length > 0) {
+            for (const support of groundingMetadata.groundingSupports) {
+                if (support.segment?.text && support.groundingChunkIndices?.length > 0) {
+                    const idx = support.groundingChunkIndices[0];
+                    if (sources[idx] && sources[idx].title.startsWith('Source ')) {
+                        // Use first 80 chars of citation as title
+                        sources[idx].title = support.segment.text.substring(0, 80) + (support.segment.text.length > 80 ? '...' : '');
+                    }
                 }
             }
         }
