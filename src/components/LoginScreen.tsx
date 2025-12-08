@@ -76,7 +76,7 @@ export function LoginScreen() {
                 </div>
                 <h1 className="text-4xl font-bold text-foreground tracking-tight">Spot</h1>
                 <p className="text-muted-foreground mt-2 text-center">
-                    Your Agent for Fun
+                    Your Assistant for Fun
                 </p>
             </div>
 
