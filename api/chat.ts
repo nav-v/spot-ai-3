@@ -896,28 +896,22 @@ Keep responses conversational first, then add JSON action at the end.`;
                 
                 console.log(`[Research] ${webResults.citations.length} native Gemini citations found`);
 
-                // Re-prompt Gemini with research that has INLINE citations
-                const researchPrompt = `${fullPrompt}\n${content}\n\n[SYSTEM: Research Results with Citations:\n${searchResults}\n\n
-⚠️ IMPORTANT: The research above contains INLINE CITATIONS like [1](url), [2](url), etc.
-These citations link text to their source URLs.
+                // Re-prompt Gemini - DO NOT ask for URLs, LLM always hallucinates them
+                const researchPrompt = `${fullPrompt}\n${content}\n\n[SYSTEM: Research Results:\n${searchResults}\n\n
+Extract up to 10 place recommendations from the research above.
 
-Extract up to 10 place recommendations. For each place:
-1. Find the citation [N](url) near where the place is mentioned
-2. Use THAT URL as the sourceUrl
-3. Only include places that have a citation nearby
-
-OUTPUT FORMAT - recommendPlaces action:
-- name: place name
-- type: restaurant/cafe/bar/etc  
-- description: why recommended (1-2 sentences)
+OUTPUT FORMAT - recommendPlaces action with ONLY these fields:
+- name: exact place name
+- type: restaurant/cafe/bar/etc
+- description: why recommended (1-2 sentences)  
 - location: neighborhood in NYC
-- sourceName: derive from URL (e.g. "reddit.com" → "Reddit", "eater.com" → "Eater")
-- sourceQuote: the cited text about this place
-- sourceUrl: the URL from the citation [N](url) - COPY IT EXACTLY
+- sourceName: which source mentioned it (e.g. "Reddit r/foodnyc", "Eater NY")
+- sourceQuote: actual quote from research about this place
 
-Only include places with nearby citations!]
+⚠️ DO NOT include sourceUrl - we will add it automatically.
+⚠️ DO NOT make up any URLs.]
 
-Assistant (extracting places with cited sourceUrls):`;
+Assistant (extracting places, no URLs):`;
 
                 const secondResponse = await getAI().models.generateContent({
                     model: 'gemini-2.0-flash',
@@ -934,57 +928,53 @@ Assistant (extracting places with cited sourceUrls):`;
                 console.log(`[Research] Places count:`, secondExtracted?.action?.places?.length || 0);
                 
                 if (secondExtracted && secondExtracted.action.action === 'recommendPlaces') {
+                    // Get verified sources - these are REAL URLs from Gemini grounding
                     const verifiedSources = webResults.sources;
-                    console.log(`[Research] Verified sources available: ${verifiedSources.length}`);
-                    verifiedSources.slice(0, 5).forEach((s, i) => console.log(`  [${i}] ${s.url.substring(0, 60)}...`));
+                    console.log(`[Research] Verified sources: ${verifiedSources.length}`);
                     
-                    // Enrich with Google Places images, add best available source
+                    // Deduplicate sources by domain
+                    const seenDomains = new Set<string>();
+                    const uniqueSources = verifiedSources.filter(s => {
+                        try {
+                            const domain = new URL(s.url).hostname.replace('www.', '');
+                            if (seenDomains.has(domain)) return false;
+                            seenDomains.add(domain);
+                            return true;
+                        } catch { return true; }
+                    }).slice(0, 8); // Top 8 unique sources
+                    
+                    console.log(`[Research] Unique sources for display:`, uniqueSources.map(s => s.title).join(', '));
+                    
+                    // Just enrich with Google Places - NO source URL matching (it's unreliable)
                     const enrichedPlaces = await Promise.all(secondExtracted.action.places.map(async (p: any) => {
                         try {
                             const placeData = await searchGooglePlaces(p.name, p.location || 'New York, NY');
-                            
-                            // Try to find a good source URL - be lenient!
-                            let sourceUrl = p.sourceUrl || null;
-                            
-                            // If LLM provided a URL that looks like a real site (not vertex), use it
-                            if (sourceUrl && !sourceUrl.includes('vertexaisearch')) {
-                                console.log(`[Source] "${p.name}" → LLM provided: ${sourceUrl.substring(0, 50)}...`);
-                            } else {
-                                // Fallback: find source that matches sourceName
-                                const sourceName = (p.sourceName || '').toLowerCase();
-                                let matchedSource = verifiedSources.find(s => {
-                                    const urlLower = s.url.toLowerCase();
-                                    if (sourceName.includes('reddit') && urlLower.includes('reddit.com')) return true;
-                                    if (sourceName.includes('eater') && urlLower.includes('eater.com')) return true;
-                                    if (sourceName.includes('infatuation') && urlLower.includes('theinfatuation.com')) return true;
-                                    return false;
-                                });
-                                
-                                // If no match, just use first available source
-                                if (!matchedSource && verifiedSources.length > 0) {
-                                    matchedSource = verifiedSources[0];
-                                }
-                                
-                                sourceUrl = matchedSource?.url || null;
-                                console.log(`[Source] "${p.name}" → fallback: ${sourceUrl?.substring(0, 50) || 'none'}...`);
-                            }
-                            
                             if (placeData) {
-                                return { ...p, imageUrl: placeData.imageUrl, rating: placeData.rating, sourceUrl };
+                                return { ...p, imageUrl: placeData.imageUrl, rating: placeData.rating };
                             }
-                            return { ...p, sourceUrl };
+                            return p;
                         } catch (e) {
-                            console.error(`[Source] Error for "${p.name}":`, e);
                             return p;
                         }
                     }));
                     
-                    console.log(`[Research] Final enriched places: ${enrichedPlaces.length}`);
+                    console.log(`[Research] Final places: ${enrichedPlaces.length}`);
                     
+                    // Return places + ALL verified sources (frontend shows them in a box)
                     actionResult = { 
                         type: 'recommendations', 
                         places: enrichedPlaces,
-                        verifiedSources: verifiedSources.slice(0, 10)
+                        // Sources for the "Sources" box - deduplicated, with domain for favicon
+                        sources: uniqueSources.map(s => {
+                            let domain = '';
+                            try { domain = new URL(s.url).hostname.replace('www.', ''); } catch {}
+                            return {
+                                title: s.title,
+                                url: s.url,
+                                domain: domain,
+                                favicon: `https://www.google.com/s2/favicons?domain=${domain}&sz=32`
+                            };
+                        })
                     };
                 } else {
                     console.log(`[Research] WARNING: No recommendPlaces action found in response`);
