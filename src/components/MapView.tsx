@@ -194,9 +194,15 @@ export const MapView = ({
 }: MapViewProps) => {
   const selectedPlace = places.find(p => p.id === selectedPlaceId) || null;
 
-  // Default to NYC, or user location if available
-  const center: [number, number] = userLocation
-    ? [userLocation.lat, userLocation.lng]
+  // Validate userLocation - must have valid numeric lat/lng
+  const validUserLocation = userLocation && 
+    typeof userLocation.lat === 'number' && !isNaN(userLocation.lat) &&
+    typeof userLocation.lng === 'number' && !isNaN(userLocation.lng)
+    ? userLocation : null;
+
+  // Default to NYC, or user location if available and valid
+  const center: [number, number] = validUserLocation
+    ? [validUserLocation.lat, validUserLocation.lng]
     : [40.7308, -73.9973];
 
   const getIcon = (place: Place) => {
@@ -237,20 +243,20 @@ export const MapView = ({
           url="https://api.maptiler.com/maps/dataviz/{z}/{x}/{y}.png?key=jOqKNMVRgmTPjJJDyvcq"
         />
 
-        <MapController selectedPlace={selectedPlace} userLocation={userLocation} />
+        <MapController selectedPlace={selectedPlace} userLocation={validUserLocation} />
         <MapResizer />
 
         {/* User location marker */}
-        {userLocation && (
+        {validUserLocation && (
           <>
             <Marker
-              position={[userLocation.lat, userLocation.lng]}
+              position={[validUserLocation.lat, validUserLocation.lng]}
               icon={userLocationIcon}
             >
               <Popup>You are here</Popup>
             </Marker>
             <Circle
-              center={[userLocation.lat, userLocation.lng]}
+              center={[validUserLocation.lat, validUserLocation.lng]}
               radius={200}
               pathOptions={{
                 color: '#3b82f6',

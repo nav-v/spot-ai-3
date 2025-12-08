@@ -81,11 +81,15 @@ const Index = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-          toast({ title: 'Location found!', description: 'Showing spots near you' });
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          // Validate coordinates before setting
+          if (typeof lat === 'number' && !isNaN(lat) && typeof lng === 'number' && !isNaN(lng)) {
+            setUserLocation({ lat, lng });
+            toast({ title: 'Location found!', description: 'Showing spots near you' });
+          } else {
+            toast({ title: 'Location error', description: 'Invalid coordinates received', variant: 'destructive' });
+          }
         },
         (error) => {
           toast({ title: 'Location error', description: error.message, variant: 'destructive' });
