@@ -48,10 +48,18 @@ interface BookingData {
   };
 }
 
+interface SourceInfo {
+  title: string;
+  url: string;
+  domain: string;
+  favicon: string;
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   recommendations?: RecommendedPlace[];
+  sources?: SourceInfo[];
   reservation?: ReservationData;
   bookings?: BookingData[];
   actionResult?: any;
@@ -373,6 +381,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
           role: 'assistant',
           content: res.content,
           recommendations: res.actionResult?.places, // Note: server returns 'places' for recommendations type
+          sources: res.actionResult?.sources, // Verified sources from Gemini grounding
           reservation: res.actionResult?.type === 'reservations' ? res.actionResult : undefined,
           bookings: res.actionResult?.type === 'bookings' ? res.actionResult.bookings : undefined,
           actionResult: res.actionResult
@@ -830,6 +839,49 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                       </div>
                     ))}
                   </DraggableScrollContainer>
+                </div>
+              )}
+
+              {/* Sources Box - shows verified sources from research */}
+              {msg.sources && msg.sources.length > 0 && (
+                <div className="mt-4 mx-4">
+                  <details className="group">
+                    <summary className="flex items-center gap-2 cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors">
+                      <div className="flex items-center gap-1">
+                        {msg.sources.slice(0, 3).map((source, i) => (
+                          <img 
+                            key={i} 
+                            src={source.favicon} 
+                            alt={source.domain}
+                            className="w-4 h-4 rounded-sm"
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                          />
+                        ))}
+                      </div>
+                      <span className="font-medium">Sources ({msg.sources.length})</span>
+                      <span className="text-[10px] opacity-60 group-open:hidden">Click to expand</span>
+                    </summary>
+                    <div className="mt-2 p-3 bg-secondary/30 rounded-lg border border-border/50 space-y-2">
+                      {msg.sources.map((source, i) => (
+                        <a
+                          key={i}
+                          href={source.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 text-xs hover:bg-secondary/50 p-1.5 rounded-md transition-colors group/link"
+                        >
+                          <img 
+                            src={source.favicon} 
+                            alt={source.domain}
+                            className="w-4 h-4 rounded-sm flex-shrink-0"
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                          />
+                          <span className="text-muted-foreground truncate flex-1">{source.title}</span>
+                          <ExternalLink className="w-3 h-3 opacity-0 group-hover/link:opacity-50 flex-shrink-0" />
+                        </a>
+                      ))}
+                    </div>
+                  </details>
                 </div>
               )}
 
