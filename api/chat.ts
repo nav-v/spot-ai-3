@@ -892,21 +892,35 @@ Keep responses conversational first, then add JSON action at the end.`;
                 console.log(`[Research] ${webResults.citations.length} native Gemini citations found`);
 
                 // Re-prompt Gemini - DO NOT ask for URLs, LLM always hallucinates them
-                const researchPrompt = `${fullPrompt}\n${content}\n\n[SYSTEM: Research Results:\n${searchResults}\n\n
-Extract up to 10 place recommendations from the research above.
+                const researchPrompt = `${fullPrompt}\n${content}\n\n[SYSTEM: Research complete. Extract recommendations.
 
-OUTPUT FORMAT - recommendPlaces action with ONLY these fields:
-- name: exact place name
-- type: restaurant/cafe/bar/etc
-- description: why recommended (1-2 sentences)  
-- location: neighborhood in NYC
-- sourceName: which source mentioned it (e.g. "Reddit r/foodnyc", "Eater NY")
-- sourceQuote: actual quote from research about this place
+OUTPUT: Write a SHORT intro (1-2 sentences), then output the JSON action. 
+DO NOT list places in text - only in the JSON!
 
-⚠️ DO NOT include sourceUrl - we will add it automatically.
-⚠️ DO NOT make up any URLs.]
+JSON FORMAT - recommendPlaces action:
+{
+  "action": "recommendPlaces",
+  "places": [
+    {
+      "name": "Place Name",
+      "type": "restaurant",
+      "description": "Why it's recommended (1-2 sentences)",
+      "location": "Neighborhood",
+      "sourceName": "Reddit" or "Eater" or "The Infatuation",
+      "sourceQuote": "Actual quote from research"
+    }
+  ]
+}
 
-Assistant (extracting places, no URLs):`;
+RULES:
+- Extract up to 10 places from research
+- sourceName should be simple: "Reddit", "Eater", "The Infatuation", etc.
+- DO NOT include URLs
+- DO NOT list places in text, ONLY in JSON
+- Keep text response SHORT - just a fun intro!]
+
+Research data:\n${searchResults}\n
+Assistant:`;
 
                 const secondResponse = await getAI().models.generateContent({
                     model: 'gemini-2.0-flash',
@@ -928,30 +942,33 @@ Assistant (extracting places, no URLs):`;
                     console.log(`[Research] Verified sources: ${verifiedSources.length}`);
                     
                     // Helper to extract source domain from TITLE (since URLs are all vertexaisearch)
+                    // Order matters! Check specific sites BEFORE reddit (since LLM outputs "Reddit site:eater.com")
                     const extractSourceFromTitle = (title: string): { domain: string; displayName: string } => {
                         const titleLower = title.toLowerCase();
-                        if (titleLower.includes('reddit') || titleLower.includes('r/')) {
-                            return { domain: 'reddit.com', displayName: 'Reddit' };
-                        }
-                        if (titleLower.includes('eater')) {
+                        // Check specific sites FIRST (before reddit, since LLM combines them)
+                        if (titleLower.includes('eater.com') || titleLower.includes('eater ny')) {
                             return { domain: 'eater.com', displayName: 'Eater' };
                         }
-                        if (titleLower.includes('infatuation')) {
+                        if (titleLower.includes('infatuation') || titleLower.includes('theinfatuation')) {
                             return { domain: 'theinfatuation.com', displayName: 'The Infatuation' };
                         }
                         if (titleLower.includes('timeout') || titleLower.includes('time out')) {
                             return { domain: 'timeout.com', displayName: 'TimeOut' };
                         }
-                        if (titleLower.includes('secret')) {
+                        if (titleLower.includes('secretnyc') || titleLower.includes('secret nyc')) {
                             return { domain: 'secretnyc.co', displayName: 'Secret NYC' };
                         }
-                        if (titleLower.includes('skint')) {
+                        if (titleLower.includes('skint') || titleLower.includes('theskint')) {
                             return { domain: 'theskint.com', displayName: 'The Skint' };
                         }
                         if (titleLower.includes('grubstreet') || titleLower.includes('grub street')) {
                             return { domain: 'grubstreet.com', displayName: 'Grub Street' };
                         }
-                        // Default: try to extract from title
+                        // Reddit last (catches r/nyc, r/foodnyc, etc)
+                        if (titleLower.includes('reddit') || titleLower.includes('r/')) {
+                            return { domain: 'reddit.com', displayName: 'Reddit' };
+                        }
+                        // Default
                         return { domain: 'google.com', displayName: title.split(' - ')[0] || title.substring(0, 30) };
                     };
                     
