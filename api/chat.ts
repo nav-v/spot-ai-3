@@ -335,16 +335,11 @@ Only include real places from search results.`;
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
         const groundingMetadata = data.candidates?.[0]?.groundingMetadata;
         
-        // Extract sources from groundingChunks - FILTER OUT Google's internal URLs
+        // Extract sources from groundingChunks
         const sources: VerifiedSource[] = [];
         if (groundingMetadata?.groundingChunks) {
             for (const chunk of groundingMetadata.groundingChunks) {
                 if (chunk.web?.uri && chunk.web?.title) {
-                    // Skip Google's internal vertex AI search URLs
-                    if (chunk.web.uri.includes('vertexaisearch.cloud.google.com')) {
-                        console.log(`[Gemini Search] Skipping internal URL: ${chunk.web.uri.substring(0, 50)}...`);
-                        continue;
-                    }
                     sources.push({ title: chunk.web.title, url: chunk.web.uri });
                 }
             }
