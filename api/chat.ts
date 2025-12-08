@@ -888,11 +888,12 @@ If user shares a link:
 6. RECOMMEND PLACES (⚠️ ALWAYS USE THIS whenever you mention ANY place in the chat):
 **CRITICAL: Whenever you recommend ANY places to the user, you MUST output them as a recommendPlaces action with SECTIONS. NEVER just list places as plain text. The user expects to see interactive cards with photos grouped by theme.**
 
-Format - GROUP places into 2-4 logical sections, each with a personality-filled intro:
+Format - GROUP places into 2-4 logical sections. EACH SECTION MUST HAVE AN "intro" FIELD:
 {"action": "recommendPlaces", "sections": [
-  {"title": "Section Title", "intro": "A short, fun paragraph (2-3 sentences) introducing this category with your personality. Explain what these spots have in common, why they fit the request, reference user's tastes if relevant.", "places": [
-    {"name": "Place Name", "type": "restaurant", "description": "Short reason why you picked it...", "location": "Neighborhood/City", "sourceName": "r/foodnyc", "sourceQuote": "This place is fire, try the spicy miso ramen"}
-  ]}
+  {"title": "🥐 Flaky Classics", "intro": "These are the spots where they do one thing and do it perfectly - pure, buttery croissants with zero gimmicks. If you want to taste what all the fuss is about, start here.", "places": [
+    {"name": "Place Name", "type": "restaurant", "description": "Short reason why you picked it...", "location": "Neighborhood/City", "sourceName": "r/foodnyc", "sourceQuote": "This place is fire"}
+  ]},
+  {"title": "✨ Creative & Over-the-Top", "intro": "For when a regular croissant just isn't dramatic enough. These bakeries go wild with flavors, fillings, and Instagram-worthy creations.", "places": [...]}
 ]}
 
 SECTION RULES:
@@ -1011,19 +1012,20 @@ Keep responses conversational`;
 OUTPUT: Write a SHORT intro (1-2 sentences), then output the JSON action with SECTIONS.
 DO NOT list places in text - only in the JSON!
 
-JSON FORMAT - recommendPlaces action with SECTIONS:
+JSON FORMAT - recommendPlaces action with SECTIONS (intro is REQUIRED):
 {
   "action": "recommendPlaces",
   "sections": [
     {
-      "title": "Section Title (descriptive & fun, e.g. '🥐 Flaky Classics', '✨ Creative & Experimental')",
+      "title": "🥐 Flaky Classics",
+      "intro": "These are the spots where they do one thing and do it perfectly - pure, buttery, flaky croissants with zero gimmicks. If you want to taste what all the fuss is about, start here.",
       "places": [
         {
           "name": "Place Name",
           "type": "restaurant",
           "description": "Why it's recommended (1-2 sentences)",
           "location": "Neighborhood",
-          "sourceName": "Reddit" or "Eater" or "The Infatuation" or "Saved list",
+          "sourceName": "Reddit",
           "sourceQuote": "Actual quote from research"
         }
       ]
