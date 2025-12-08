@@ -1042,7 +1042,7 @@ Assistant:`;
                     console.log(`[Research] Sources for display: ${allSources.length}`);
                     
                     // Just enrich with Google Places - NO source URL matching (it's unreliable)
-                    const enrichedPlaces = await Promise.all(secondExtracted.action.places.map(async (p: any) => {
+                    let enrichedPlaces = await Promise.all(secondExtracted.action.places.map(async (p: any) => {
                         try {
                             const placeData = await searchGooglePlaces(p.name, p.location || 'New York, NY');
                             if (placeData) {
@@ -1053,6 +1053,26 @@ Assistant:`;
                             return p;
                         }
                     }));
+
+                    // If we ended up with no food/drink options, backfill from saved list
+                    const foodTypes = new Set(['restaurant', 'bar', 'cafe', 'food', 'drinks', 'drink']);
+                    const foodCount = enrichedPlaces.filter(p => foodTypes.has((p.type || '').toLowerCase())).length;
+                    if (foodCount === 0 && userPlaces && userPlaces.length > 0) {
+                        const fallbackSaved = [...userPlaces]
+                            .filter((p: any) => !p.is_event)
+                            .sort((a: any, b: any) => (b.is_favorite ? 1 : 0) - (a.is_favorite ? 1 : 0))
+                            .slice(0, 2)
+                            .map((p: any) => ({
+                                name: p.name,
+                                type: p.type || 'restaurant',
+                                description: p.note || 'Saved pick you already liked.',
+                                location: p.address || 'New York, NY',
+                                sourceName: 'Saved list',
+                                sourceQuote: 'From your saved places',
+                                sourceUrl: ''
+                            }));
+                        enrichedPlaces = [...fallbackSaved, ...enrichedPlaces];
+                    }
                     
                     console.log(`[Research] Final places: ${enrichedPlaces.length}`);
                     
