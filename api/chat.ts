@@ -937,51 +937,26 @@ Assistant:`;
                 console.log(`[Research] Places count:`, secondExtracted?.action?.places?.length || 0);
                 
                 if (secondExtracted && secondExtracted.action.action === 'recommendPlaces') {
-                    // Get verified sources - these are URLs from Gemini grounding
+                    // Get ALL verified sources - no deduplication, show everything
                     const verifiedSources = webResults.sources;
-                    console.log(`[Research] Verified sources: ${verifiedSources.length}`);
+                    console.log(`[Research] All verified sources: ${verifiedSources.length}`);
                     
-                    // Helper to extract source domain from TITLE (since URLs are all vertexaisearch)
-                    // Order matters! Check specific sites BEFORE reddit (since LLM outputs "Reddit site:eater.com")
-                    const extractSourceFromTitle = (title: string): { domain: string; displayName: string } => {
+                    // Helper to extract favicon domain from title
+                    const extractDomainForFavicon = (title: string): string => {
                         const titleLower = title.toLowerCase();
-                        // Check specific sites FIRST (before reddit, since LLM combines them)
-                        if (titleLower.includes('eater.com') || titleLower.includes('eater ny')) {
-                            return { domain: 'eater.com', displayName: 'Eater' };
-                        }
-                        if (titleLower.includes('infatuation') || titleLower.includes('theinfatuation')) {
-                            return { domain: 'theinfatuation.com', displayName: 'The Infatuation' };
-                        }
-                        if (titleLower.includes('timeout') || titleLower.includes('time out')) {
-                            return { domain: 'timeout.com', displayName: 'TimeOut' };
-                        }
-                        if (titleLower.includes('secretnyc') || titleLower.includes('secret nyc')) {
-                            return { domain: 'secretnyc.co', displayName: 'Secret NYC' };
-                        }
-                        if (titleLower.includes('skint') || titleLower.includes('theskint')) {
-                            return { domain: 'theskint.com', displayName: 'The Skint' };
-                        }
-                        if (titleLower.includes('grubstreet') || titleLower.includes('grub street')) {
-                            return { domain: 'grubstreet.com', displayName: 'Grub Street' };
-                        }
-                        // Reddit last (catches r/nyc, r/foodnyc, etc)
-                        if (titleLower.includes('reddit') || titleLower.includes('r/')) {
-                            return { domain: 'reddit.com', displayName: 'Reddit' };
-                        }
-                        // Default
-                        return { domain: 'google.com', displayName: title.split(' - ')[0] || title.substring(0, 30) };
+                        if (titleLower.includes('eater')) return 'eater.com';
+                        if (titleLower.includes('infatuation')) return 'theinfatuation.com';
+                        if (titleLower.includes('timeout') || titleLower.includes('time out')) return 'timeout.com';
+                        if (titleLower.includes('secretnyc') || titleLower.includes('secret nyc')) return 'secretnyc.co';
+                        if (titleLower.includes('skint')) return 'theskint.com';
+                        if (titleLower.includes('grubstreet')) return 'grubstreet.com';
+                        if (titleLower.includes('reddit') || titleLower.includes('r/')) return 'reddit.com';
+                        return 'google.com';
                     };
                     
-                    // Deduplicate by extracted source domain (not URL domain)
-                    const seenDomains = new Set<string>();
-                    const uniqueSources = verifiedSources.filter(s => {
-                        const { domain } = extractSourceFromTitle(s.title);
-                        if (seenDomains.has(domain)) return false;
-                        seenDomains.add(domain);
-                        return true;
-                    }).slice(0, 8);
-                    
-                    console.log(`[Research] Unique sources for display:`, [...seenDomains].join(', '));
+                    // Keep ALL sources (up to 25), no deduplication
+                    const allSources = verifiedSources.slice(0, 25);
+                    console.log(`[Research] Sources for display: ${allSources.length}`);
                     
                     // Just enrich with Google Places - NO source URL matching (it's unreliable)
                     const enrichedPlaces = await Promise.all(secondExtracted.action.places.map(async (p: any) => {
@@ -1002,14 +977,13 @@ Assistant:`;
                     actionResult = { 
                         type: 'recommendations', 
                         places: enrichedPlaces,
-                        // Sources for the "Sources" box - use extracted domain for favicon
-                        sources: uniqueSources.map(s => {
-                            const { domain, displayName } = extractSourceFromTitle(s.title);
+                        // ALL sources with title and favicon - no deduplication
+                        sources: allSources.map(s => {
+                            const domain = extractDomainForFavicon(s.title);
                             return {
-                                title: s.title,
-                                url: s.url,
+                                title: s.title,  // Full title from Gemini grounding
+                                url: s.url,      // Vertex URL (redirects to actual source)
                                 domain: domain,
-                                displayName: displayName,
                                 favicon: `https://www.google.com/s2/favicons?domain=${domain}&sz=32`
                             };
                         })
