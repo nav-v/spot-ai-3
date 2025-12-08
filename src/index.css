@@ -110,10 +110,11 @@
     @apply border-border;
   }
 
-  /* Mobile-first: prevent overscroll bounce and ensure proper viewport */
+  /* Mobile-first viewport handling */
   html {
-    height: -webkit-fill-available;
-    overflow: hidden;
+    height: 100%;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 
   body {
@@ -121,29 +122,19 @@
     font-family: 'Inter', system-ui, sans-serif;
     min-height: 100dvh;
     min-height: -webkit-fill-available;
-    overflow: hidden;
-    position: fixed;
-    width: 100%;
-    /* Prevent iOS rubber-banding */
-    overscroll-behavior: none;
+    /* Allow scrolling - individual views handle their own overflow */
+    overscroll-behavior-y: contain;
   }
 
   /* Root element should fill viewport */
   #root {
-    height: 100dvh;
-    height: -webkit-fill-available;
-    overflow: hidden;
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
   }
 
-  /* Prevent text size adjustment on orientation change */
-  html {
-    -webkit-text-size-adjust: 100%;
-    text-size-adjust: 100%;
-  }
-
-  /* Better touch handling */
+  /* Better touch handling - prevents iOS zoom on input focus */
   input, textarea, button, select {
-    font-size: 16px; /* Prevents iOS zoom on focus */
+    font-size: 16px;
   }
 }
 
