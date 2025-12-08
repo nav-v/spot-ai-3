@@ -1109,7 +1109,7 @@ Assistant:`;
                                 return p;
                             }
                         }));
-                        return { title: section.title, places: enrichedPlaces };
+                        return { title: section.title, intro: section.intro, places: enrichedPlaces };
                     }));
 
                     // Count total food/drink items across all sections
@@ -1134,7 +1134,11 @@ Assistant:`;
                                 sourceQuote: 'From your saved places'
                             }));
                         if (fallbackSaved.length > 0) {
-                            enrichedSections.unshift({ title: "🍽️ From Your List", places: fallbackSaved });
+                            enrichedSections.unshift({ 
+                                title: "🍽️ From Your List", 
+                                intro: "Since you asked about food, here are some spots you've already saved that might hit the spot.",
+                                places: fallbackSaved 
+                            });
                         }
                     }
                     
@@ -1181,7 +1185,7 @@ Assistant:`;
                             return p;
                         }
                     }));
-                    return { title: section.title, places: enrichedPlaces };
+                    return { title: section.title, intro: section.intro, places: enrichedPlaces };
                 }));
                 
                 actionResult = { type: 'recommendations', sections: enrichedSections };
