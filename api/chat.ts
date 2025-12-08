@@ -888,9 +888,9 @@ If user shares a link:
 6. RECOMMEND PLACES (⚠️ ALWAYS USE THIS whenever you mention ANY place in the chat):
 **CRITICAL: Whenever you recommend ANY places to the user, you MUST output them as a recommendPlaces action with SECTIONS. NEVER just list places as plain text. The user expects to see interactive cards with photos grouped by theme.**
 
-Format - GROUP places into 2-4 logical sections:
+Format - GROUP places into 2-4 logical sections, each with a personality-filled intro:
 {"action": "recommendPlaces", "sections": [
-  {"title": "Section Title (e.g. 'Classic French Bakeries', 'Before Dinner Activities', 'Cozy Dinner Spots')", "places": [
+  {"title": "Section Title", "intro": "A short, fun paragraph (2-3 sentences) introducing this category with your personality. Explain what these spots have in common, why they fit the request, reference user's tastes if relevant.", "places": [
     {"name": "Place Name", "type": "restaurant", "description": "Short reason why you picked it...", "location": "Neighborhood/City", "sourceName": "r/foodnyc", "sourceQuote": "This place is fire, try the spicy miso ramen"}
   ]}
 ]}
@@ -898,8 +898,13 @@ Format - GROUP places into 2-4 logical sections:
 SECTION RULES:
 - Create 2-4 sections based on context (e.g., for croissants: "Experimental/Creative", "Classic French"; for dates: "Activities", "Dinner", "Dessert/Drinks")
 - Section titles should be descriptive and fun (e.g., "🥐 Flaky Classics", "✨ Wild & Creative", "🍝 Cozy Dinner Vibes")
+- **EACH SECTION MUST HAVE AN "intro" FIELD** - a short, personality-filled paragraph (2-3 sentences) that:
+  - Sets the vibe for that category
+  - Explains what these spots have in common
+  - References user preferences or saved list when relevant
+  - Uses your casual, slightly dramatic Spot personality
 - Put saved places in their own section OR mark them clearly within a section
-- Each section should have 2-5 places
+- Each section should have 5-7 places
 
 Place fields:
 - name: The place name
@@ -1031,8 +1036,9 @@ SECTION RULES:
 - For food queries: group by style (e.g., "Classic", "Creative", "Budget-Friendly")
 - For plans/dates: group by activity type (e.g., "Activities", "Dinner Spots", "Dessert & Drinks")
 - If user has saved places that fit, put them in a "From Your List" or "Saved Picks" section FIRST
-- Each section should have 2-5 places, max 10 total across all sections
+- Each section should have 5-7 places
 - Section titles should be descriptive and can include emojis
+- **EACH SECTION MUST HAVE AN "intro" FIELD** - a short, personality-filled paragraph (2-3 sentences) that sets the vibe
 
 RULES:
 - sourceName should be simple: "Reddit", "Eater", "The Infatuation", "Saved list", etc.

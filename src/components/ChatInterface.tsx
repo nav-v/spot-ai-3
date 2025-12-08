@@ -57,6 +57,7 @@ interface SourceInfo {
 
 interface RecommendationSection {
   title: string;
+  intro?: string;  // Short paragraph introducing this section
   places: RecommendedPlace[];
 }
 
@@ -773,7 +774,12 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                   {msg.sections.map((section, sectionIdx) => (
                     <div key={sectionIdx}>
                       {/* Section Title */}
-                      <h3 className="text-sm font-semibold text-foreground mb-2 px-1">{section.title}</h3>
+                      <h3 className="text-sm font-semibold text-foreground mb-1 px-1">{section.title}</h3>
+                      
+                      {/* Section Intro */}
+                      {section.intro && (
+                        <p className="text-sm text-muted-foreground mb-3 px-1 leading-relaxed">{section.intro}</p>
+                      )}
                       
                       {/* Section Carousel */}
                       <div className="relative w-screen -ml-4">
