@@ -923,22 +923,48 @@ Assistant (extracting places, no URLs):`;
                 console.log(`[Research] Places count:`, secondExtracted?.action?.places?.length || 0);
                 
                 if (secondExtracted && secondExtracted.action.action === 'recommendPlaces') {
-                    // Get verified sources - these are REAL URLs from Gemini grounding
+                    // Get verified sources - these are URLs from Gemini grounding
                     const verifiedSources = webResults.sources;
                     console.log(`[Research] Verified sources: ${verifiedSources.length}`);
                     
-                    // Deduplicate sources by domain
+                    // Helper to extract source domain from TITLE (since URLs are all vertexaisearch)
+                    const extractSourceFromTitle = (title: string): { domain: string; displayName: string } => {
+                        const titleLower = title.toLowerCase();
+                        if (titleLower.includes('reddit') || titleLower.includes('r/')) {
+                            return { domain: 'reddit.com', displayName: 'Reddit' };
+                        }
+                        if (titleLower.includes('eater')) {
+                            return { domain: 'eater.com', displayName: 'Eater' };
+                        }
+                        if (titleLower.includes('infatuation')) {
+                            return { domain: 'theinfatuation.com', displayName: 'The Infatuation' };
+                        }
+                        if (titleLower.includes('timeout') || titleLower.includes('time out')) {
+                            return { domain: 'timeout.com', displayName: 'TimeOut' };
+                        }
+                        if (titleLower.includes('secret')) {
+                            return { domain: 'secretnyc.co', displayName: 'Secret NYC' };
+                        }
+                        if (titleLower.includes('skint')) {
+                            return { domain: 'theskint.com', displayName: 'The Skint' };
+                        }
+                        if (titleLower.includes('grubstreet') || titleLower.includes('grub street')) {
+                            return { domain: 'grubstreet.com', displayName: 'Grub Street' };
+                        }
+                        // Default: try to extract from title
+                        return { domain: 'google.com', displayName: title.split(' - ')[0] || title.substring(0, 30) };
+                    };
+                    
+                    // Deduplicate by extracted source domain (not URL domain)
                     const seenDomains = new Set<string>();
                     const uniqueSources = verifiedSources.filter(s => {
-                        try {
-                            const domain = new URL(s.url).hostname.replace('www.', '');
-                            if (seenDomains.has(domain)) return false;
-                            seenDomains.add(domain);
-                            return true;
-                        } catch { return true; }
-                    }).slice(0, 8); // Top 8 unique sources
+                        const { domain } = extractSourceFromTitle(s.title);
+                        if (seenDomains.has(domain)) return false;
+                        seenDomains.add(domain);
+                        return true;
+                    }).slice(0, 8);
                     
-                    console.log(`[Research] Unique sources for display:`, uniqueSources.map(s => s.title).join(', '));
+                    console.log(`[Research] Unique sources for display:`, [...seenDomains].join(', '));
                     
                     // Just enrich with Google Places - NO source URL matching (it's unreliable)
                     const enrichedPlaces = await Promise.all(secondExtracted.action.places.map(async (p: any) => {
@@ -959,14 +985,14 @@ Assistant (extracting places, no URLs):`;
                     actionResult = { 
                         type: 'recommendations', 
                         places: enrichedPlaces,
-                        // Sources for the "Sources" box - deduplicated, with domain for favicon
+                        // Sources for the "Sources" box - use extracted domain for favicon
                         sources: uniqueSources.map(s => {
-                            let domain = '';
-                            try { domain = new URL(s.url).hostname.replace('www.', ''); } catch {}
+                            const { domain, displayName } = extractSourceFromTitle(s.title);
                             return {
                                 title: s.title,
                                 url: s.url,
                                 domain: domain,
+                                displayName: displayName,
                                 favicon: `https://www.google.com/s2/favicons?domain=${domain}&sz=32`
                             };
                         })
