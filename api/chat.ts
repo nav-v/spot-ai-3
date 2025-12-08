@@ -309,7 +309,7 @@ Only include real places from search results.`;
         const timeoutId = setTimeout(() => controller.abort(), 15000);
 
         const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent`,
             {
                 method: 'POST',
                 headers: {
@@ -844,7 +844,7 @@ Keep responses conversational first, then add JSON action at the end.`;
 
         // First Gemini call
         const response = await getAI().models.generateContent({
-            model: 'gemini-2.0-flash',
+            model: 'gemini-2.5-pro',
             contents: [{ role: 'user', parts: [{ text: fullPrompt }] }]
         });
 
@@ -948,7 +948,7 @@ Research data:\n${searchResults}\n
 Assistant:`;
 
                 const secondResponse = await getAI().models.generateContent({
-                    model: 'gemini-2.0-flash',
+                    model: 'gemini-2.5-pro',
                     contents: [{ role: 'user', parts: [{ text: researchPrompt }] }]
                 });
 
@@ -1071,7 +1071,7 @@ Return ONLY a JSON object: { "places": [{ "name": "...", "location": "...", "isE
 If no places found, return { "places": [] }.`;
 
                         const extractResponse = await getAI().models.generateContent({
-                            model: 'gemini-2.0-flash',
+                            model: 'gemini-2.5-pro',
                             contents: [{ role: 'user', parts: [{ text: extractPrompt }] }]
                         });
 
