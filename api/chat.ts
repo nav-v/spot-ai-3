@@ -886,25 +886,36 @@ If user shares a link:
 {"action": "scrapeUrl", "url": "THE_URL"}
 
 6. RECOMMEND PLACES (⚠️ ALWAYS USE THIS whenever you mention ANY place in the chat):
-**CRITICAL: Whenever you recommend ANY places to the user, you MUST output them as a recommendPlaces action. NEVER just list places as plain text. The user expects to see interactive cards with photos, not text lists.**
+**CRITICAL: Whenever you recommend ANY places to the user, you MUST output them as a recommendPlaces action with SECTIONS. NEVER just list places as plain text. The user expects to see interactive cards with photos grouped by theme.**
 
-Format:
-{"action": "recommendPlaces", "places": [{"name": "Place Name", "type": "restaurant", "description": "Short reason why you picked it...", "website": "https://placewebsite.com", "location": "Neighborhood/City", "sourceUrl": "https://reddit.com/r/foodnyc/...", "sourceName": "r/foodnyc", "sourceQuote": "This place is fire, try the spicy miso ramen"}]}
+Format - GROUP places into 2-4 logical sections:
+{"action": "recommendPlaces", "sections": [
+  {"title": "Section Title (e.g. 'Classic French Bakeries', 'Before Dinner Activities', 'Cozy Dinner Spots')", "places": [
+    {"name": "Place Name", "type": "restaurant", "description": "Short reason why you picked it...", "location": "Neighborhood/City", "sourceName": "r/foodnyc", "sourceQuote": "This place is fire, try the spicy miso ramen"}
+  ]}
+]}
 
+SECTION RULES:
+- Create 2-4 sections based on context (e.g., for croissants: "Experimental/Creative", "Classic French"; for dates: "Activities", "Dinner", "Dessert/Drinks")
+- Section titles should be descriptive and fun (e.g., "🥐 Flaky Classics", "✨ Wild & Creative", "🍝 Cozy Dinner Vibes")
+- Put saved places in their own section OR mark them clearly within a section
+- Each section should have 2-5 places
+
+Place fields:
 - name: The place name
 - type: One of "restaurant", "bar", "cafe", "activity", "attraction"
 - description: 1-2 sentences why you chose this for them
-- website: The place's website URL
 - location: Neighborhood (e.g. "Upper East Side")
-- sourceUrl: **MUST be a REAL URL from research results** - use Reddit links when available! NEVER make up URLs.
+- DO NOT include sourceUrl - we attach verified URLs from research automatically.
 - sourceName: Who recommended it - PRIORITIZE Reddit (r/foodnyc, r/AskNYC) over other sources. Must be from actual research.
 - sourceQuote: The actual quote from that Reddit post or article. NEVER fabricate quotes.
 
 ⚠️ CRITICAL: 
 - You may ONLY cite sources that were returned by the research tool.
-- If you haven't done research, do NOT include sourceUrl/sourceName/sourceQuote - leave them empty.
+- If you haven't done research, do NOT include sourceName/sourceQuote - leave them empty.
 - NEVER make up quotes from TimeOut, Eater, Secret NYC, etc. unless you have actual research data.
 - It's okay to recommend places without source citations if they're from the user's saved list.
+- **ALWAYS use sections** - even for simple queries, group into at least 2 sections (e.g., "From Your List" + "New Finds")
 
 Keep responses conversational`;
 
@@ -992,32 +1003,42 @@ Keep responses conversational`;
                 // Re-prompt Gemini - DO NOT ask for URLs, LLM always hallucinates them
                 const researchPrompt = `${fullPrompt}\n${content}\n\n[SYSTEM: Research complete. Extract recommendations.
 
-OUTPUT: Write a SHORT intro (1-2 sentences), then output the JSON action. 
+OUTPUT: Write a SHORT intro (1-2 sentences), then output the JSON action with SECTIONS.
 DO NOT list places in text - only in the JSON!
 
-JSON FORMAT - recommendPlaces action:
+JSON FORMAT - recommendPlaces action with SECTIONS:
 {
   "action": "recommendPlaces",
-  "places": [
+  "sections": [
     {
-      "name": "Place Name",
-      "type": "restaurant",
-      "description": "Why it's recommended (1-2 sentences)",
-      "location": "Neighborhood",
-      "sourceName": "Reddit" or "Eater" or "The Infatuation",
-      "sourceQuote": "Actual quote from research"
+      "title": "Section Title (descriptive & fun, e.g. '🥐 Flaky Classics', '✨ Creative & Experimental')",
+      "places": [
+        {
+          "name": "Place Name",
+          "type": "restaurant",
+          "description": "Why it's recommended (1-2 sentences)",
+          "location": "Neighborhood",
+          "sourceName": "Reddit" or "Eater" or "The Infatuation" or "Saved list",
+          "sourceQuote": "Actual quote from research"
+        }
+      ]
     }
   ]
 }
 
+SECTION RULES:
+- Create 2-4 logical sections based on the query type
+- For food queries: group by style (e.g., "Classic", "Creative", "Budget-Friendly")
+- For plans/dates: group by activity type (e.g., "Activities", "Dinner Spots", "Dessert & Drinks")
+- If user has saved places that fit, put them in a "From Your List" or "Saved Picks" section FIRST
+- Each section should have 2-5 places, max 10 total across all sections
+- Section titles should be descriptive and can include emojis
+
 RULES:
-- Extract up to 10 places from research
-- sourceName should be simple: "Reddit", "Eater", "The Infatuation", etc.
+- sourceName should be simple: "Reddit", "Eater", "The Infatuation", "Saved list", etc.
 - DO NOT include URLs
 - DO NOT list places in text, ONLY in JSON
 - Keep text response SHORT - just a fun intro!]
-
-If the user asked for a plan / date / day out / itinerary, ensure the places cover BOTH activities/things-to-do AND food/drink/dessert options when possible (e.g., at least 2 activities and 2 food/drink if available, max 10 total). Prefer saved-list items first for food/drink; mark them with sourceName: "Saved list" and sourceUrl: "".]
 
 Research data:\n${searchResults}\n
 Assistant:`;
@@ -1034,9 +1055,13 @@ Assistant:`;
                 // Check for recommendPlaces action
                 const secondExtracted = extractAction(content);
                 console.log(`[Research] Extracted action:`, secondExtracted?.action?.action);
-                console.log(`[Research] Places count:`, secondExtracted?.action?.places?.length || 0);
                 
-                if (secondExtracted && secondExtracted.action.action === 'recommendPlaces') {
+                // Handle both old (places) and new (sections) format
+                const hasSections = secondExtracted?.action?.sections?.length > 0;
+                const hasPlaces = secondExtracted?.action?.places?.length > 0;
+                console.log(`[Research] Has sections: ${hasSections}, Has places (legacy): ${hasPlaces}`);
+                
+                if (secondExtracted && secondExtracted.action.action === 'recommendPlaces' && (hasSections || hasPlaces)) {
                     // Get ALL verified sources - no deduplication, show everything
                     const verifiedSources = webResults.sources;
                     console.log(`[Research] All verified sources: ${verifiedSources.length}`);
@@ -1058,23 +1083,36 @@ Assistant:`;
                     const allSources = verifiedSources.slice(0, 25);
                     console.log(`[Research] Sources for display: ${allSources.length}`);
                     
-                    // Just enrich with Google Places - NO source URL matching (it's unreliable)
-                    let enrichedPlaces = await Promise.all(secondExtracted.action.places.map(async (p: any) => {
-                        try {
-                            const placeData = await searchGooglePlaces(p.name, p.location || 'New York, NY');
-                            if (placeData) {
-                                return { ...p, imageUrl: placeData.imageUrl, rating: placeData.rating };
+                    // Convert legacy flat places array to sections format if needed
+                    let sections = hasSections 
+                        ? secondExtracted.action.sections 
+                        : [{ title: "Recommendations", places: secondExtracted.action.places }];
+                    
+                    // Enrich all places in all sections with Google Places data
+                    const enrichedSections = await Promise.all(sections.map(async (section: any) => {
+                        const enrichedPlaces = await Promise.all((section.places || []).map(async (p: any) => {
+                            try {
+                                const placeData = await searchGooglePlaces(p.name, p.location || 'New York, NY');
+                                if (placeData) {
+                                    return { ...p, imageUrl: placeData.imageUrl, rating: placeData.rating, website: placeData.sourceUrl };
+                                }
+                                return p;
+                            } catch (e) {
+                                return p;
                             }
-                            return p;
-                        } catch (e) {
-                            return p;
-                        }
+                        }));
+                        return { title: section.title, places: enrichedPlaces };
                     }));
 
-                    // If we ended up with no food/drink options, backfill from saved list
+                    // Count total food/drink items across all sections
                     const foodTypes = new Set(['restaurant', 'bar', 'cafe', 'food', 'drinks', 'drink']);
-                    const foodCount = enrichedPlaces.filter(p => foodTypes.has((p.type || '').toLowerCase())).length;
-                    if (foodCount === 0 && userPlaces && userPlaces.length > 0) {
+                    let totalFoodCount = 0;
+                    for (const section of enrichedSections) {
+                        totalFoodCount += (section.places || []).filter((p: any) => foodTypes.has((p.type || '').toLowerCase())).length;
+                    }
+                    
+                    // If no food/drink options, add a "From Your List" section with saved places
+                    if (totalFoodCount === 0 && userPlaces && userPlaces.length > 0) {
                         const fallbackSaved = [...userPlaces]
                             .filter((p: any) => !p.is_event)
                             .sort((a: any, b: any) => (b.is_favorite ? 1 : 0) - (a.is_favorite ? 1 : 0))
@@ -1082,21 +1120,23 @@ Assistant:`;
                             .map((p: any) => ({
                                 name: p.name,
                                 type: p.type || 'restaurant',
-                                description: p.note || 'Saved pick you already liked.',
+                                description: p.note || 'A saved pick you already loved.',
                                 location: p.address || 'New York, NY',
                                 sourceName: 'Saved list',
-                                sourceQuote: 'From your saved places',
-                                sourceUrl: ''
+                                sourceQuote: 'From your saved places'
                             }));
-                        enrichedPlaces = [...fallbackSaved, ...enrichedPlaces];
+                        if (fallbackSaved.length > 0) {
+                            enrichedSections.unshift({ title: "🍽️ From Your List", places: fallbackSaved });
+                        }
                     }
                     
-                    console.log(`[Research] Final places: ${enrichedPlaces.length}`);
+                    const totalPlaces = enrichedSections.reduce((acc: number, s: any) => acc + (s.places?.length || 0), 0);
+                    console.log(`[Research] Final sections: ${enrichedSections.length}, Total places: ${totalPlaces}`);
                     
-                    // Return places + ALL verified sources (frontend shows them in a box)
+                    // Return sections + ALL verified sources (frontend shows them in a box)
                     actionResult = { 
                         type: 'recommendations', 
-                        places: enrichedPlaces,
+                        sections: enrichedSections,
                         // ALL sources with title and favicon - no deduplication
                         sources: allSources.map(s => {
                             const domain = extractDomainForFavicon(s.title);
@@ -1114,19 +1154,29 @@ Assistant:`;
             }
 
             // ============= RECOMMEND PLACES ACTION =============
-            else if (action.action === 'recommendPlaces' && action.places) {
-                const enrichedPlaces = await Promise.all(action.places.map(async (p: any) => {
-                    try {
-                        const placeData = await searchGooglePlaces(p.name, p.location || 'New York, NY');
-                        if (placeData) {
-                            return { ...p, imageUrl: placeData.imageUrl, rating: placeData.rating };
+            else if (action.action === 'recommendPlaces' && (action.sections || action.places)) {
+                // Handle both new (sections) and legacy (places) format
+                let sections = action.sections 
+                    ? action.sections 
+                    : [{ title: "Recommendations", places: action.places }];
+                
+                // Enrich all places in all sections
+                const enrichedSections = await Promise.all(sections.map(async (section: any) => {
+                    const enrichedPlaces = await Promise.all((section.places || []).map(async (p: any) => {
+                        try {
+                            const placeData = await searchGooglePlaces(p.name, p.location || 'New York, NY');
+                            if (placeData) {
+                                return { ...p, imageUrl: placeData.imageUrl, rating: placeData.rating, website: placeData.sourceUrl };
+                            }
+                            return p;
+                        } catch (e) {
+                            return p;
                         }
-                        return p;
-                    } catch (e) {
-                        return p;
-                    }
+                    }));
+                    return { title: section.title, places: enrichedPlaces };
                 }));
-                actionResult = { type: 'recommendations', places: enrichedPlaces };
+                
+                actionResult = { type: 'recommendations', sections: enrichedSections };
             }
 
             // ============= ADD PLACE ACTION =============

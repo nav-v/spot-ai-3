@@ -55,10 +55,16 @@ interface SourceInfo {
   favicon: string;
 }
 
+interface RecommendationSection {
+  title: string;
+  places: RecommendedPlace[];
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
-  recommendations?: RecommendedPlace[];
+  sections?: RecommendationSection[];  // New: grouped recommendations
+  recommendations?: RecommendedPlace[];  // Legacy: flat list (for backwards compat)
   sources?: SourceInfo[];
   reservation?: ReservationData;
   bookings?: BookingData[];
@@ -377,10 +383,15 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
       const res = await chatApi.send(history, user?.name, user?.preferences);
 
       if (res && res.content) {
+        // Handle both new sections format and legacy flat places array
+        const sections = res.actionResult?.sections;
+        const legacyPlaces = res.actionResult?.places;
+        
         const assistantMsg: ChatMessage = {
           role: 'assistant',
           content: res.content,
-          recommendations: res.actionResult?.places, // Note: server returns 'places' for recommendations type
+          sections: sections, // New: grouped recommendations
+          recommendations: legacyPlaces, // Legacy: flat list for backwards compat
           sources: res.actionResult?.sources, // Verified sources from Gemini grounding
           reservation: res.actionResult?.type === 'reservations' ? res.actionResult : undefined,
           bookings: res.actionResult?.type === 'bookings' ? res.actionResult.bookings : undefined,
@@ -756,14 +767,101 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                 })()}
               </div>
 
-              {msg.recommendations && msg.recommendations.length > 0 && (
+              {/* Sectioned Carousels - New Format */}
+              {msg.sections && msg.sections.length > 0 && (
+                <div className="mt-4 space-y-5">
+                  {msg.sections.map((section, sectionIdx) => (
+                    <div key={sectionIdx}>
+                      {/* Section Title */}
+                      <h3 className="text-sm font-semibold text-foreground mb-2 px-1">{section.title}</h3>
+                      
+                      {/* Section Carousel */}
+                      <div className="relative w-screen -ml-4">
+                        <DraggableScrollContainer
+                          className="pb-3 flex gap-3 px-4 snap-x snap-mandatory scroll-smooth scrollbar-hide"
+                        >
+                          {section.places.map((place, placeIdx) => (
+                            <div key={placeIdx} className="min-w-[65%] sm:min-w-[240px] sm:w-[240px] bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all snap-center flex flex-col">
+                              {/* Image Area */}
+                              <div className="h-36 w-full bg-muted relative overflow-hidden group">
+                                {place.imageUrl ? (
+                                  <img src={place.imageUrl} alt={place.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center bg-secondary/30">
+                                    <MapPin className="w-8 h-8 text-muted-foreground/50" />
+                                  </div>
+                                )}
+                                <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full font-medium">
+                                  {place.location}
+                                </div>
+                              </div>
+
+                              {/* Content Area */}
+                              <div className="p-3 flex flex-col flex-1">
+                                <div className="flex justify-between items-start mb-1">
+                                  <h3 className="font-semibold text-sm leading-tight text-foreground">{place.name}</h3>
+                                  {(place as any).rating && (
+                                    <div className="flex items-center gap-0.5 bg-yellow-500/10 text-yellow-600 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                      <span>★</span>
+                                      <span>{(place as any).rating}</span>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {place.location && (
+                                  <p className="text-[10px] text-muted-foreground mb-2">📍 {place.location}</p>
+                                )}
+
+                                <p className="text-xs text-muted-foreground mb-2 flex-1">
+                                  {place.description}
+                                </p>
+
+                                {(place as any).sourceName && (
+                                  <div className="text-[10px] text-muted-foreground mb-2 italic">
+                                    <span>📰 {(place as any).sourceName}: "{(place as any).sourceQuote || 'Highly recommended'}"</span>
+                                  </div>
+                                )}
+
+                                <div className="flex gap-2 mt-auto">
+                                  <a
+                                    href={place.website}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex-1 flex items-center justify-center gap-1.5 bg-secondary/50 hover:bg-secondary text-secondary-foreground text-[10px] py-2 rounded-lg transition-colors font-medium"
+                                  >
+                                    <ExternalLink className="w-3 h-3" />
+                                    Website
+                                  </a>
+                                  <button
+                                    onClick={() => !savedPlaceNames.has(place.name.toLowerCase()) && handleAddRecommendation(place)}
+                                    disabled={savedPlaceNames.has(place.name.toLowerCase())}
+                                    className={`flex-1 flex items-center justify-center gap-1.5 text-[10px] py-2 rounded-lg transition-colors font-medium shadow-sm ${savedPlaceNames.has(place.name.toLowerCase())
+                                      ? 'bg-secondary text-muted-foreground cursor-not-allowed'
+                                      : 'bg-primary text-primary-foreground hover:bg-primary/90'
+                                      }`}
+                                  >
+                                    {savedPlaceNames.has(place.name.toLowerCase()) ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+                                    {savedPlaceNames.has(place.name.toLowerCase()) ? 'On List' : 'Add'}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </DraggableScrollContainer>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Legacy Single Carousel - Backwards Compatibility */}
+              {!msg.sections && msg.recommendations && msg.recommendations.length > 0 && (
                 <div className="relative w-screen -ml-4 mt-4">
                   <DraggableScrollContainer
                     className="pb-3 flex gap-3 px-4 snap-x snap-mandatory scroll-smooth scrollbar-hide"
                   >
                     {msg.recommendations.map((place, placeIdx) => (
                       <div key={placeIdx} className="min-w-[65%] sm:min-w-[240px] sm:w-[240px] bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all snap-center flex flex-col">
-                        {/* Image Area */}
                         <div className="h-36 w-full bg-muted relative overflow-hidden group">
                           {place.imageUrl ? (
                             <img src={place.imageUrl} alt={place.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
@@ -777,11 +875,9 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                           </div>
                         </div>
 
-                        {/* Content Area */}
                         <div className="p-3 flex flex-col flex-1">
                           <div className="flex justify-between items-start mb-1">
                             <h3 className="font-semibold text-sm leading-tight text-foreground">{place.name}</h3>
-                            {/* Rating Badge */}
                             {(place as any).rating && (
                               <div className="flex items-center gap-0.5 bg-yellow-500/10 text-yellow-600 px-1.5 py-0.5 rounded text-[10px] font-bold">
                                 <span>★</span>
@@ -790,7 +886,6 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                             )}
                           </div>
 
-                          {/* Neighborhood */}
                           {place.location && (
                             <p className="text-[10px] text-muted-foreground mb-2">📍 {place.location}</p>
                           )}
@@ -799,20 +894,12 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                             {place.description}
                           </p>
 
-                          {/* Source Citation */}
                           {(place as any).sourceName && (
                             <div className="text-[10px] text-muted-foreground mb-2 italic">
-                              {(place as any).sourceUrl ? (
-                                <a href={(place as any).sourceUrl} target="_blank" rel="noopener noreferrer" className="hover:text-primary hover:underline">
-                                  📰 {(place as any).sourceName}: "{(place as any).sourceQuote || 'Highly recommended'}"
-                                </a>
-                              ) : (
-                                <span>📰 {(place as any).sourceName}: "{(place as any).sourceQuote || 'Highly recommended'}"</span>
-                              )}
+                              <span>📰 {(place as any).sourceName}: "{(place as any).sourceQuote || 'Highly recommended'}"</span>
                             </div>
                           )}
 
-                          {/* Actions */}
                           <div className="flex gap-2 mt-auto">
                             <a
                               href={place.website}
