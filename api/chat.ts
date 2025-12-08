@@ -1000,6 +1000,8 @@ RULES:
 - DO NOT list places in text, ONLY in JSON
 - Keep text response SHORT - just a fun intro!]
 
+If the user asked for a plan / date / day out / itinerary, ensure the places cover BOTH activities/things-to-do AND food/drink/dessert options when possible (e.g., at least 2 activities and 2 food/drink if available, max 10 total). Prefer saved-list items first for food/drink; mark them with sourceName: "Saved list" and sourceUrl: "".]
+
 Research data:\n${searchResults}\n
 Assistant:`;
 
