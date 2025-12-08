@@ -496,19 +496,23 @@ async function searchWeb(query: string): Promise<{ text: string; textWithCitatio
     const isEventQuery = eventKeywords.some(kw => queryLower.includes(kw));
     const isShowQuery = ['movie', 'film', 'cinema', 'theater', 'theatre', 'broadway', 'play', 'musical', 'show'].some(kw => queryLower.includes(kw));
 
-    // Food takes priority (e.g., "date night restaurant" = food)
+    // Detect mixed intent (both food and event)
+    const isMixed = isFoodQuery && (isEventQuery || isShowQuery);
+
+    // Decide primary type for logging; mixed triggers both searches
     let queryType = 'food';
-    if (isFoodQuery) queryType = 'food';
+    if (isMixed) queryType = 'mixed';
     else if (isShowQuery) queryType = 'show';
     else if (isEventQuery) queryType = 'event';
-    
-    console.log(`[Web Search] Query type: ${queryType}`);
+    else if (isFoodQuery) queryType = 'food';
+
+    console.log(`[Web Search] Query type: ${queryType} (food=${isFoodQuery}, event=${isEventQuery}, show=${isShowQuery})`);
 
     let allText = '';
     let allSources: VerifiedSource[] = [];
 
     // For events: scrape the 3 trusted event sites directly via Firecrawl
-    if (queryType === 'event' || queryType === 'show') {
+    if (queryType === 'event' || queryType === 'show' || isMixed) {
         console.log('[Web Search] Event query - scraping TimeOut, Secret NYC, The Skint...');
         
         const eventSources = [
@@ -546,23 +550,36 @@ async function searchWeb(query: string): Promise<{ text: string; textWithCitatio
     }
 
     // Use Gemini with Google Search - returns verified sources with citations!
-    const geminiResult = await callGeminiWithSearch(query, queryType);
-    
-    let allTextWithCitations = allText; // Start with scraped content (no citations)
-    
-    if (geminiResult.text) {
-        allText += `\n\n=== WEB SEARCH RESULTS ===\n${geminiResult.text}`;
-        allTextWithCitations += `\n\n=== WEB SEARCH RESULTS ===\n${geminiResult.textWithCitations}`;
+    // If mixed intent, run both event and food searches and merge.
+    let geminiResults: { text: string; textWithCitations: string; sources: VerifiedSource[]; citations: GroundingCitation[] }[] = [];
+
+    if (queryType === 'mixed') {
+        const [eventResult, foodResult] = await Promise.all([
+            callGeminiWithSearch(query, 'event'),
+            callGeminiWithSearch(query, 'food')
+        ]);
+        geminiResults = [eventResult, foodResult];
+    } else {
+        geminiResults = [await callGeminiWithSearch(query, queryType)];
     }
-    
-    // Add verified sources from Gemini's groundingMetadata
-    allSources = [...allSources, ...geminiResult.sources];
+
+    let allTextWithCitations = allText; // Start with scraped content (no citations)
+    let allCitations: GroundingCitation[] = [];
+
+    for (const geminiResult of geminiResults) {
+        if (geminiResult.text) {
+            allText += `\n\n=== WEB SEARCH RESULTS ===\n${geminiResult.text}`;
+            allTextWithCitations += `\n\n=== WEB SEARCH RESULTS ===\n${geminiResult.textWithCitations}`;
+        }
+        allSources = [...allSources, ...geminiResult.sources];
+        allCitations = [...allCitations, ...geminiResult.citations];
+    }
 
     return { 
         text: allText || "No results found.",
         textWithCitations: allTextWithCitations || "No results found.",
         sources: allSources,
-        citations: geminiResult.citations
+        citations: allCitations
     };
 }
 
