@@ -174,7 +174,7 @@ const Index = () => {
   // Show loading spinner while checking auth
   if (authLoading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-background">
+      <div className="h-[100dvh] flex items-center justify-center bg-background">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     );
@@ -191,29 +191,29 @@ const Index = () => {
       <UserProfileSheet open={profileSheetOpen} onOpenChange={setProfileSheetOpen} />
 
       {/* Spot View - Persisted */}
-      <div className={cn("h-screen flex flex-col overflow-hidden bg-background", activeTab !== 'spot' && "hidden")}>
-        <div className="bg-card border-b border-border px-4 py-3 flex-shrink-0">
-          <div className="flex items-center justify-between gap-2">
+      <div className={cn("h-[100dvh] flex flex-col overflow-hidden bg-background", activeTab !== 'spot' && "hidden")}>
+        <div className="bg-card border-b border-border px-3 sm:px-4 py-3 flex-shrink-0" style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))' }}>
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               onClick={() => setActiveTab('spot')}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-full text-sm font-medium transition-all bg-primary text-primary-foreground whitespace-nowrap"
+              className="flex-1 flex items-center justify-center gap-1 sm:gap-1.5 py-2 sm:py-2.5 px-2 sm:px-3 rounded-full text-xs sm:text-sm font-medium transition-all bg-primary text-primary-foreground whitespace-nowrap min-w-0"
             >
-              <Circle className="w-4 h-4" />
-              <span>Spot</span>
+              <Circle className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+              <span className="truncate">Spot</span>
             </button>
             <button
               onClick={() => setActiveTab('see')}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-full text-sm font-medium transition-all text-muted-foreground hover:bg-secondary whitespace-nowrap"
+              className="flex-1 flex items-center justify-center gap-1 sm:gap-1.5 py-2 sm:py-2.5 px-2 sm:px-3 rounded-full text-xs sm:text-sm font-medium transition-all text-muted-foreground hover:bg-secondary whitespace-nowrap min-w-0"
             >
-              <MapPin className="w-4 h-4" />
-              <span>Things to See</span>
+              <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+              <span className="truncate hidden xs:inline">Things to </span><span className="truncate">See</span>
             </button>
             <button
               onClick={() => setActiveTab('eat')}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-full text-sm font-medium transition-all text-muted-foreground hover:bg-secondary whitespace-nowrap"
+              className="flex-1 flex items-center justify-center gap-1 sm:gap-1.5 py-2 sm:py-2.5 px-2 sm:px-3 rounded-full text-xs sm:text-sm font-medium transition-all text-muted-foreground hover:bg-secondary whitespace-nowrap min-w-0"
             >
-              <Utensils className="w-4 h-4" />
-              <span>Things to Eat</span>
+              <Utensils className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+              <span className="truncate hidden xs:inline">Things to </span><span className="truncate">Eat</span>
             </button>
             <UserAvatar onClick={() => setProfileSheetOpen(true)} />
           </div>
@@ -224,36 +224,36 @@ const Index = () => {
       </div>
 
       {/* List View */}
-      <div className={cn("min-h-screen bg-background flex flex-col", activeTab === 'spot' && "hidden")}>
+      <div className={cn("min-h-[100dvh] bg-background flex flex-col", activeTab === 'spot' && "hidden")}>
         {/* Top Navigation */}
-        <div className="bg-card border-b border-border px-4 py-3 sticky top-0 z-50">
-          <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="bg-card border-b border-border px-3 sm:px-4 py-3 sticky top-0 z-50" style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))' }}>
+          <div className="flex items-center gap-1.5 sm:gap-2 mb-3">
             <button
               onClick={() => setActiveTab('spot')}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-full text-sm font-medium transition-all text-muted-foreground hover:bg-secondary whitespace-nowrap"
+              className="flex-1 flex items-center justify-center gap-1 sm:gap-1.5 py-2 sm:py-2.5 px-2 sm:px-3 rounded-full text-xs sm:text-sm font-medium transition-all text-muted-foreground hover:bg-secondary whitespace-nowrap min-w-0"
             >
-              <Circle className="w-4 h-4" />
-              <span>Spot</span>
+              <Circle className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+              <span className="truncate">Spot</span>
             </button>
             <button
               onClick={() => setActiveTab('see')}
               className={cn(
-                'flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-full text-sm font-medium transition-all whitespace-nowrap',
+                'flex-1 flex items-center justify-center gap-1 sm:gap-1.5 py-2 sm:py-2.5 px-2 sm:px-3 rounded-full text-xs sm:text-sm font-medium transition-all whitespace-nowrap min-w-0',
                 activeTab === 'see' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary'
               )}
             >
-              <MapPin className="w-4 h-4" />
-              <span>Things to See</span>
+              <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+              <span className="truncate hidden xs:inline">Things to </span><span className="truncate">See</span>
             </button>
             <button
               onClick={() => setActiveTab('eat')}
               className={cn(
-                'flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-full text-sm font-medium transition-all whitespace-nowrap',
+                'flex-1 flex items-center justify-center gap-1 sm:gap-1.5 py-2 sm:py-2.5 px-2 sm:px-3 rounded-full text-xs sm:text-sm font-medium transition-all whitespace-nowrap min-w-0',
                 activeTab === 'eat' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary'
               )}
             >
-              <Utensils className="w-4 h-4" />
-              <span>Things to Eat</span>
+              <Utensils className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0" />
+              <span className="truncate hidden xs:inline">Things to </span><span className="truncate">Eat</span>
             </button>
             <UserAvatar onClick={() => setProfileSheetOpen(true)} />
           </div>

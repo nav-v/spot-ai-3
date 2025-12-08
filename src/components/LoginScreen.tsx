@@ -54,7 +54,7 @@ export function LoginScreen() {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-orange-100 flex flex-col items-center justify-center p-6 relative overflow-hidden">
+        <div className="min-h-[100dvh] bg-gradient-to-br from-orange-50 via-white to-orange-100 flex flex-col items-center justify-center p-6 relative overflow-hidden" style={{ paddingTop: 'env(safe-area-inset-top, 0px)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
             {/* Animated background blob */}
             <div
                 className="absolute -bottom-32 -right-32 w-96 h-96 rounded-full bg-gradient-to-br from-orange-200 to-orange-300 opacity-60 blur-3xl z-0"

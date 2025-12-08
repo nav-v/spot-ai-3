@@ -531,10 +531,8 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
 
   return (
     <div className="flex flex-col h-full bg-background relative">
-
-
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6 pb-20">
+      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-6 pb-24" style={{ paddingBottom: 'calc(6rem + env(safe-area-inset-bottom, 0px))' }}>
         {messages.map((msg, idx) => (
           <div
             key={idx}
@@ -1050,7 +1048,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
 
       {/* Floating Suggestions - Positioned at bottom above input */}
       {messages.length === 1 && messages[0].role === 'assistant' && (
-        <div className="absolute bottom-24 left-0 right-0 z-10 h-auto pointer-events-none">
+        <div className="absolute left-0 right-0 z-10 h-auto pointer-events-none" style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))' }}>
           <FloatingSuggestions onSelect={(query) => {
             setInput(query);
           }} />
@@ -1058,7 +1056,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
       )}
 
       {/* Floating Input Area */}
-      <div className="absolute bottom-6 left-6 right-6 z-20 flex items-center gap-3 h-12">
+      <div className="absolute left-4 right-4 sm:left-6 sm:right-6 z-20 flex items-center gap-2 sm:gap-3 h-12" style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
         {/* Left: Refresh / New Chat Button */}
         <AlertDialog>
           <AlertDialogTrigger asChild>

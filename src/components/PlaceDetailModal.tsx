@@ -140,7 +140,7 @@ export const PlaceDetailModal = ({
             />
 
             {/* Modal */}
-            <div className="relative z-[2001] bg-card rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-xl animate-slide-up">
+            <div className="relative z-[2001] bg-card rounded-t-2xl sm:rounded-2xl w-full max-w-md max-h-[90dvh] overflow-y-auto shadow-xl animate-slide-up" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
                 {/* Close button */}
                 <button
                     onClick={onClose}

@@ -30,7 +30,7 @@ export function UserAvatar({ onClick, size = 'sm' }: UserAvatarProps) {
     return (
         <button
             onClick={onClick}
-            className={`${sizeClasses[size]} rounded-full bg-gray-100 text-gray-600 font-medium flex items-center justify-center hover:bg-gray-200 transition-colors overflow-hidden`}
+            className={`${sizeClasses[size]} rounded-full bg-gray-100 text-gray-600 font-medium flex items-center justify-center hover:bg-gray-200 transition-colors overflow-hidden flex-shrink-0`}
         >
             {user.avatarUrl ? (
                 <img
