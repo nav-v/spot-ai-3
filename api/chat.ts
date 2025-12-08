@@ -835,11 +835,12 @@ ${placesContext}
 TOOLS & ACTIONS:
 You have access to these tools. output the JSON action ONLY when needed.
 
-1. ADD PLACE / EVENT:
+1. ADD PLACE / EVENT (NO RESEARCH NEEDED - just use this action directly):
 If user says "Add [Place/Event Name] to my list":
 {"action": "addPlace", "placeName": "NAME", "location": "CITY/NEIGHBORHOOD", "isEvent": boolean, "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD"}
-- **CRITICAL:** If you don't know the location/venue for an event, **DO NOT ASK THE USER**. Use the \`research\` tool to find it first!
+- **DO NOT RESEARCH** when adding a known place - just output the addPlace action immediately
 - For EVENTS: Set isEvent: true. Name it after the EVENT.
+- If you don't know the location, just put "New York, NY" - Google Places will find it.
 
 2. ADD MULTIPLE PLACES / EVENTS:
 If user provides a list or caption with multiple places/events and asks to add them:
