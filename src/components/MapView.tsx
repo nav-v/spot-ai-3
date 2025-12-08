@@ -96,24 +96,28 @@ function MapController({
   const map = useMap();
 
   useEffect(() => {
-    if (selectedPlace?.coordinates) {
-      const { lat, lng } = selectedPlace.coordinates;
-      if (typeof lat === 'number' && !isNaN(lat) && typeof lng === 'number' && !isNaN(lng)) {
-        map.flyTo([lat, lng], 15, {
-          duration: 1,
-        });
+    try {
+      if (selectedPlace?.coordinates) {
+        const { lat, lng } = selectedPlace.coordinates;
+        if (typeof lat === 'number' && !isNaN(lat) && typeof lng === 'number' && !isNaN(lng)) {
+          map.flyTo([lat, lng], 15, { duration: 1 });
+        }
       }
+    } catch (e) {
+      console.error('[MapController] flyTo selectedPlace error:', e);
     }
   }, [selectedPlace, map]);
 
   useEffect(() => {
-    if (userLocation) {
-      const { lat, lng } = userLocation;
-      if (typeof lat === 'number' && !isNaN(lat) && typeof lng === 'number' && !isNaN(lng)) {
-        map.flyTo([lat, lng], 13, {
-          duration: 1,
-        });
+    try {
+      if (userLocation) {
+        const { lat, lng } = userLocation;
+        if (typeof lat === 'number' && !isNaN(lat) && typeof lng === 'number' && !isNaN(lng)) {
+          map.flyTo([lat, lng], 13, { duration: 1 });
+        }
       }
+    } catch (e) {
+      console.error('[MapController] flyTo userLocation error:', e);
     }
   }, [userLocation, map]);
 
@@ -200,10 +204,30 @@ export const MapView = ({
     typeof userLocation.lng === 'number' && !isNaN(userLocation.lng)
     ? userLocation : null;
 
-  // Default to NYC, or user location if available and valid
-  const center: [number, number] = validUserLocation
-    ? [validUserLocation.lat, validUserLocation.lng]
-    : [40.7308, -73.9973];
+  // Debug: Log any invalid coordinates
+  if (userLocation && !validUserLocation) {
+    console.error('[MapView] Invalid userLocation:', userLocation);
+  }
+  
+  // Filter places with valid coordinates upfront
+  const validPlaces = places.filter(p => 
+    p.coordinates && 
+    typeof p.coordinates.lat === 'number' && !isNaN(p.coordinates.lat) &&
+    typeof p.coordinates.lng === 'number' && !isNaN(p.coordinates.lng)
+  );
+  
+  // Debug: Log any places with invalid coordinates
+  const invalidPlaces = places.filter(p => 
+    p.coordinates && 
+    (typeof p.coordinates.lat !== 'number' || isNaN(p.coordinates.lat) ||
+     typeof p.coordinates.lng !== 'number' || isNaN(p.coordinates.lng))
+  );
+  if (invalidPlaces.length > 0) {
+    console.error('[MapView] Places with invalid coordinates:', invalidPlaces.map(p => ({ name: p.name, coordinates: p.coordinates })));
+  }
+
+  // Default to NYC - ALWAYS use safe fallback
+  const center: [number, number] = [40.7308, -73.9973];
 
   const getIcon = (place: Place) => {
     // Visited places get green checkmark
@@ -269,11 +293,7 @@ export const MapView = ({
         )}
 
         {/* Place markers - only show places with valid numeric coordinates */}
-        {places.filter(p => 
-          p.coordinates && 
-          typeof p.coordinates.lat === 'number' && !isNaN(p.coordinates.lat) &&
-          typeof p.coordinates.lng === 'number' && !isNaN(p.coordinates.lng)
-        ).map((place) => (
+        {validPlaces.map((place) => (
           <Marker
             key={place.id}
             position={[place.coordinates!.lat, place.coordinates!.lng]}
