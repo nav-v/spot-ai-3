@@ -905,7 +905,7 @@ SECTION RULES:
   - References user preferences or saved list when relevant
   - Uses your casual, slightly dramatic Spot personality
 - Put saved places in their own section OR mark them clearly within a section
-- Each section should have 5-7 places
+- **TOTAL MAX 10 places** across all sections - distribute as you see fit based on what makes sense
 
 Place fields:
 - name: The place name
@@ -1038,7 +1038,7 @@ SECTION RULES:
 - For food queries: group by style (e.g., "Classic", "Creative", "Budget-Friendly")
 - For plans/dates: group by activity type (e.g., "Activities", "Dinner Spots", "Dessert & Drinks")
 - If user has saved places that fit, put them in a "From Your List" or "Saved Picks" section FIRST
-- Each section should have 5-7 places
+- **TOTAL MAX 10 places** across all sections - distribute as makes sense for the query
 - Section titles should be descriptive and can include emojis
 - **EACH SECTION MUST HAVE AN "intro" FIELD** - a short, personality-filled paragraph (2-3 sentences) that sets the vibe
 
