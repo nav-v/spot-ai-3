@@ -7,6 +7,36 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
 
+// ============= INSTAGRAM ID TO SHORTCODE =============
+// Convert Instagram media ID to shortcode for constructing URLs
+function mediaIdToShortcode(mediaId: string): string {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+    let id = BigInt(mediaId);
+    let shortcode = '';
+    while (id > 0n) {
+        shortcode = alphabet[Number(id % 64n)] + shortcode;
+        id = id / 64n;
+    }
+    return shortcode;
+}
+
+// Construct Instagram URL from attachment data
+function getInstagramUrlFromAttachment(attachment: any): string | null {
+    const payload = attachment.payload as any;
+    
+    if (attachment.type === 'ig_reel' && payload?.reel_video_id) {
+        const shortcode = mediaIdToShortcode(payload.reel_video_id);
+        return `https://www.instagram.com/reel/${shortcode}/`;
+    }
+    
+    if (attachment.type === 'share' && payload?.url) {
+        // Direct URL share
+        return payload.url;
+    }
+    
+    return null;
+}
+
 async function supabaseQuery(table: string, params: { 
     select?: string; 
     eq?: Record<string, string>;
@@ -487,14 +517,21 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
     const spotUserId = igAccount.user_id;
     console.log(`[Webhook] Found Spot user ${spotUserId} for @${igAccount.ig_username}`);
     
-    // Extract URLs from message
-    const urls = extractUrls(messageText);
+    // Extract URLs from message - convert Instagram attachments to real URLs
+    const urls: string[] = [];
     
-    // Also check attachments for URLs
+    // Get URLs from text
+    for (const url of extractUrls(messageText)) {
+        urls.push(url);
+    }
+    
+    // Convert Instagram attachments to real Instagram URLs
     if (message.message?.attachments) {
         for (const attachment of message.message.attachments) {
-            if (attachment.payload?.url) {
-                urls.push(attachment.payload.url);
+            const instagramUrl = getInstagramUrlFromAttachment(attachment);
+            if (instagramUrl) {
+                console.log(`[Webhook] Converted attachment to URL: ${instagramUrl}`);
+                urls.push(instagramUrl);
             }
         }
     }
@@ -508,79 +545,52 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
         return;
     }
     
-    console.log(`[Webhook] Found ${urls.length} URLs: ${urls.join(', ')}`);
+    console.log(`[Webhook] Found ${urls.length} URLs to process: ${urls.join(', ')}`);
     
-    // Process each URL
+    // Process each URL through the scrape pipeline
     const results: Array<{ url: string; success: boolean; name?: string; error?: string }> = [];
     
     for (const url of urls) {
-        const classification = classifyUrl(url);
-        console.log(`[Webhook] URL classified as: ${classification.type}`);
+        console.log(`[Webhook] Processing URL: ${url}`);
         
-        // Store the ingested link
-        const ingestedLink = {
-            spot_user_id: spotUserId,
-            ig_user_id: senderId,
-            source_channel: 'instagram_dm',
-            url: classification.url,
-            url_type: classification.type,
-            status: 'processing',
-            webhook_message_id: messageId,
-            raw_webhook_payload: rawPayload,
-        };
-        
-        const { data: insertedLink, error: insertError } = await getSupabase()
-            .from('ingested_links')
-            .insert(ingestedLink)
-            .select()
-            .single();
-        
-        if (insertError) {
-            console.error('[Webhook] Failed to insert ingested_link:', insertError);
-            results.push({ url, success: false, error: 'Database error' });
-            continue;
+        // Call the scrape API (same pipeline as the chat)
+        let scrapedData: { title?: string; content?: string; url?: string } | null = null;
+        try {
+            const scrapeResponse = await fetch(`https://spot-ai-3.vercel.app/api/scrape`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url }),
+            });
+            
+            if (scrapeResponse.ok) {
+                const scrapeResult = await scrapeResponse.json();
+                scrapedData = scrapeResult.data;
+                console.log(`[Webhook] Scraped: title="${scrapedData?.title?.substring(0, 50)}..."`);
+            } else {
+                console.log(`[Webhook] Scrape failed: ${scrapeResponse.status}`);
+            }
+        } catch (scrapeError) {
+            console.error(`[Webhook] Scrape error:`, scrapeError);
         }
         
-        // Fetch metadata
-        const metadata = await fetchMetadata(classification);
-        
-        if (!metadata) {
-            // Update status to error
-            await getSupabase()
-                .from('ingested_links')
-                .update({ 
-                    status: classification.type === 'ig_story' ? 'error_private' : 'error_unfetchable',
-                    error_message: 'Could not fetch metadata',
-                    processed_at: new Date().toISOString(),
-                })
-                .eq('id', insertedLink.id);
-            
+        if (!scrapedData || !scrapedData.title) {
+            console.log('[Webhook] No scraped data, skipping');
             results.push({ url, success: false, error: 'Could not fetch content' });
             continue;
         }
         
-        // Update ingested_link with metadata
-        await getSupabase()
-            .from('ingested_links')
-            .update({ 
-                metadata,
-                status: 'pending',  // Ready for place creation
-            })
-            .eq('id', insertedLink.id);
-        
-        // Create a saved place
-        const placeName = metadata.author 
-            ? `${metadata.title || 'Saved from IG'} (via @${metadata.author})`
-            : metadata.title || 'Saved from Instagram';
+        // Extract place name from scraped content
+        const placeName = scrapedData.title.substring(0, 200);
+        console.log(`[Webhook] Creating place: "${placeName}"`);
         
         const newPlace = {
             id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
             user_id: spotUserId,
-            name: placeName.substring(0, 200),  // Limit length
+            name: placeName,
             type: 'restaurant',  // Default type
-            address: 'New York, NY',  // Default location
-            description: metadata.caption?.substring(0, 500) || null,
-            image_url: metadata.thumbnail || null,
+            address: 'Location TBD',  // Will be updated when user edits
+            description: scrapedData.content?.substring(0, 500) || `Saved from Instagram`,
+            image_url: null,
             source_url: url,
             is_visited: false,
             is_favorite: true,
@@ -596,29 +606,9 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
         
         if (placeError) {
             console.error('[Webhook] Failed to create place:', placeError);
-            
-            await getSupabase()
-                .from('ingested_links')
-                .update({ 
-                    status: 'error_other',
-                    error_message: 'Failed to create place',
-                    processed_at: new Date().toISOString(),
-                })
-                .eq('id', insertedLink.id);
-            
             results.push({ url, success: false, error: 'Failed to save place' });
             continue;
         }
-        
-        // Update ingested_link as saved
-        await getSupabase()
-            .from('ingested_links')
-            .update({ 
-                status: 'saved',
-                saved_place_id: savedPlace.id,
-                processed_at: new Date().toISOString(),
-            })
-            .eq('id', insertedLink.id);
         
         console.log(`[Webhook] Successfully saved place: ${savedPlace.name}`);
         results.push({ url, success: true, name: savedPlace.name });
