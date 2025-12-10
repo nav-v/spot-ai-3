@@ -8,15 +8,8 @@ function getSupabase() {
     if (!supabase) {
         const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
         const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
-        console.log(`[Supabase] Connecting to: ${url.substring(0, 30)}... with key type: ${process.env.SUPABASE_SERVICE_ROLE_KEY ? 'service_role' : 'anon'}`);
-        supabase = createClient(url, key, {
-            db: { schema: 'public' },
-            global: { 
-                fetch: (url, options = {}) => {
-                    return fetch(url, { ...options, signal: AbortSignal.timeout(8000) });
-                }
-            }
-        });
+        console.log(`[Supabase] Init: ${url ? 'URL set' : 'NO URL'}, key: ${key ? (process.env.SUPABASE_SERVICE_ROLE_KEY ? 'service_role' : 'anon') : 'NO KEY'}`);
+        supabase = createClient(url, key);
     }
     return supabase;
 }
