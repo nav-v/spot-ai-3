@@ -291,22 +291,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         // Check if user's Instagram is linked - returns ALL linked accounts
         if (action === 'check_status') {
-            const { data: accounts } = await getSupabase()
+            const { data: accounts, error: statusError } = await getSupabase()
                 .from('instagram_accounts')
                 .select('id, ig_user_id, ig_username, linked_at')
                 .eq('user_id', userId)
                 .eq('is_active', true)
                 .order('linked_at', { ascending: false });
             
+            console.log(`[IG Auth] check_status for user ${userId} - accounts:`, JSON.stringify(accounts), 'error:', statusError);
+            
             if (accounts && accounts.length > 0) {
+                const mapped = accounts.map(a => ({
+                    id: a.id,
+                    igUserId: a.ig_user_id,
+                    username: a.ig_username,
+                    linkedAt: a.linked_at
+                }));
+                console.log('[IG Auth] Returning accounts:', JSON.stringify(mapped));
                 return res.status(200).json({ 
                     linked: true, 
-                    accounts: accounts.map(a => ({
-                        id: a.id,
-                        igUserId: a.ig_user_id,
-                        username: a.ig_username,
-                        linkedAt: a.linked_at
-                    }))
+                    accounts: mapped
                 });
             }
             
@@ -317,7 +321,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (action === 'unlink') {
             const { igUserId, accountId } = req.body;
             
+            console.log(`[IG Auth] Unlink request - userId: ${userId}, accountId: ${accountId}, igUserId: ${igUserId}`);
+            
             if (!igUserId && !accountId) {
+                console.log('[IG Auth] Missing igUserId and accountId');
                 return res.status(400).json({ error: 'Missing igUserId or accountId' });
             }
             
@@ -332,7 +339,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 query = query.eq('ig_user_id', igUserId);
             }
             
-            const { error: unlinkError } = await query;
+            const { data: unlinkResult, error: unlinkError } = await query.select();
+            
+            console.log(`[IG Auth] Unlink result - data:`, JSON.stringify(unlinkResult), 'error:', JSON.stringify(unlinkError));
             
             if (unlinkError) {
                 console.error('[IG Auth] Unlink error:', unlinkError);
