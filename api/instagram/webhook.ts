@@ -215,11 +215,15 @@ async function sendInstagramMessage(recipientId: string, text: string): Promise<
     try {
         console.log(`[IG Send] Sending message to ${recipientId}: "${text.substring(0, 50)}..."`);
         
+        // Use Instagram Graph API endpoint for sending DMs
         const response = await fetch(
-            `https://graph.facebook.com/v19.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
+            `https://graph.instagram.com/v21.0/me/messages`,
             {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${PAGE_ACCESS_TOKEN}`
+                },
                 body: JSON.stringify({
                     recipient: { id: recipientId },
                     message: { text },
@@ -227,9 +231,11 @@ async function sendInstagramMessage(recipientId: string, text: string): Promise<
             }
         );
         
+        const responseText = await response.text();
+        console.log(`[IG Send] Response status: ${response.status}, body: ${responseText}`);
+        
         if (!response.ok) {
-            const errorText = await response.text();
-            console.error('[IG Send] Failed:', errorText);
+            console.error('[IG Send] Failed:', responseText);
             return false;
         }
         
