@@ -17,7 +17,7 @@ function getSupabase() {
 
 const INSTAGRAM_APP_ID = process.env.INSTAGRAM_APP_ID || '';
 const INSTAGRAM_APP_SECRET = process.env.INSTAGRAM_APP_SECRET || '';
-const REDIRECT_URI = process.env.INSTAGRAM_REDIRECT_URI || 'https://your-app.vercel.app/api/instagram/auth';
+const REDIRECT_URI = process.env.INSTAGRAM_REDIRECT_URI || 'https://spot-ai-3.vercel.app/api/instagram/auth';
 
 // ============= TYPES =============
 

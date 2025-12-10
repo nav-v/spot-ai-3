@@ -21,7 +21,7 @@ This guide walks you through setting up the Instagram DM capture feature for Spo
 1. In your app dashboard, go to **Instagram Basic Display** → **Basic Display**
 2. Add your OAuth redirect URI:
    ```
-   https://your-app.vercel.app/api/instagram/auth
+   https://spot-ai-3.vercel.app/api/instagram/auth
    ```
 3. Note your **Instagram App ID** and **Instagram App Secret**
 
@@ -35,7 +35,7 @@ This guide walks you through setting up the Instagram DM capture feature for Spo
 
 1. Go to **Webhooks** in your app dashboard
 2. Subscribe to the **Instagram** product:
-   - Callback URL: `https://your-app.vercel.app/api/instagram/webhook`
+   - Callback URL: `https://spot-ai-3.vercel.app/api/instagram/webhook`
    - Verify Token: Use a secure random string (save it for env vars)
    - Subscribe to: `messages`, `messaging_postbacks`
 
@@ -58,7 +58,7 @@ INSTAGRAM_APP_ID=your_app_id
 INSTAGRAM_APP_SECRET=your_app_secret
 
 # OAuth Redirect URI (your deployed app URL)
-INSTAGRAM_REDIRECT_URI=https://your-app.vercel.app/api/instagram/auth
+INSTAGRAM_REDIRECT_URI=https://spot-ai-3.vercel.app/api/instagram/auth
 
 # Webhook Verification Token (a secret string you choose)
 INSTAGRAM_WEBHOOK_VERIFY_TOKEN=your_verify_token
