@@ -258,14 +258,17 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
         console.log(`[Webhook] Detected verification code: ${code}`);
         
         // Look up the verification code
+        console.log(`[Webhook] Looking up code in database: ${code}`);
         const { data: verification, error: verifyError } = await getSupabase()
             .from('instagram_verification_codes')
             .select('user_id, expires_at, used')
             .eq('code', code)
             .single();
         
+        console.log(`[Webhook] Lookup result - data: ${JSON.stringify(verification)}, error: ${JSON.stringify(verifyError)}`);
+        
         if (verifyError || !verification) {
-            console.log(`[Webhook] Invalid verification code: ${code}`);
+            console.log(`[Webhook] Invalid verification code: ${code}, error: ${JSON.stringify(verifyError)}`);
             await sendInstagramMessage(
                 senderId,
                 `Hmm, that code doesn't look right. 🤔\n\nMake sure you're using the code from the Spot app (format: SPOT-XXXX). Codes expire after 30 minutes!`
@@ -292,6 +295,8 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
         // Get sender's Instagram username (we'll try to fetch it)
         let igUsername = `ig_${senderId}`;
         
+        console.log(`[Webhook] Code valid! Linking IG ${senderId} to Spot user ${verification.user_id}`);
+        
         // Link the Instagram account to the Spot user
         const { error: linkError } = await getSupabase()
             .from('instagram_accounts')
@@ -302,6 +307,8 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
                 is_active: true,
                 linked_at: new Date().toISOString(),
             });
+        
+        console.log(`[Webhook] Insert result - error: ${JSON.stringify(linkError)}`);
         
         if (linkError) {
             // Check if already linked
