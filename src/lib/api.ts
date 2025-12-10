@@ -338,6 +338,115 @@ export const chatApi = {
     },
 };
 
+// ============= INSTAGRAM API =============
+
+export interface InstagramAccount {
+    id: string;
+    userId: string;
+    igUserId: string;
+    igUsername: string;
+    isActive: boolean;
+    linkedAt: string;
+}
+
+export interface IngestedLink {
+    id: string;
+    url: string;
+    urlType: 'ig_reel' | 'ig_post' | 'ig_story' | 'external';
+    status: 'pending' | 'processing' | 'saved' | 'error_unfetchable' | 'error_private' | 'error_other';
+    metadata?: {
+        title?: string;
+        caption?: string;
+        thumbnail?: string;
+        author?: string;
+    };
+    savedPlaceId?: string;
+    createdAt: string;
+}
+
+export const instagramApi = {
+    // Get the OAuth URL to link Instagram account
+    async getAuthUrl(): Promise<{ authUrl: string }> {
+        const userId = getCurrentUserId();
+        if (!userId) throw new Error('Not authenticated');
+
+        const res = await fetch(`${API_BASE}/instagram/auth`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId }),
+        });
+        
+        if (!res.ok) throw new Error('Failed to get Instagram auth URL');
+        return res.json();
+    },
+
+    // Get linked Instagram account for current user
+    async getLinkedAccount(): Promise<InstagramAccount | null> {
+        const userId = getCurrentUserId();
+        if (!userId) return null;
+
+        const { data, error } = await supabase
+            .from('instagram_accounts')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('is_active', true)
+            .single();
+
+        if (error || !data) return null;
+
+        return {
+            id: data.id,
+            userId: data.user_id,
+            igUserId: data.ig_user_id,
+            igUsername: data.ig_username,
+            isActive: data.is_active,
+            linkedAt: data.linked_at,
+        };
+    },
+
+    // Unlink Instagram account
+    async unlinkAccount(): Promise<void> {
+        const userId = getCurrentUserId();
+        if (!userId) throw new Error('Not authenticated');
+
+        const res = await fetch(`${API_BASE}/instagram/auth`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId }),
+        });
+        
+        if (!res.ok) throw new Error('Failed to unlink Instagram');
+    },
+
+    // Get ingested links for current user
+    async getIngestedLinks(limit: number = 50): Promise<IngestedLink[]> {
+        const userId = getCurrentUserId();
+        if (!userId) return [];
+
+        const { data, error } = await supabase
+            .from('ingested_links')
+            .select('*')
+            .eq('spot_user_id', userId)
+            .order('created_at', { ascending: false })
+            .limit(limit);
+
+        if (error) {
+            console.error('Error fetching ingested links:', error);
+            return [];
+        }
+
+        return (data || []).map((link: any) => ({
+            id: link.id,
+            url: link.url,
+            urlType: link.url_type,
+            status: link.status,
+            metadata: link.metadata,
+            savedPlaceId: link.saved_place_id,
+            createdAt: link.created_at,
+        }));
+    },
+};
+
 // Legacy exports for compatibility
 export const setAuthToken = setCurrentUser;
 export const getAuthToken = getCurrentUserId;

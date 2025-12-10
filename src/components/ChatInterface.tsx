@@ -781,47 +781,47 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                       
                       {/* Section Carousel */}
                       <div className="relative w-screen -ml-4">
-                        <DraggableScrollContainer
-                          className="pb-3 flex gap-3 px-4 snap-x snap-mandatory scroll-smooth scrollbar-hide"
-                        >
+                  <DraggableScrollContainer
+                    className="pb-3 flex gap-3 px-4 snap-x snap-mandatory scroll-smooth scrollbar-hide"
+                  >
                           {section.places.map((place, placeIdx) => (
-                            <div key={placeIdx} className="min-w-[65%] sm:min-w-[240px] sm:w-[240px] bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all snap-center flex flex-col">
-                              {/* Image Area */}
-                              <div className="h-36 w-full bg-muted relative overflow-hidden group">
-                                {place.imageUrl ? (
-                                  <img src={place.imageUrl} alt={place.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center bg-secondary/30">
-                                    <MapPin className="w-8 h-8 text-muted-foreground/50" />
-                                  </div>
-                                )}
-                                <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full font-medium">
-                                  {place.location}
-                                </div>
+                      <div key={placeIdx} className="min-w-[65%] sm:min-w-[240px] sm:w-[240px] bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all snap-center flex flex-col">
+                        {/* Image Area */}
+                        <div className="h-36 w-full bg-muted relative overflow-hidden group">
+                          {place.imageUrl ? (
+                            <img src={place.imageUrl} alt={place.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-secondary/30">
+                              <MapPin className="w-8 h-8 text-muted-foreground/50" />
+                            </div>
+                          )}
+                          <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full font-medium">
+                            {place.location}
+                          </div>
+                        </div>
+
+                        {/* Content Area */}
+                        <div className="p-3 flex flex-col flex-1">
+                          <div className="flex justify-between items-start mb-1">
+                            <h3 className="font-semibold text-sm leading-tight text-foreground">{place.name}</h3>
+                            {(place as any).rating && (
+                              <div className="flex items-center gap-0.5 bg-yellow-500/10 text-yellow-600 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                <span>★</span>
+                                <span>{(place as any).rating}</span>
                               </div>
+                            )}
+                          </div>
 
-                              {/* Content Area */}
-                              <div className="p-3 flex flex-col flex-1">
-                                <div className="flex justify-between items-start mb-1">
-                                  <h3 className="font-semibold text-sm leading-tight text-foreground">{place.name}</h3>
-                                  {(place as any).rating && (
-                                    <div className="flex items-center gap-0.5 bg-yellow-500/10 text-yellow-600 px-1.5 py-0.5 rounded text-[10px] font-bold">
-                                      <span>★</span>
-                                      <span>{(place as any).rating}</span>
-                                    </div>
-                                  )}
-                                </div>
+                          {place.location && (
+                            <p className="text-[10px] text-muted-foreground mb-2">📍 {place.location}</p>
+                          )}
 
-                                {place.location && (
-                                  <p className="text-[10px] text-muted-foreground mb-2">📍 {place.location}</p>
-                                )}
+                          <p className="text-xs text-muted-foreground mb-2 flex-1">
+                            {place.description}
+                          </p>
 
-                                <p className="text-xs text-muted-foreground mb-2 flex-1">
-                                  {place.description}
-                                </p>
-
-                                {(place as any).sourceName && (
-                                  <div className="text-[10px] text-muted-foreground mb-2 italic">
+                          {(place as any).sourceName && (
+                            <div className="text-[10px] text-muted-foreground mb-2 italic">
                                     <span>📰 {(place as any).sourceName}: "{(place as any).sourceQuote || 'Highly recommended'}"</span>
                                   </div>
                                 )}
@@ -886,8 +886,8 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                               <div className="flex items-center gap-0.5 bg-yellow-500/10 text-yellow-600 px-1.5 py-0.5 rounded text-[10px] font-bold">
                                 <span>★</span>
                                 <span>{(place as any).rating}</span>
-                              </div>
-                            )}
+                            </div>
+                          )}
                           </div>
 
                           {place.location && (

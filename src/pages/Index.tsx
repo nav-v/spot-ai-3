@@ -86,7 +86,7 @@ const Index = () => {
           // Validate coordinates before setting
           if (typeof lat === 'number' && !isNaN(lat) && typeof lng === 'number' && !isNaN(lng)) {
             setUserLocation({ lat, lng });
-            toast({ title: 'Location found!', description: 'Showing spots near you' });
+          toast({ title: 'Location found!', description: 'Showing spots near you' });
           } else {
             toast({ title: 'Location error', description: 'Invalid coordinates received', variant: 'destructive' });
           }

@@ -1,8 +1,9 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from './AuthContext';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { LogOut, User, Settings, Heart, Utensils, Loader2, Check, X, Camera } from 'lucide-react';
+import { LogOut, User, Settings, Heart, Utensils, Loader2, Check, X, Camera, Instagram, Link2, Unlink } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { instagramApi, InstagramAccount } from '@/lib/api';
 
 interface UserProfileSheetProps {
     open: boolean;
@@ -63,6 +64,11 @@ export function UserProfileSheet({ open, onOpenChange }: UserProfileSheetProps) 
     const [interests, setInterests] = useState<string[]>(user?.preferences?.interests || []);
     const [foodPrefs, setFoodPrefs] = useState<string[]>(user?.preferences?.foodPreferences || []);
 
+    // Instagram linking state
+    const [igAccount, setIgAccount] = useState<InstagramAccount | null>(null);
+    const [igLoading, setIgLoading] = useState(false);
+    const [igError, setIgError] = useState<string | null>(null);
+
     // Sync form state when user data changes
     React.useEffect(() => {
         if (user) {
@@ -74,6 +80,66 @@ export function UserProfileSheet({ open, onOpenChange }: UserProfileSheetProps) 
             setFoodPrefs(user.preferences?.foodPreferences || []);
         }
     }, [user]);
+
+    // Load Instagram account when sheet opens
+    useEffect(() => {
+        if (open && user) {
+            loadInstagramAccount();
+        }
+    }, [open, user]);
+
+    // Check for Instagram OAuth callback result
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const igSuccess = urlParams.get('ig_success');
+        const igUsername = urlParams.get('ig_username');
+        const igErrorParam = urlParams.get('ig_error');
+
+        if (igSuccess === 'true' && igUsername) {
+            toast({ title: `Instagram linked!`, description: `@${igUsername} is now connected to Spot.` });
+            loadInstagramAccount();
+            // Clean up URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+        } else if (igErrorParam) {
+            toast({ title: 'Instagram linking failed', description: decodeURIComponent(igErrorParam), variant: 'destructive' });
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    }, []);
+
+    const loadInstagramAccount = async () => {
+        try {
+            const account = await instagramApi.getLinkedAccount();
+            setIgAccount(account);
+        } catch (error) {
+            console.error('Failed to load Instagram account:', error);
+        }
+    };
+
+    const handleLinkInstagram = async () => {
+        setIgLoading(true);
+        setIgError(null);
+        try {
+            const { authUrl } = await instagramApi.getAuthUrl();
+            // Redirect to Instagram OAuth
+            window.location.href = authUrl;
+        } catch (error: any) {
+            setIgError(error.message || 'Failed to start Instagram linking');
+            toast({ title: 'Error', description: 'Could not start Instagram linking', variant: 'destructive' });
+        }
+        setIgLoading(false);
+    };
+
+    const handleUnlinkInstagram = async () => {
+        setIgLoading(true);
+        try {
+            await instagramApi.unlinkAccount();
+            setIgAccount(null);
+            toast({ title: 'Instagram unlinked', description: 'Your Instagram account has been disconnected.' });
+        } catch (error: any) {
+            toast({ title: 'Error', description: 'Could not unlink Instagram', variant: 'destructive' });
+        }
+        setIgLoading(false);
+    };
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -352,6 +418,78 @@ export function UserProfileSheet({ open, onOpenChange }: UserProfileSheetProps) 
                                     </button>
                                 ))}
                             </div>
+                        </div>
+                    </div>
+
+                    {/* Instagram Linking */}
+                    <div className="space-y-4 pt-4 border-t border-border">
+                        <div className="flex items-center justify-between">
+                            <h3 className="font-medium text-foreground flex items-center gap-2">
+                                <Instagram className="w-4 h-4" />
+                                Instagram Integration
+                            </h3>
+                        </div>
+
+                        <p className="text-sm text-muted-foreground">
+                            Link your Instagram to save places directly from DMs. Just send a Reel or post to our Spot account!
+                        </p>
+
+                        {igAccount ? (
+                            <div className="bg-secondary/50 rounded-lg p-4 space-y-3">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-orange-500 flex items-center justify-center">
+                                        <Instagram className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div>
+                                        <p className="font-medium text-foreground">@{igAccount.igUsername}</p>
+                                        <p className="text-xs text-muted-foreground">
+                                            Linked {new Date(igAccount.linkedAt).toLocaleDateString()}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={handleUnlinkInstagram}
+                                    disabled={igLoading}
+                                    className="w-full py-2 rounded-lg bg-secondary text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-colors flex items-center justify-center gap-2 text-sm"
+                                >
+                                    {igLoading ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                        <>
+                                            <Unlink className="w-4 h-4" />
+                                            Unlink Instagram
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        ) : (
+                            <button
+                                onClick={handleLinkInstagram}
+                                disabled={igLoading}
+                                className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500 text-white font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+                            >
+                                {igLoading ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                    <>
+                                        <Link2 className="w-4 h-4" />
+                                        Link Instagram
+                                    </>
+                                )}
+                            </button>
+                        )}
+
+                        {igError && (
+                            <p className="text-sm text-red-500">{igError}</p>
+                        )}
+
+                        <div className="text-xs text-muted-foreground space-y-1">
+                            <p><strong>How it works:</strong></p>
+                            <ol className="list-decimal list-inside space-y-0.5">
+                                <li>Link your Instagram account above</li>
+                                <li>DM any restaurant Reel or post to @SpotApp</li>
+                                <li>We'll automatically save it to your list!</li>
+                            </ol>
                         </div>
                     </div>
 

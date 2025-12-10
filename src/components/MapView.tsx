@@ -97,9 +97,9 @@ function MapController({
 
   useEffect(() => {
     try {
-      if (selectedPlace?.coordinates) {
-        const { lat, lng } = selectedPlace.coordinates;
-        if (typeof lat === 'number' && !isNaN(lat) && typeof lng === 'number' && !isNaN(lng)) {
+    if (selectedPlace?.coordinates) {
+      const { lat, lng } = selectedPlace.coordinates;
+      if (typeof lat === 'number' && !isNaN(lat) && typeof lng === 'number' && !isNaN(lng)) {
           map.flyTo([lat, lng], 15, { duration: 1 });
         }
       }
@@ -110,9 +110,9 @@ function MapController({
 
   useEffect(() => {
     try {
-      if (userLocation) {
-        const { lat, lng } = userLocation;
-        if (typeof lat === 'number' && !isNaN(lat) && typeof lng === 'number' && !isNaN(lng)) {
+    if (userLocation) {
+      const { lat, lng } = userLocation;
+      if (typeof lat === 'number' && !isNaN(lat) && typeof lng === 'number' && !isNaN(lng)) {
           map.flyTo([lat, lng], 13, { duration: 1 });
         }
       }
