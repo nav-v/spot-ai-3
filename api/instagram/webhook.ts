@@ -29,6 +29,178 @@ function mediaIdToShortcode(instagramId: string): string {
     return shortcode;
 }
 
+// ============= GOOGLE PLACES API =============
+// Same as chat.ts - search and enrich place data
+const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY || '';
+
+async function searchGooglePlaces(placeName: string, location: string = 'New York, NY') {
+    if (!GOOGLE_PLACES_API_KEY) {
+        console.log('[Google Places] No API key configured');
+        return null;
+    }
+
+    try {
+        const searchUrl = `https://places.googleapis.com/v1/places:searchText`;
+        console.log(`[Google Places] Searching for: "${placeName}" in ${location}`);
+
+        const searchResponse = await fetch(searchUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+                'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.rating,places.websiteUri,places.types,places.photos,places.editorialSummary,places.location'
+            },
+            body: JSON.stringify({
+                textQuery: `${placeName} ${location}`,
+                maxResultCount: 1
+            })
+        });
+
+        const searchData = await searchResponse.json();
+
+        if (!searchData.places || searchData.places.length === 0) {
+            console.log(`[Google Places] No results found for "${placeName}"`);
+            return null;
+        }
+
+        const place = searchData.places[0];
+        console.log(`[Google Places] Found: ${place.displayName?.text}`);
+
+        // Get photo URL if available
+        let imageUrl = '';
+        if (place.photos && place.photos.length > 0) {
+            const photoName = place.photos[0].name;
+            imageUrl = `https://places.googleapis.com/v1/${photoName}/media?maxHeightPx=400&key=${GOOGLE_PLACES_API_KEY}`;
+        }
+
+        // Determine type
+        let type = 'restaurant';
+        const types = place.types || [];
+        if (types.some((t: string) => t.includes('bar'))) type = 'bar';
+        else if (types.some((t: string) => t.includes('cafe'))) type = 'cafe';
+        else if (types.some((t: string) => t.includes('museum') || t.includes('art_gallery'))) type = 'attraction';
+        else if (types.some((t: string) => t.includes('park'))) type = 'attraction';
+
+        return {
+            name: place.displayName?.text || placeName,
+            type,
+            address: place.formattedAddress || location,
+            description: place.editorialSummary?.text || '',
+            sourceUrl: place.websiteUri || `https://www.google.com/maps/place/?q=place_id:${place.id}`,
+            imageUrl,
+            rating: place.rating || null,
+            coordinates: place.location ? { lat: place.location.latitude, lng: place.location.longitude } : null
+        };
+    } catch (error) {
+        console.error('[Google Places] API error:', error);
+        return null;
+    }
+}
+
+// Use Gemini AI to extract place name from Instagram caption
+// Same approach as chat.ts
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+
+async function extractPlaceNameWithAI(caption: string): Promise<{ placeName: string; location: string } | null> {
+    if (!GEMINI_API_KEY) {
+        console.log('[AI Extract] No Gemini API key, falling back to regex');
+        return extractPlaceNameFromCaptionRegex(caption);
+    }
+    
+    try {
+        console.log(`[AI Extract] Analyzing caption: "${caption.substring(0, 100)}..."`);
+        
+        const prompt = `You are extracting restaurant/place information from an Instagram caption.
+
+Caption: "${caption}"
+
+Extract the restaurant or place name being mentioned. Look for:
+- @mentions (often the restaurant's Instagram handle)
+- Hashtags with the place name
+- Direct mentions in the text
+
+Also try to determine the location/city if mentioned.
+
+Respond in JSON format ONLY, no other text:
+{"placeName": "Restaurant Name", "location": "City, State"}
+
+If you can't identify a specific place, respond with:
+{"placeName": null, "location": null}`;
+
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': GEMINI_API_KEY,
+                },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: {
+                        temperature: 0.1,
+                        maxOutputTokens: 200,
+                    }
+                }),
+            }
+        );
+        
+        if (!response.ok) {
+            console.log(`[AI Extract] Gemini API error: ${response.status}`);
+            return extractPlaceNameFromCaptionRegex(caption);
+        }
+        
+        const data = await response.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        console.log(`[AI Extract] Gemini response: ${text}`);
+        
+        // Parse JSON response
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (parsed.placeName) {
+                console.log(`[AI Extract] Found place: "${parsed.placeName}" in "${parsed.location || 'unknown'}"`);
+                return {
+                    placeName: parsed.placeName,
+                    location: parsed.location || 'New York, NY'
+                };
+            }
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('[AI Extract] Error:', error);
+        return extractPlaceNameFromCaptionRegex(caption);
+    }
+}
+
+// Fallback regex-based extraction
+function extractPlaceNameFromCaptionRegex(caption: string): { placeName: string; location: string } | null {
+    // Try to find @mentions (often the restaurant's handle)
+    const mentionMatch = caption.match(/@([a-zA-Z0-9_]+)/);
+    if (mentionMatch) {
+        const handle = mentionMatch[1]
+            .replace(/_/g, ' ')
+            .replace(/([a-z])([A-Z])/g, '$1 $2');
+        console.log(`[Regex Extract] Found @mention: ${mentionMatch[1]} -> "${handle}"`);
+        return { placeName: handle, location: 'New York, NY' };
+    }
+    
+    // Try hashtags
+    const hashtagMatches = caption.match(/#([a-zA-Z0-9]+)/g) || [];
+    const genericTags = ['food', 'foodie', 'nyc', 'eats', 'yum', 'delicious', 'restaurant', 'cafe', 'bar'];
+    for (const tag of hashtagMatches) {
+        const cleanTag = tag.slice(1).toLowerCase();
+        if (!genericTags.some(g => cleanTag.includes(g)) && cleanTag.length > 3) {
+            const placeName = cleanTag.replace(/([a-z])([A-Z])/g, '$1 $2');
+            console.log(`[Regex Extract] Found hashtag: ${tag} -> "${placeName}"`);
+            return { placeName, location: 'New York, NY' };
+        }
+    }
+    
+    return null;
+}
+
 // Construct Instagram URL from attachment data
 function getInstagramUrlFromAttachment(attachment: any): string | null {
     const payload = attachment.payload as any;
@@ -644,24 +816,75 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
             continue;
         }
         
-        // Use the title we found
-        const placeName = author ? `${title.substring(0, 150)} (via @${author})` : title.substring(0, 200);
-        console.log(`[Webhook] Creating place: "${placeName}"`);
+        // Step 1: Use AI to extract place name from caption
+        console.log(`[Webhook] Extracting place name from caption with AI...`);
+        const extracted = await extractPlaceNameWithAI(title);
         
-        const newPlace = {
-            id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-            user_id: spotUserId,
-            name: placeName,
-            type: 'restaurant',  // Default type
-            address: 'Location TBD',  // Will be updated when user edits
-            description: author ? `Shared by @${author} on Instagram` : `Saved from Instagram`,
-            image_url: thumbnail || null,
-            source_url: url,
-            is_visited: false,
-            is_favorite: true,
-            notes: `Saved from Instagram DM`,
-            created_at: new Date().toISOString(),
-        };
+        let newPlace: any;
+        
+        if (extracted) {
+            // Step 2: Search Google Places with the extracted name
+            console.log(`[Webhook] Searching Google Places for: "${extracted.placeName}" in ${extracted.location}`);
+            const placeData = await searchGooglePlaces(extracted.placeName, extracted.location);
+            
+            if (placeData) {
+                // Step 3: Use enriched data from Google Places
+                console.log(`[Webhook] Found on Google Places: "${placeData.name}" at ${placeData.address}`);
+                newPlace = {
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                    user_id: spotUserId,
+                    name: placeData.name,
+                    type: placeData.type,
+                    address: placeData.address,
+                    description: placeData.description || (author ? `Shared by @${author} on Instagram` : `Saved from Instagram`),
+                    image_url: placeData.imageUrl || thumbnail || null,
+                    source_url: placeData.sourceUrl || url,
+                    coordinates: placeData.coordinates,
+                    rating: placeData.rating,
+                    is_visited: false,
+                    is_favorite: true,
+                    notes: `Saved from Instagram DM${author ? ` (via @${author})` : ''}`,
+                    created_at: new Date().toISOString(),
+                };
+            } else {
+                // Google Places didn't find it, use extracted name
+                console.log(`[Webhook] Not found on Google Places, using extracted name`);
+                newPlace = {
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                    user_id: spotUserId,
+                    name: extracted.placeName,
+                    type: 'restaurant',
+                    address: extracted.location,
+                    description: author ? `Shared by @${author} on Instagram` : `Saved from Instagram`,
+                    image_url: thumbnail || null,
+                    source_url: url,
+                    is_visited: false,
+                    is_favorite: true,
+                    notes: `Saved from Instagram DM`,
+                    created_at: new Date().toISOString(),
+                };
+            }
+        } else {
+            // Couldn't extract place name, use raw caption
+            console.log(`[Webhook] Couldn't extract place name, using caption`);
+            const placeName = author ? `${title.substring(0, 150)} (via @${author})` : title.substring(0, 200);
+            newPlace = {
+                id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                user_id: spotUserId,
+                name: placeName,
+                type: 'restaurant',
+                address: 'Location TBD',
+                description: author ? `Shared by @${author} on Instagram` : `Saved from Instagram`,
+                image_url: thumbnail || null,
+                source_url: url,
+                is_visited: false,
+                is_favorite: true,
+                notes: `Saved from Instagram DM`,
+                created_at: new Date().toISOString(),
+            };
+        }
+        
+        console.log(`[Webhook] Creating place: "${newPlace.name}" at "${newPlace.address}"`);
         
         const { data: savedPlace, error: placeError } = await getSupabase()
             .from('places')
