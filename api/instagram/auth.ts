@@ -13,10 +13,11 @@ function getSupabase() {
     return supabase;
 }
 
-// ============= INSTAGRAM OAUTH CONFIG =============
+// ============= FACEBOOK/INSTAGRAM OAUTH CONFIG =============
+// Using Facebook Login for Business to get Instagram account access
 
-const INSTAGRAM_APP_ID = process.env.INSTAGRAM_APP_ID || '';
-const INSTAGRAM_APP_SECRET = process.env.INSTAGRAM_APP_SECRET || '';
+const FACEBOOK_APP_ID = process.env.FACEBOOK_APP_ID || process.env.INSTAGRAM_APP_ID || '';
+const FACEBOOK_APP_SECRET = process.env.FACEBOOK_APP_SECRET || process.env.INSTAGRAM_APP_SECRET || '';
 const REDIRECT_URI = process.env.INSTAGRAM_REDIRECT_URI || 'https://spot-ai-3.vercel.app/api/instagram/auth';
 
 // ============= TYPES =============
@@ -39,22 +40,21 @@ interface InstagramUserResponse {
 
 // ============= HELPERS =============
 
-async function exchangeCodeForToken(code: string): Promise<InstagramTokenResponse | null> {
+async function exchangeCodeForToken(code: string): Promise<{ access_token: string } | null> {
     try {
-        const response = await fetch('https://api.instagram.com/oauth/access_token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({
-                client_id: INSTAGRAM_APP_ID,
-                client_secret: INSTAGRAM_APP_SECRET,
-                grant_type: 'authorization_code',
-                redirect_uri: REDIRECT_URI,
-                code: code,
-            }),
-        });
+        // Use Facebook OAuth token endpoint
+        const url = new URL('https://graph.facebook.com/v19.0/oauth/access_token');
+        url.searchParams.set('client_id', FACEBOOK_APP_ID);
+        url.searchParams.set('client_secret', FACEBOOK_APP_SECRET);
+        url.searchParams.set('redirect_uri', REDIRECT_URI);
+        url.searchParams.set('code', code);
+        
+        console.log('[IG Auth] Exchanging code for token...');
+        const response = await fetch(url.toString());
         
         if (!response.ok) {
-            console.error('[IG Auth] Token exchange failed:', await response.text());
+            const errorText = await response.text();
+            console.error('[IG Auth] Token exchange failed:', errorText);
             return null;
         }
         
@@ -88,18 +88,54 @@ async function exchangeForLongLivedToken(shortLivedToken: string): Promise<Insta
 
 async function getInstagramUser(accessToken: string): Promise<InstagramUserResponse | null> {
     try {
-        const url = new URL('https://graph.instagram.com/me');
-        url.searchParams.set('fields', 'id,username');
-        url.searchParams.set('access_token', accessToken);
+        // First get Facebook Pages the user manages
+        const pagesUrl = new URL('https://graph.facebook.com/v19.0/me/accounts');
+        pagesUrl.searchParams.set('fields', 'id,name,instagram_business_account');
+        pagesUrl.searchParams.set('access_token', accessToken);
         
-        const response = await fetch(url.toString());
+        console.log('[IG Auth] Getting Facebook Pages...');
+        const pagesResponse = await fetch(pagesUrl.toString());
         
-        if (!response.ok) {
-            console.error('[IG Auth] Get user failed:', await response.text());
+        if (!pagesResponse.ok) {
+            console.error('[IG Auth] Get pages failed:', await pagesResponse.text());
             return null;
         }
         
-        return await response.json();
+        const pagesData = await pagesResponse.json();
+        console.log('[IG Auth] Pages data:', JSON.stringify(pagesData));
+        
+        // Find a page with an Instagram Business Account
+        const pageWithIG = pagesData.data?.find((page: any) => page.instagram_business_account);
+        
+        if (!pageWithIG || !pageWithIG.instagram_business_account) {
+            console.error('[IG Auth] No Instagram Business Account found on any Page');
+            // Try getting Instagram account directly for personal accounts
+            const igUrl = new URL('https://graph.instagram.com/me');
+            igUrl.searchParams.set('fields', 'id,username');
+            igUrl.searchParams.set('access_token', accessToken);
+            
+            const igResponse = await fetch(igUrl.toString());
+            if (igResponse.ok) {
+                return await igResponse.json();
+            }
+            return null;
+        }
+        
+        // Get Instagram account details
+        const igAccountId = pageWithIG.instagram_business_account.id;
+        const igUrl = new URL(`https://graph.facebook.com/v19.0/${igAccountId}`);
+        igUrl.searchParams.set('fields', 'id,username');
+        igUrl.searchParams.set('access_token', accessToken);
+        
+        console.log('[IG Auth] Getting Instagram account details...');
+        const igResponse = await fetch(igUrl.toString());
+        
+        if (!igResponse.ok) {
+            console.error('[IG Auth] Get IG account failed:', await igResponse.text());
+            return null;
+        }
+        
+        return await igResponse.json();
     } catch (error) {
         console.error('[IG Auth] Get user error:', error);
         return null;
@@ -150,32 +186,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         console.log(`[IG Auth] Processing OAuth callback for Spot user: ${spotUserId}`);
         
-        // Step 1: Exchange code for short-lived token
+        // Step 1: Exchange code for access token
         const tokenResponse = await exchangeCodeForToken(code);
         if (!tokenResponse) {
             return res.redirect(`/?ig_error=${encodeURIComponent('Failed to exchange authorization code')}`);
         }
         
-        console.log(`[IG Auth] Got short-lived token for IG user: ${tokenResponse.user_id}`);
+        console.log(`[IG Auth] Got access token`);
         
-        // Step 2: Exchange for long-lived token (60 days)
+        // Step 2: Try to get long-lived token (optional, fails gracefully)
+        let finalToken = tokenResponse.access_token;
+        let expiresIn = 60 * 60; // Default 1 hour
+        
         const longLivedToken = await exchangeForLongLivedToken(tokenResponse.access_token);
-        if (!longLivedToken) {
-            return res.redirect(`/?ig_error=${encodeURIComponent('Failed to get long-lived token')}`);
+        if (longLivedToken) {
+            finalToken = longLivedToken.access_token;
+            expiresIn = longLivedToken.expires_in;
+            console.log(`[IG Auth] Got long-lived token, expires in: ${expiresIn}s`);
+        } else {
+            console.log(`[IG Auth] Using short-lived token (long-lived exchange failed)`);
         }
         
-        console.log(`[IG Auth] Got long-lived token, expires in: ${longLivedToken.expires_in}s`);
-        
         // Step 3: Get Instagram user info
-        const igUser = await getInstagramUser(longLivedToken.access_token);
+        const igUser = await getInstagramUser(finalToken);
         if (!igUser) {
-            return res.redirect(`/?ig_error=${encodeURIComponent('Failed to get Instagram user info')}`);
+            return res.redirect(`/?ig_error=${encodeURIComponent('No Instagram Business account found. Make sure your Instagram is connected to a Facebook Page.')}`);
         }
         
         console.log(`[IG Auth] Instagram user: @${igUser.username} (${igUser.id})`);
         
         // Step 4: Store in database
-        const expiresAt = new Date(Date.now() + longLivedToken.expires_in * 1000);
+        const expiresAt = new Date(Date.now() + expiresIn * 1000);
         
         const { error: dbError } = await getSupabase()
             .from('instagram_accounts')
@@ -183,9 +224,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 user_id: spotUserId,
                 ig_user_id: igUser.id,
                 ig_username: igUser.username,
-                access_token: longLivedToken.access_token,
+                access_token: finalToken,
                 token_expires_at: expiresAt.toISOString(),
-                scopes: ['instagram_basic', 'instagram_manage_messages'],
+                scopes: ['instagram_basic', 'instagram_manage_messages', 'pages_messaging'],
                 is_active: true,
                 updated_at: new Date().toISOString(),
             }, {
@@ -211,17 +252,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(400).json({ error: 'Missing userId' });
         }
         
+        if (!FACEBOOK_APP_ID) {
+            return res.status(500).json({ error: 'Instagram integration not configured. Missing FACEBOOK_APP_ID.' });
+        }
+        
         // Encode user ID in state for callback
         const state = Buffer.from(JSON.stringify({ userId })).toString('base64');
         
-        // Build Instagram OAuth URL
-        const authUrl = new URL('https://api.instagram.com/oauth/authorize');
-        authUrl.searchParams.set('client_id', INSTAGRAM_APP_ID);
+        // Build Facebook OAuth URL (gets access to Instagram Business accounts)
+        const authUrl = new URL('https://www.facebook.com/v19.0/dialog/oauth');
+        authUrl.searchParams.set('client_id', FACEBOOK_APP_ID);
         authUrl.searchParams.set('redirect_uri', REDIRECT_URI);
-        authUrl.searchParams.set('scope', 'instagram_basic,instagram_manage_messages');
+        // Request permissions for Instagram messaging and pages
+        authUrl.searchParams.set('scope', 'instagram_basic,instagram_manage_messages,pages_show_list,pages_messaging,pages_read_engagement');
         authUrl.searchParams.set('response_type', 'code');
         authUrl.searchParams.set('state', state);
         
+        console.log('[IG Auth] Generated OAuth URL for user:', userId);
         return res.status(200).json({ authUrl: authUrl.toString() });
     }
     
