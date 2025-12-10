@@ -9,14 +9,23 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABA
 
 // ============= INSTAGRAM ID TO SHORTCODE =============
 // Convert Instagram media ID to shortcode for constructing URLs
-function mediaIdToShortcode(mediaId: string): string {
+// Based on: https://github.com/slang800/instagram-id-to-url-segment
+function mediaIdToShortcode(instagramId: string): string {
+    // Handle underscore-separated IDs (e.g. "12345_6789")
+    const id = instagramId.toString().split('_')[0];
+    
+    // BigInt required because Instagram IDs are too large for Number
+    let bigId = BigInt(id);
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-    let id = BigInt(mediaId);
     let shortcode = '';
-    while (id > 0n) {
-        shortcode = alphabet[Number(id % 64n)] + shortcode;
-        id = id / 64n;
+    
+    // Convert Base10 ID to Base64 Shortcode
+    while (bigId > 0n) {
+        const remainder = bigId % 64n;
+        bigId = bigId / 64n;
+        shortcode = alphabet.charAt(Number(remainder)) + shortcode;
     }
+    
     return shortcode;
 }
 
@@ -24,14 +33,30 @@ function mediaIdToShortcode(mediaId: string): string {
 function getInstagramUrlFromAttachment(attachment: any): string | null {
     const payload = attachment.payload as any;
     
-    if (attachment.type === 'ig_reel' && payload?.reel_video_id) {
-        const shortcode = mediaIdToShortcode(payload.reel_video_id);
-        return `https://www.instagram.com/reel/${shortcode}/`;
+    // 1. First check if URL is directly provided
+    if (payload?.url && payload.url.includes('instagram.com')) {
+        console.log(`[Webhook] Using direct URL from payload`);
+        return payload.url;
     }
     
-    if (attachment.type === 'share' && payload?.url) {
-        // Direct URL share
-        return payload.url;
+    // 2. For Reels - check both 'id' and 'reel_video_id' fields
+    if (attachment.type === 'ig_reel') {
+        const mediaId = payload?.id || payload?.reel_video_id;
+        if (mediaId) {
+            const shortcode = mediaIdToShortcode(mediaId);
+            const url = `https://www.instagram.com/reel/${shortcode}/`;
+            console.log(`[Webhook] Converted ID ${mediaId} to shortcode ${shortcode}`);
+            return url;
+        }
+    }
+    
+    // 3. For shares/posts
+    if (attachment.type === 'share') {
+        const mediaId = payload?.id;
+        if (mediaId) {
+            const shortcode = mediaIdToShortcode(mediaId);
+            return `https://www.instagram.com/p/${shortcode}/`;
+        }
     }
     
     return null;
