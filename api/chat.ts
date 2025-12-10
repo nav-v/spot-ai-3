@@ -298,23 +298,37 @@ async function executeSmartResearch(
         
         console.log(`[Smart Research] research_food: query="${tool.query}", location subreddits: ${locationSubreddits.join(', ') || 'none'}`);
         
+        // Reddit search
         promises.push(
             (async () => {
-                // Reddit search
-                const redditResults = await searchRedditMultiQuery(queries, baseSubreddits, locationSubreddits);
-                results.redditResults.push(...redditResults);
-                
-                // Web search for Eater + NYT
-                const webQueries = [
-                    `${tool.query} site:eater.com NYC`,
-                    `${tool.query} site:nytimes.com/section/food NYC`
-                ];
-                for (const wq of webQueries) {
-                    const webResult = await singleGeminiSearch(wq);
-                    results.webResults.text += webResult.text + '\n';
-                    results.webResults.textWithCitations += webResult.textWithCitations + '\n';
-                    results.webResults.sources.push(...webResult.sources);
-                    results.webResults.citations.push(...webResult.citations);
+                try {
+                    const redditResults = await searchRedditMultiQuery(queries, baseSubreddits, locationSubreddits);
+                    console.log(`[Smart Research] Food Reddit returned ${redditResults.length} posts`);
+                    results.redditResults.push(...redditResults);
+                } catch (e: any) {
+                    console.error(`[Smart Research] Food Reddit failed:`, e.message);
+                }
+            })()
+        );
+        
+        // Web search for Eater + NYT
+        promises.push(
+            (async () => {
+                try {
+                    const webQueries = [
+                        `${tool.query} site:eater.com NYC`,
+                        `${tool.query} site:nytimes.com/section/food NYC`
+                    ];
+                    for (const wq of webQueries) {
+                        const webResult = await singleGeminiSearch(wq);
+                        results.webResults.text += webResult.text + '\n';
+                        results.webResults.textWithCitations += webResult.textWithCitations + '\n';
+                        results.webResults.sources.push(...webResult.sources);
+                        results.webResults.citations.push(...webResult.citations);
+                    }
+                    console.log(`[Smart Research] Food web search returned ${results.webResults.sources.length} sources`);
+                } catch (e: any) {
+                    console.error(`[Smart Research] Food web search failed:`, e.message);
                 }
             })()
         );
@@ -332,8 +346,13 @@ async function executeSmartResearch(
         
         promises.push(
             (async () => {
-                const redditResults = await searchRedditMultiQuery(queries, baseSubreddits, locationSubreddits);
-                results.redditResults.push(...redditResults);
+                try {
+                    const redditResults = await searchRedditMultiQuery(queries, baseSubreddits, locationSubreddits);
+                    console.log(`[Smart Research] Places Reddit returned ${redditResults.length} posts`);
+                    results.redditResults.push(...redditResults);
+                } catch (e: any) {
+                    console.error(`[Smart Research] Places Reddit failed:`, e.message);
+                }
             })()
         );
     }
@@ -348,15 +367,29 @@ async function executeSmartResearch(
         
         console.log(`[Smart Research] research_events: query="${tool.query}", dates="${tool.dates || 'any'}"`);
         
+        // Reddit search for events (separate promise with error handling)
         promises.push(
             (async () => {
-                // Reddit search for events
-                const redditResults = await searchRedditMultiQuery(queries, baseSubreddits, locationSubreddits);
-                results.redditResults.push(...redditResults);
-                
-                // Scrape ALL event sites in parallel
-                const eventScrape = await scrapeEventSites(tool.dates);
-                results.eventScrapedContent = eventScrape.rawContent;
+                try {
+                    const redditResults = await searchRedditMultiQuery(queries, baseSubreddits, locationSubreddits);
+                    console.log(`[Smart Research] Events Reddit returned ${redditResults.length} posts`);
+                    results.redditResults.push(...redditResults);
+                } catch (e: any) {
+                    console.error(`[Smart Research] Events Reddit failed:`, e.message);
+                }
+            })()
+        );
+        
+        // Scrape event sites (separate promise with error handling)
+        promises.push(
+            (async () => {
+                try {
+                    const eventScrape = await scrapeEventSites(tool.dates);
+                    console.log(`[Smart Research] Event scrape returned ${eventScrape.rawContent.length} chars`);
+                    results.eventScrapedContent = eventScrape.rawContent;
+                } catch (e: any) {
+                    console.error(`[Smart Research] Event scrape failed:`, e.message);
+                }
             })()
         );
     }
@@ -368,7 +401,12 @@ async function executeSmartResearch(
         
         promises.push(
             (async () => {
-                results.tasteProfile = await analyseSavedPlaces(userPlaces, 'food', userPreferences);
+                try {
+                    results.tasteProfile = await analyseSavedPlaces(userPlaces, 'food', userPreferences);
+                    console.log(`[Smart Research] Food taste analysis: ${results.tasteProfile?.inferences?.length || 0} inferences`);
+                } catch (e: any) {
+                    console.error(`[Smart Research] Food taste analysis failed:`, e.message);
+                }
             })()
         );
     }
@@ -380,19 +418,25 @@ async function executeSmartResearch(
         
         promises.push(
             (async () => {
-                const seeProfile = await analyseSavedPlaces(userPlaces, 'see', userPreferences);
-                // Merge with existing taste profile or set as new
-                if (results.tasteProfile) {
-                    results.tasteProfile.inferences.push(...seeProfile.inferences);
-                    results.tasteProfile.vibePreferences.push(...seeProfile.vibePreferences);
-                } else {
-                    results.tasteProfile = seeProfile;
+                try {
+                    const seeProfile = await analyseSavedPlaces(userPlaces, 'see', userPreferences);
+                    console.log(`[Smart Research] See taste analysis: ${seeProfile?.inferences?.length || 0} inferences`);
+                    // Merge with existing taste profile or set as new
+                    if (results.tasteProfile) {
+                        results.tasteProfile.inferences.push(...seeProfile.inferences);
+                        results.tasteProfile.vibePreferences.push(...seeProfile.vibePreferences);
+                    } else {
+                        results.tasteProfile = seeProfile;
+                    }
+                } catch (e: any) {
+                    console.error(`[Smart Research] See taste analysis failed:`, e.message);
                 }
             })()
         );
     }
     
     // Execute all in parallel
+    console.log(`[Smart Research] Starting ${promises.length} parallel tasks...`);
     await Promise.all(promises);
     
     console.log(`[Smart Research] Completed. Reddit: ${results.redditResults.length}, Web sources: ${results.webResults.sources.length}, Event content: ${results.eventScrapedContent.length} chars, Taste inferences: ${results.tasteProfile?.inferences?.length || 0}`);
@@ -1754,6 +1798,16 @@ Assistant:`;
                     searchResults += '\n=== SCRAPED EVENT SITES (theskint, timeout, ra.co, etc.) ===\n' + researchResults.eventScrapedContent;
                 }
 
+                // Log what we got
+                console.log(`[Smart Research] Final searchResults length: ${searchResults.length} chars`);
+                console.log(`[Smart Research] Reddit: ${researchResults.redditResults.length}, Web: ${researchResults.webResults.sources.length}, Events: ${researchResults.eventScrapedContent.length}`);
+                
+                // If no research data, add a note
+                if (!searchResults.trim()) {
+                    console.log('[Smart Research] WARNING: No research data collected!');
+                    searchResults = '(No research data available - provide general NYC recommendations based on the query)';
+                }
+
                 // Build taste profile context for the recommender
                 let tasteContext = '';
                 if (researchResults.tasteProfile && researchResults.tasteProfile.inferences.length > 0) {
@@ -1772,69 +1826,41 @@ Neighborhood Preferences: ${researchResults.tasteProfile.locationPreferences.joi
 `;
                 }
 
-                // Build the RECOMMENDER prompt (Gemini 2.5 Pro)
-                const recommenderPrompt = `${fullPrompt}\n${content}\n\n[SYSTEM: Research complete. You are now a RECOMMENDER SYSTEM.
+                // Build LEAN recommender prompt - NO full system prompt!
+                const userQuery = messages[messages.length - 1]?.content || 'recommendations';
+                
+                // Build compact taste summary
+                const tasteSummary = researchResults.tasteProfile ? 
+                    `USER PREFERENCES (inferred from saved places):
+- Vibes: ${researchResults.tasteProfile.vibePreferences?.slice(0, 5).join(', ') || 'varied'}
+- Cuisines: ${researchResults.tasteProfile.cuisinePreferences?.slice(0, 5).join(', ') || 'varied'}
+- Price: ${researchResults.tasteProfile.priceRange || 'mixed'}
+- Key traits: ${researchResults.tasteProfile.inferences?.slice(0, 5).join('; ') || 'none'}` : '';
 
-${tasteContext}
+                const recommenderPrompt = `You are Spot, a fun NYC recommendation assistant. Extract the BEST places from research.
 
-RESEARCH DATA:
-${searchResults}
+USER ASKED: "${userQuery}"
+${tasteSummary}
 
-YOUR TASK:
-1. Parse the research results and identify the BEST places to recommend
-2. PRIORITIZE places that are mentioned MULTIPLE TIMES across different sources (cross-corroboration = higher confidence)
-3. Consider the user's taste profile BUT don't over-emphasize it - a highly recommended place should still be included even if it's outside their usual preferences
-4. If user asked for personalized recommendations, lean more on taste profile
-5. If user asked for "best" or "top" places, lean more on cross-corroboration and upvotes
+=== RESEARCH DATA ===
+${searchResults || '(No data found - use general NYC knowledge)'}
+=== END ===
 
-CROSS-CORROBORATION SCORING:
-- Place mentioned in 3+ sources = HIGHLY RECOMMENDED, prioritize this
-- Place mentioned in 2 sources = Good recommendation
-- Place mentioned in 1 source with high upvotes = Include if relevant
-- Place with conflicting reviews = Mention the controversy if recommending
+INSTRUCTIONS:
+- Return 7-10 places total
+- Prioritize places mentioned in MULTIPLE sources (cross-corroboration)
+- Write a 1-sentence playful intro, then output JSON
 
 OUTPUT FORMAT:
-Write a SHORT intro (1-2 sentences with Spot's personality), then output the JSON action with SECTIONS.
-DO NOT list places in text - only in the JSON!
+{"action": "recommendPlaces", "sections": [
+  {"title": "🔥 Top Picks", "intro": "Brief reason...", "places": [
+    {"name": "Place Name", "type": "restaurant|bar|cafe|activity|attraction", "description": "1-2 sentences why", "location": "Neighborhood", "sourceName": "r/AskNYC", "sourceQuote": "actual quote from research"}
+  ]}
+]}
 
-{
-  "action": "recommendPlaces",
-  "sections": [
-    {
-      "title": "🔥 The Heavy Hitters",
-      "intro": "These spots kept coming up again and again across Reddit, Eater, and more - when multiple sources agree, you know it's legit.",
-      "places": [
-        {
-          "name": "Place Name",
-          "type": "restaurant",
-          "description": "Why it's recommended - mention if cross-corroborated!",
-          "location": "Neighborhood",
-          "sourceName": "r/FoodNYC, Eater",
-          "sourceQuote": "Actual quote from research",
-          "mentionCount": 3
-        }
-      ]
-    },
-    {
-      "title": "✨ Matches Your Vibe",
-      "intro": "Based on your saved spots, these feel very you - similar energy to places you already love.",
-      "places": [...]
-    }
-  ]
-}
-
-SECTION SUGGESTIONS based on tools used (${researchResults.toolsUsed.join(', ')}):
-${researchResults.toolsUsed.includes('research_food') ? '- "🔥 The Heavy Hitters" (cross-corroborated), "✨ Hidden Gems", "💰 Budget-Friendly"' : ''}
-${researchResults.toolsUsed.includes('research_events') ? '- "📅 This Weekend", "🎭 Shows & Performances", "🎪 Markets & Pop-ups"' : ''}
-${researchResults.toolsUsed.includes('research_places') ? '- "🗽 Must-See", "🌿 Outdoors", "🎨 Culture & Arts"' : ''}
-${researchResults.tasteProfile ? '- "💜 Matches Your Taste" (personalized picks)' : ''}
-
-RULES:
-- MAX 10 places total across all sections
-- If a place is cross-corroborated, include "sourceName" with multiple sources (e.g., "r/FoodNYC, Eater")
-- Include actual quotes from the research in sourceQuote
-- DO NOT make up quotes or sources
-- Keep text response SHORT - just a fun intro!]`;
+${researchResults.toolsUsed.includes('research_events') ? 'Use sections: "📅 This Weekend", "🎭 Shows & Performances", "🎪 Markets & Pop-ups"' : ''}
+${researchResults.toolsUsed.includes('research_food') ? 'Use sections: "🔥 Top Picks", "✨ Hidden Gems", "💜 Matches Your Vibe"' : ''}
+${researchResults.toolsUsed.includes('research_places') ? 'Use sections: "🗽 Must-See", "🎨 Culture & Arts"' : ''}`;
 
                 // Call Gemini 2.5 Pro as the recommender
                 console.log('[Smart Research] Calling Gemini 2.5 Pro recommender...');
