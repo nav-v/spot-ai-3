@@ -9,7 +9,14 @@ function getSupabase() {
         const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
         const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
         console.log(`[Supabase] Connecting to: ${url.substring(0, 30)}... with key type: ${process.env.SUPABASE_SERVICE_ROLE_KEY ? 'service_role' : 'anon'}`);
-        supabase = createClient(url, key);
+        supabase = createClient(url, key, {
+            db: { schema: 'public' },
+            global: { 
+                fetch: (url, options = {}) => {
+                    return fetch(url, { ...options, signal: AbortSignal.timeout(8000) });
+                }
+            }
+        });
     }
     return supabase;
 }
@@ -352,12 +359,15 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
     // ============= REGULAR MESSAGE PROCESSING =============
     
     // Look up Spot user by Instagram ID
+    console.log(`[Webhook] Looking up account for IG user ${senderId}...`);
     const { data: igAccount, error: lookupError } = await getSupabase()
         .from('instagram_accounts')
         .select('user_id, ig_username')
         .eq('ig_user_id', senderId)
         .eq('is_active', true)
         .single();
+    
+    console.log(`[Webhook] Account lookup result - data: ${JSON.stringify(igAccount)}, error: ${JSON.stringify(lookupError)}`);
     
     if (lookupError || !igAccount) {
         console.log(`[Webhook] No linked Spot account for IG user ${senderId}`);
