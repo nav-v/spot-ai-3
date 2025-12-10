@@ -3,13 +3,120 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 // ============= LAZY INITIALIZATION =============
 
+// Direct REST API calls to avoid client library issues
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
+
+async function supabaseQuery(table: string, params: { 
+    select?: string; 
+    eq?: Record<string, string>;
+    single?: boolean;
+}): Promise<{ data: any; error: any }> {
+    try {
+        const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
+        if (params.select) url.searchParams.set('select', params.select);
+        if (params.eq) {
+            for (const [key, value] of Object.entries(params.eq)) {
+                url.searchParams.set(key, `eq.${value}`);
+            }
+        }
+        
+        console.log(`[DB] Query: ${table}, params: ${JSON.stringify(params)}`);
+        
+        const response = await fetch(url.toString(), {
+            headers: {
+                'apikey': SUPABASE_KEY,
+                'Authorization': `Bearer ${SUPABASE_KEY}`,
+                'Content-Type': 'application/json',
+            },
+        });
+        
+        const data = await response.json();
+        console.log(`[DB] Response: ${JSON.stringify(data).substring(0, 200)}`);
+        
+        if (!response.ok) {
+            return { data: null, error: data };
+        }
+        
+        if (params.single) {
+            return { data: Array.isArray(data) ? data[0] || null : data, error: null };
+        }
+        return { data, error: null };
+    } catch (error: any) {
+        console.error(`[DB] Error:`, error.message);
+        return { data: null, error: { message: error.message } };
+    }
+}
+
+async function supabaseInsert(table: string, record: Record<string, any>): Promise<{ error: any }> {
+    try {
+        const url = `${SUPABASE_URL}/rest/v1/${table}`;
+        console.log(`[DB] Insert into ${table}:`, JSON.stringify(record).substring(0, 100));
+        
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_KEY,
+                'Authorization': `Bearer ${SUPABASE_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=minimal',
+            },
+            body: JSON.stringify(record),
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            console.error(`[DB] Insert error:`, error);
+            return { error };
+        }
+        
+        console.log(`[DB] Insert success`);
+        return { error: null };
+    } catch (error: any) {
+        console.error(`[DB] Insert exception:`, error.message);
+        return { error: { message: error.message } };
+    }
+}
+
+async function supabaseUpdate(table: string, updates: Record<string, any>, eq: Record<string, string>): Promise<{ error: any }> {
+    try {
+        const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
+        for (const [key, value] of Object.entries(eq)) {
+            url.searchParams.set(key, `eq.${value}`);
+        }
+        
+        console.log(`[DB] Update ${table}:`, JSON.stringify(updates));
+        
+        const response = await fetch(url.toString(), {
+            method: 'PATCH',
+            headers: {
+                'apikey': SUPABASE_KEY,
+                'Authorization': `Bearer ${SUPABASE_KEY}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=minimal',
+            },
+            body: JSON.stringify(updates),
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            console.error(`[DB] Update error:`, error);
+            return { error };
+        }
+        
+        console.log(`[DB] Update success`);
+        return { error: null };
+    } catch (error: any) {
+        console.error(`[DB] Update exception:`, error.message);
+        return { error: { message: error.message } };
+    }
+}
+
+// Keep old client for compatibility but we'll use REST API
 let supabase: SupabaseClient;
 function getSupabase() {
     if (!supabase) {
-        const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
-        const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '';
-        console.log(`[Supabase] Init: ${url ? 'URL set' : 'NO URL'}, key: ${key ? (process.env.SUPABASE_SERVICE_ROLE_KEY ? 'service_role' : 'anon') : 'NO KEY'}`);
-        supabase = createClient(url, key);
+        supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
     }
     return supabase;
 }
@@ -264,13 +371,13 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
         const code = codeMatch[0];
         console.log(`[Webhook] Detected verification code: ${code}`);
         
-        // Look up the verification code
+        // Look up the verification code using REST API
         console.log(`[Webhook] Looking up code in database: ${code}`);
-        const { data: verification, error: verifyError } = await getSupabase()
-            .from('instagram_verification_codes')
-            .select('user_id, expires_at, used')
-            .eq('code', code)
-            .single();
+        const { data: verification, error: verifyError } = await supabaseQuery('instagram_verification_codes', {
+            select: 'user_id,expires_at,used',
+            eq: { code },
+            single: true,
+        });
         
         console.log(`[Webhook] Lookup result - data: ${JSON.stringify(verification)}, error: ${JSON.stringify(verifyError)}`);
         
@@ -304,16 +411,14 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
         
         console.log(`[Webhook] Code valid! Linking IG ${senderId} to Spot user ${verification.user_id}`);
         
-        // Link the Instagram account to the Spot user
-        const { error: linkError } = await getSupabase()
-            .from('instagram_accounts')
-            .insert({
-                user_id: verification.user_id,
-                ig_user_id: senderId,
-                ig_username: igUsername,
-                is_active: true,
-                linked_at: new Date().toISOString(),
-            });
+        // Link the Instagram account to the Spot user using REST API
+        const { error: linkError } = await supabaseInsert('instagram_accounts', {
+            user_id: verification.user_id,
+            ig_user_id: senderId,
+            ig_username: igUsername,
+            is_active: true,
+            linked_at: new Date().toISOString(),
+        });
         
         console.log(`[Webhook] Insert result - error: ${JSON.stringify(linkError)}`);
         
@@ -335,10 +440,7 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
         }
         
         // Mark code as used
-        await getSupabase()
-            .from('instagram_verification_codes')
-            .update({ used: true })
-            .eq('code', code);
+        await supabaseUpdate('instagram_verification_codes', { used: true }, { code });
         
         console.log(`[Webhook] Successfully linked IG ${senderId} to Spot user ${verification.user_id}`);
         
@@ -351,14 +453,13 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
     
     // ============= REGULAR MESSAGE PROCESSING =============
     
-    // Look up Spot user by Instagram ID
+    // Look up Spot user by Instagram ID using REST API
     console.log(`[Webhook] Looking up account for IG user ${senderId}...`);
-    const { data: igAccount, error: lookupError } = await getSupabase()
-        .from('instagram_accounts')
-        .select('user_id, ig_username')
-        .eq('ig_user_id', senderId)
-        .eq('is_active', true)
-        .single();
+    const { data: igAccount, error: lookupError } = await supabaseQuery('instagram_accounts', {
+        select: 'user_id,ig_username',
+        eq: { ig_user_id: senderId, is_active: 'true' },
+        single: true,
+    });
     
     console.log(`[Webhook] Account lookup result - data: ${JSON.stringify(igAccount)}, error: ${JSON.stringify(lookupError)}`);
     
