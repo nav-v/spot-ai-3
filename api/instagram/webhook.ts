@@ -97,35 +97,38 @@ async function searchGooglePlaces(placeName: string, location: string = 'New Yor
     }
 }
 
-// Use Gemini AI to extract place name from Instagram caption
-// Same approach as chat.ts
+// Use Gemini AI to extract ALL place names from Instagram caption
+// Same approach as chat.ts - returns array of places
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
-async function extractPlaceNameWithAI(caption: string): Promise<{ placeName: string; location: string } | null> {
+interface ExtractedPlace {
+    name: string;
+    location: string;
+    isEvent?: boolean;
+}
+
+async function extractPlacesWithAI(caption: string): Promise<ExtractedPlace[]> {
     if (!GEMINI_API_KEY) {
         console.log('[AI Extract] No Gemini API key, falling back to regex');
-        return extractPlaceNameFromCaptionRegex(caption);
+        const single = extractPlaceNameFromCaptionRegex(caption);
+        return single ? [{ name: single.placeName, location: single.location }] : [];
     }
     
     try {
         console.log(`[AI Extract] Analyzing caption: "${caption.substring(0, 100)}..."`);
         
-        const prompt = `You are extracting restaurant/place information from an Instagram caption.
+        // Same prompt as chat.ts for consistency
+        const prompt = `Identify all restaurant/place/event names mentioned in this social media caption: "${caption}". 
+Return ONLY a JSON object: { "places": [{ "name": "...", "location": "...", "isEvent": boolean }] }
+If no places found, return { "places": [] }.
 
-Caption: "${caption}"
-
-Extract the restaurant or place name being mentioned. Look for:
-- @mentions (often the restaurant's Instagram handle)
-- Hashtags with the place name
+Look for:
+- @mentions (often the restaurant's Instagram handle like @fontysdeli -> "Fonty's Deli")
+- Hashtags with place names (like #fontysdeli -> "Fonty's Deli")
 - Direct mentions in the text
+- Multiple places if mentioned
 
-Also try to determine the location/city if mentioned.
-
-Respond in JSON format ONLY, no other text:
-{"placeName": "Restaurant Name", "location": "City, State"}
-
-If you can't identify a specific place, respond with:
-{"placeName": null, "location": null}`;
+Default location to "New York, NY" if not specified.`;
 
         const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`,
@@ -139,7 +142,7 @@ If you can't identify a specific place, respond with:
                     contents: [{ parts: [{ text: prompt }] }],
                     generationConfig: {
                         temperature: 0.1,
-                        maxOutputTokens: 200,
+                        maxOutputTokens: 500,
                     }
                 }),
             }
@@ -147,30 +150,34 @@ If you can't identify a specific place, respond with:
         
         if (!response.ok) {
             console.log(`[AI Extract] Gemini API error: ${response.status}`);
-            return extractPlaceNameFromCaptionRegex(caption);
+            const single = extractPlaceNameFromCaptionRegex(caption);
+            return single ? [{ name: single.placeName, location: single.location }] : [];
         }
         
         const data = await response.json();
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         console.log(`[AI Extract] Gemini response: ${text}`);
         
-        // Parse JSON response
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        // Parse JSON response - handle markdown code blocks
+        const cleanJson = text.replace(/```json|```/g, '').trim();
+        const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
             const parsed = JSON.parse(jsonMatch[0]);
-            if (parsed.placeName) {
-                console.log(`[AI Extract] Found place: "${parsed.placeName}" in "${parsed.location || 'unknown'}"`);
-                return {
-                    placeName: parsed.placeName,
-                    location: parsed.location || 'New York, NY'
-                };
+            if (parsed.places && parsed.places.length > 0) {
+                console.log(`[AI Extract] Found ${parsed.places.length} places:`, parsed.places.map((p: any) => p.name));
+                return parsed.places.map((p: any) => ({
+                    name: p.name,
+                    location: p.location || 'New York, NY',
+                    isEvent: p.isEvent || false
+                }));
             }
         }
         
-        return null;
+        return [];
     } catch (error) {
         console.error('[AI Extract] Error:', error);
-        return extractPlaceNameFromCaptionRegex(caption);
+        const single = extractPlaceNameFromCaptionRegex(caption);
+        return single ? [{ name: single.placeName, location: single.location }] : [];
     }
 }
 
@@ -816,59 +823,15 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
             continue;
         }
         
-        // Step 1: Use AI to extract place name from caption
-        console.log(`[Webhook] Extracting place name from caption with AI...`);
-        const extracted = await extractPlaceNameWithAI(title);
+        // Step 1: Use AI to extract ALL places from caption (same as chat.ts)
+        console.log(`[Webhook] Extracting places from caption with AI...`);
+        const extractedPlaces = await extractPlacesWithAI(title);
         
-        let newPlace: any;
-        
-        if (extracted) {
-            // Step 2: Search Google Places with the extracted name
-            console.log(`[Webhook] Searching Google Places for: "${extracted.placeName}" in ${extracted.location}`);
-            const placeData = await searchGooglePlaces(extracted.placeName, extracted.location);
-            
-            if (placeData) {
-                // Step 3: Use enriched data from Google Places
-                console.log(`[Webhook] Found on Google Places: "${placeData.name}" at ${placeData.address}`);
-                newPlace = {
-                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-                    user_id: spotUserId,
-                    name: placeData.name,
-                    type: placeData.type,
-                    address: placeData.address,
-                    description: placeData.description || (author ? `Shared by @${author} on Instagram` : `Saved from Instagram`),
-                    image_url: placeData.imageUrl || thumbnail || null,
-                    source_url: placeData.sourceUrl || url,
-                    coordinates: placeData.coordinates,
-                    rating: placeData.rating,
-                    is_visited: false,
-                    is_favorite: true,
-                    notes: `Saved from Instagram DM${author ? ` (via @${author})` : ''}`,
-                    created_at: new Date().toISOString(),
-                };
-            } else {
-                // Google Places didn't find it, use extracted name
-                console.log(`[Webhook] Not found on Google Places, using extracted name`);
-                newPlace = {
-                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-                    user_id: spotUserId,
-                    name: extracted.placeName,
-                    type: 'restaurant',
-                    address: extracted.location,
-                    description: author ? `Shared by @${author} on Instagram` : `Saved from Instagram`,
-                    image_url: thumbnail || null,
-                    source_url: url,
-                    is_visited: false,
-                    is_favorite: true,
-                    notes: `Saved from Instagram DM`,
-                    created_at: new Date().toISOString(),
-                };
-            }
-        } else {
-            // Couldn't extract place name, use raw caption
-            console.log(`[Webhook] Couldn't extract place name, using caption`);
+        if (extractedPlaces.length === 0) {
+            // Couldn't extract any places, save with raw caption
+            console.log(`[Webhook] Couldn't extract any places, saving with caption`);
             const placeName = author ? `${title.substring(0, 150)} (via @${author})` : title.substring(0, 200);
-            newPlace = {
+            const newPlace = {
                 id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
                 user_id: spotUserId,
                 name: placeName,
@@ -882,24 +845,85 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
                 notes: `Saved from Instagram DM`,
                 created_at: new Date().toISOString(),
             };
-        }
-        
-        console.log(`[Webhook] Creating place: "${newPlace.name}" at "${newPlace.address}"`);
-        
-        const { data: savedPlace, error: placeError } = await getSupabase()
-            .from('places')
-            .insert(newPlace)
-            .select()
-            .single();
-        
-        if (placeError) {
-            console.error('[Webhook] Failed to create place:', placeError);
-            results.push({ url, success: false, error: 'Failed to save place' });
+            
+            const { data: savedPlace, error: placeError } = await getSupabase()
+                .from('places')
+                .insert(newPlace)
+                .select()
+                .single();
+            
+            if (placeError) {
+                results.push({ url, success: false, error: 'Failed to save place' });
+            } else {
+                results.push({ url, success: true, name: savedPlace.name });
+            }
             continue;
         }
         
-        console.log(`[Webhook] Successfully saved place: ${savedPlace.name}`);
-        results.push({ url, success: true, name: savedPlace.name });
+        // Step 2: Process EACH extracted place (like chat.ts)
+        console.log(`[Webhook] Processing ${extractedPlaces.length} extracted places...`);
+        
+        for (const extracted of extractedPlaces) {
+            // Search Google Places with the extracted name
+            console.log(`[Webhook] Searching Google Places for: "${extracted.name}" in ${extracted.location}`);
+            const placeData = await searchGooglePlaces(extracted.name, extracted.location);
+            
+            let newPlace: any;
+            
+            if (placeData) {
+                // Use enriched data from Google Places
+                console.log(`[Webhook] Found on Google Places: "${placeData.name}" at ${placeData.address}`);
+                newPlace = {
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                    user_id: spotUserId,
+                    name: placeData.name,
+                    type: extracted.isEvent ? 'activity' : placeData.type,
+                    address: placeData.address,
+                    description: placeData.description || (author ? `Shared by @${author} on Instagram` : `Saved from Instagram`),
+                    image_url: placeData.imageUrl || thumbnail || null,
+                    source_url: placeData.sourceUrl || url,
+                    coordinates: placeData.coordinates,
+                    rating: placeData.rating,
+                    is_visited: false,
+                    is_favorite: true,
+                    notes: `Saved from Instagram DM${author ? ` (via @${author})` : ''}`,
+                    created_at: new Date().toISOString(),
+                };
+            } else {
+                // Google Places didn't find it, use extracted name
+                console.log(`[Webhook] Not found on Google Places, using extracted name: "${extracted.name}"`);
+                newPlace = {
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                    user_id: spotUserId,
+                    name: extracted.name,
+                    type: extracted.isEvent ? 'activity' : 'restaurant',
+                    address: extracted.location,
+                    description: author ? `Shared by @${author} on Instagram` : `Saved from Instagram`,
+                    image_url: thumbnail || null,
+                    source_url: url,
+                    is_visited: false,
+                    is_favorite: true,
+                    notes: `Saved from Instagram DM`,
+                    created_at: new Date().toISOString(),
+                };
+            }
+            
+            console.log(`[Webhook] Creating place: "${newPlace.name}" at "${newPlace.address}"`);
+            
+            const { data: savedPlace, error: placeError } = await getSupabase()
+                .from('places')
+                .insert(newPlace)
+                .select()
+                .single();
+            
+            if (placeError) {
+                console.error('[Webhook] Failed to create place:', placeError);
+                results.push({ url, success: false, name: extracted.name, error: 'Failed to save place' });
+            } else {
+                console.log(`[Webhook] Successfully saved place: ${savedPlace.name}`);
+                results.push({ url, success: true, name: savedPlace.name });
+            }
+        }
     }
     
     // Send acknowledgment DM
