@@ -23,22 +23,22 @@ async function supabaseQuery(table: string, params: {
         
         console.log(`[DB] Query: ${table}, params: ${JSON.stringify(params)}`);
         console.log(`[DB] URL: ${url.toString().substring(0, 80)}...`);
-        console.log(`[DB] Key present: ${SUPABASE_KEY ? 'yes (' + SUPABASE_KEY.substring(0, 20) + '...)' : 'NO'}`);
-        console.log(`[DB] Fetching...`);
+        console.log(`[DB] Key present: ${SUPABASE_KEY ? 'yes' : 'NO'}`);
         
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        
-        const response = await fetch(url.toString(), {
+        // Try with a Promise.race timeout
+        const fetchPromise = fetch(url.toString(), {
             headers: {
                 'apikey': SUPABASE_KEY,
                 'Authorization': `Bearer ${SUPABASE_KEY}`,
-                'Content-Type': 'application/json',
             },
-            signal: controller.signal,
         });
         
-        clearTimeout(timeoutId);
+        const timeoutPromise = new Promise<Response>((_, reject) => {
+            setTimeout(() => reject(new Error('Fetch timeout after 4s')), 4000);
+        });
+        
+        console.log(`[DB] Starting fetch race...`);
+        const response = await Promise.race([fetchPromise, timeoutPromise]);
         console.log(`[DB] Got response: ${response.status}`);
         
         const data = await response.json();
@@ -686,31 +686,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         console.log('[Webhook] Received event:', JSON.stringify(payload).substring(0, 500));
         
-        // Must respond 200 quickly to Meta
-        res.status(200).send('EVENT_RECEIVED');
-        
-        // Process asynchronously
+        // Process BEFORE responding (Vercel kills function after response)
         try {
-            if (payload.object !== 'instagram') {
-                console.log('[Webhook] Ignoring non-Instagram event:', payload.object);
-                return;
-            }
-            
-            for (const entry of payload.entry) {
-                if (!entry.messaging) continue;
-                
-                for (const message of entry.messaging) {
-                    if (message.message) {
-                        await processIncomingMessage(message, payload);
+            if (payload.object === 'instagram') {
+                for (const entry of payload.entry) {
+                    if (!entry.messaging) continue;
+                    
+                    for (const message of entry.messaging) {
+                        if (message.message) {
+                            await processIncomingMessage(message, payload);
+                        }
                     }
                 }
+            } else {
+                console.log('[Webhook] Ignoring non-Instagram event:', payload.object);
             }
         } catch (error: any) {
             console.error('[Webhook] Processing error:', error);
-            await addToDeadLetterQueue(payload, error.message || 'Unknown error');
+            // Don't await DLQ - just log
+            addToDeadLetterQueue(payload, error.message || 'Unknown error').catch(console.error);
         }
         
-        return;
+        // Respond AFTER processing
+        console.log('[Webhook] Processing complete, responding 200');
+        return res.status(200).send('EVENT_RECEIVED');
     }
 
     return res.status(405).json({ error: 'Method not allowed' });
