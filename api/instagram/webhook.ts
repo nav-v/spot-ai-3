@@ -550,18 +550,28 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
         urls.push(url);
     }
     
-    // Convert Instagram attachments to real Instagram URLs
+    // Convert Instagram attachments to real Instagram URLs, also capture titles
+    interface UrlWithTitle { url: string; title?: string; }
+    const urlsWithTitles: UrlWithTitle[] = urls.map(u => ({ url: u }));
+    
     if (message.message?.attachments) {
         for (const attachment of message.message.attachments) {
             const instagramUrl = getInstagramUrlFromAttachment(attachment);
             if (instagramUrl) {
                 console.log(`[Webhook] Converted attachment to URL: ${instagramUrl}`);
-                urls.push(instagramUrl);
+                const payload = attachment.payload as any;
+                urlsWithTitles.push({ 
+                    url: instagramUrl, 
+                    title: payload?.title // Instagram provides the title!
+                });
             }
         }
     }
     
-    if (urls.length === 0) {
+    // Clear the original urls array since we're using urlsWithTitles
+    urls.length = 0;
+    
+    if (urlsWithTitles.length === 0) {
         console.log('[Webhook] No URLs found in message');
         await sendInstagramMessage(
             senderId,
@@ -570,42 +580,72 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
         return;
     }
     
-    console.log(`[Webhook] Found ${urls.length} URLs to process: ${urls.join(', ')}`);
+    console.log(`[Webhook] Found ${urlsWithTitles.length} URLs to process`);
     
     // Process each URL through the scrape pipeline
     const results: Array<{ url: string; success: boolean; name?: string; error?: string }> = [];
     
-    for (const url of urls) {
-        console.log(`[Webhook] Processing URL: ${url}`);
+    for (const { url, title: attachmentTitle } of urlsWithTitles) {
+        console.log(`[Webhook] Processing URL: ${url}, attachment title: "${attachmentTitle?.substring(0, 50) || 'none'}..."`);
         
-        // Call the scrape API (same pipeline as the chat)
-        let scrapedData: { title?: string; content?: string; url?: string } | null = null;
-        try {
-            const scrapeResponse = await fetch(`https://spot-ai-3.vercel.app/api/scrape`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url }),
-            });
-            
-            if (scrapeResponse.ok) {
-                const scrapeResult = await scrapeResponse.json();
-                scrapedData = scrapeResult.data;
-                console.log(`[Webhook] Scraped: title="${scrapedData?.title?.substring(0, 50)}..."`);
-            } else {
-                console.log(`[Webhook] Scrape failed: ${scrapeResponse.status}`);
+        // Try Instagram oEmbed API first (free, no API key needed)
+        let title: string | null = null;
+        let author: string | null = null;
+        let thumbnail: string | null = null;
+        
+        if (url.includes('instagram.com')) {
+            try {
+                const oembedUrl = `https://api.instagram.com/oembed/?url=${encodeURIComponent(url)}`;
+                console.log(`[Webhook] Fetching oEmbed: ${oembedUrl}`);
+                
+                const oembedResponse = await fetch(oembedUrl);
+                if (oembedResponse.ok) {
+                    const oembedData = await oembedResponse.json();
+                    title = oembedData.title;
+                    author = oembedData.author_name;
+                    thumbnail = oembedData.thumbnail_url;
+                    console.log(`[Webhook] oEmbed success: title="${title?.substring(0, 50)}...", author="${author}"`);
+                } else {
+                    console.log(`[Webhook] oEmbed failed: ${oembedResponse.status}`);
+                }
+            } catch (oembedError) {
+                console.error(`[Webhook] oEmbed error:`, oembedError);
             }
-        } catch (scrapeError) {
-            console.error(`[Webhook] Scrape error:`, scrapeError);
         }
         
-        if (!scrapedData || !scrapedData.title) {
-            console.log('[Webhook] No scraped data, skipping');
+        // Fallback to attachment title if oEmbed failed
+        if (!title && attachmentTitle) {
+            title = attachmentTitle;
+            console.log(`[Webhook] Using attachment title as fallback: "${title?.substring(0, 50)}..."`);
+        }
+        
+        // Fallback to Firecrawl scrape for non-Instagram URLs
+        if (!title && !url.includes('instagram.com')) {
+            try {
+                const scrapeResponse = await fetch(`https://spot-ai-3.vercel.app/api/scrape`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url }),
+                });
+                
+                if (scrapeResponse.ok) {
+                    const scrapeResult = await scrapeResponse.json();
+                    title = scrapeResult.data?.title;
+                    console.log(`[Webhook] Scraped: title="${title?.substring(0, 50)}..."`);
+                }
+            } catch (scrapeError) {
+                console.error(`[Webhook] Scrape error:`, scrapeError);
+            }
+        }
+        
+        if (!title) {
+            console.log('[Webhook] No title found, skipping');
             results.push({ url, success: false, error: 'Could not fetch content' });
             continue;
         }
         
-        // Extract place name from scraped content
-        const placeName = scrapedData.title.substring(0, 200);
+        // Use the title we found
+        const placeName = author ? `${title.substring(0, 150)} (via @${author})` : title.substring(0, 200);
         console.log(`[Webhook] Creating place: "${placeName}"`);
         
         const newPlace = {
@@ -614,8 +654,8 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
             name: placeName,
             type: 'restaurant',  // Default type
             address: 'Location TBD',  // Will be updated when user edits
-            description: scrapedData.content?.substring(0, 500) || `Saved from Instagram`,
-            image_url: null,
+            description: author ? `Shared by @${author} on Instagram` : `Saved from Instagram`,
+            image_url: thumbnail || null,
             source_url: url,
             is_visited: false,
             is_favorite: true,
