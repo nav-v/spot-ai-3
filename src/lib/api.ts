@@ -342,11 +342,15 @@ export const chatApi = {
 
 export interface InstagramAccount {
     id: string;
-    userId: string;
     igUserId: string;
-    igUsername: string;
-    isActive: boolean;
+    username: string;
     linkedAt: string;
+}
+
+export interface VerificationCode {
+    code: string;
+    expiresAt: string;
+    instructions: string;
 }
 
 export interface IngestedLink {
@@ -365,54 +369,47 @@ export interface IngestedLink {
 }
 
 export const instagramApi = {
-    // Get the OAuth URL to link Instagram account
-    async getAuthUrl(): Promise<{ authUrl: string }> {
+    // Generate a verification code for DM-based linking
+    async generateCode(): Promise<VerificationCode> {
         const userId = getCurrentUserId();
         if (!userId) throw new Error('Not authenticated');
 
         const res = await fetch(`${API_BASE}/instagram/auth`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId }),
+            body: JSON.stringify({ userId, action: 'generate_code' }),
         });
         
-        if (!res.ok) throw new Error('Failed to get Instagram auth URL');
+        if (!res.ok) throw new Error('Failed to generate verification code');
         return res.json();
     },
 
-    // Get linked Instagram account for current user
-    async getLinkedAccount(): Promise<InstagramAccount | null> {
+    // Get all linked Instagram accounts for current user
+    async getLinkedAccounts(): Promise<InstagramAccount[]> {
         const userId = getCurrentUserId();
-        if (!userId) return null;
+        if (!userId) return [];
 
-        const { data, error } = await supabase
-            .from('instagram_accounts')
-            .select('*')
-            .eq('user_id', userId)
-            .eq('is_active', true)
-            .single();
-
-        if (error || !data) return null;
-
-        return {
-            id: data.id,
-            userId: data.user_id,
-            igUserId: data.ig_user_id,
-            igUsername: data.ig_username,
-            isActive: data.is_active,
-            linkedAt: data.linked_at,
-        };
+        const res = await fetch(`${API_BASE}/instagram/auth`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, action: 'check_status' }),
+        });
+        
+        if (!res.ok) return [];
+        
+        const data = await res.json();
+        return data.accounts || [];
     },
 
-    // Unlink Instagram account
-    async unlinkAccount(): Promise<void> {
+    // Unlink a specific Instagram account
+    async unlinkAccount(accountId: string): Promise<void> {
         const userId = getCurrentUserId();
         if (!userId) throw new Error('Not authenticated');
 
         const res = await fetch(`${API_BASE}/instagram/auth`, {
-            method: 'DELETE',
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId }),
+            body: JSON.stringify({ userId, action: 'unlink', accountId }),
         });
         
         if (!res.ok) throw new Error('Failed to unlink Instagram');

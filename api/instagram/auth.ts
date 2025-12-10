@@ -13,12 +13,17 @@ function getSupabase() {
     return supabase;
 }
 
-// ============= FACEBOOK/INSTAGRAM OAUTH CONFIG =============
-// Using Facebook Login for Business to get Instagram account access
+// ============= VERIFICATION CODE SYSTEM =============
+// Simple code-based linking: User gets a code from Spot, DMs it to @save.this.spot
 
-const FACEBOOK_APP_ID = process.env.FACEBOOK_APP_ID || process.env.INSTAGRAM_APP_ID || '';
-const FACEBOOK_APP_SECRET = process.env.FACEBOOK_APP_SECRET || process.env.INSTAGRAM_APP_SECRET || '';
-const REDIRECT_URI = process.env.INSTAGRAM_REDIRECT_URI || 'https://spot-ai-3.vercel.app/api/instagram/auth';
+function generateVerificationCode(): string {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Avoid confusing chars like 0/O, 1/I
+    let code = 'SPOT-';
+    for (let i = 0; i < 4; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+}
 
 // ============= TYPES =============
 
@@ -244,32 +249,101 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.redirect(`/?ig_success=true&ig_username=${encodeURIComponent(igUser.username)}`);
     }
     
-    // ============= POST: Generate OAuth URL =============
+    // ============= POST: Handle Various Actions =============
     if (req.method === 'POST') {
-        const { userId } = req.body;
+        const { userId, action } = req.body;
         
         if (!userId) {
             return res.status(400).json({ error: 'Missing userId' });
         }
         
-        if (!FACEBOOK_APP_ID) {
-            return res.status(500).json({ error: 'Instagram integration not configured. Missing FACEBOOK_APP_ID.' });
+        // Generate a verification code for DM-based linking
+        if (action === 'generate_code' || !action) {
+            const code = generateVerificationCode();
+            const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+            
+            // Store the pending verification
+            const { error: insertError } = await getSupabase()
+                .from('instagram_verification_codes')
+                .upsert({
+                    user_id: userId,
+                    code: code,
+                    expires_at: expiresAt.toISOString(),
+                    used: false,
+                }, {
+                    onConflict: 'user_id',
+                });
+            
+            if (insertError) {
+                console.error('[IG Auth] Failed to store verification code:', insertError);
+                // If table doesn't exist, just return the code anyway (for testing)
+                console.log('[IG Auth] Returning code anyway for user:', userId);
+            }
+            
+            console.log(`[IG Auth] Generated code ${code} for user ${userId}`);
+            
+            return res.status(200).json({ 
+                code,
+                expiresAt: expiresAt.toISOString(),
+                instructions: `DM this code to @save.this.spot on Instagram to link your account!`
+            });
         }
         
-        // Encode user ID in state for callback
-        const state = Buffer.from(JSON.stringify({ userId })).toString('base64');
+        // Check if user's Instagram is linked - returns ALL linked accounts
+        if (action === 'check_status') {
+            const { data: accounts } = await getSupabase()
+                .from('instagram_accounts')
+                .select('id, ig_user_id, ig_username, linked_at')
+                .eq('user_id', userId)
+                .eq('is_active', true)
+                .order('linked_at', { ascending: false });
+            
+            if (accounts && accounts.length > 0) {
+                return res.status(200).json({ 
+                    linked: true, 
+                    accounts: accounts.map(a => ({
+                        id: a.id,
+                        igUserId: a.ig_user_id,
+                        username: a.ig_username,
+                        linkedAt: a.linked_at
+                    }))
+                });
+            }
+            
+            return res.status(200).json({ linked: false, accounts: [] });
+        }
         
-        // Build Facebook OAuth URL (gets access to Instagram Business accounts)
-        const authUrl = new URL('https://www.facebook.com/v19.0/dialog/oauth');
-        authUrl.searchParams.set('client_id', FACEBOOK_APP_ID);
-        authUrl.searchParams.set('redirect_uri', REDIRECT_URI);
-        // Request permissions for Instagram messaging and pages
-        authUrl.searchParams.set('scope', 'instagram_basic,instagram_manage_messages,pages_show_list,pages_messaging,pages_read_engagement');
-        authUrl.searchParams.set('response_type', 'code');
-        authUrl.searchParams.set('state', state);
+        // Unlink a specific Instagram account
+        if (action === 'unlink') {
+            const { igUserId, accountId } = req.body;
+            
+            if (!igUserId && !accountId) {
+                return res.status(400).json({ error: 'Missing igUserId or accountId' });
+            }
+            
+            let query = getSupabase()
+                .from('instagram_accounts')
+                .update({ is_active: false, updated_at: new Date().toISOString() })
+                .eq('user_id', userId);
+            
+            if (accountId) {
+                query = query.eq('id', accountId);
+            } else if (igUserId) {
+                query = query.eq('ig_user_id', igUserId);
+            }
+            
+            const { error: unlinkError } = await query;
+            
+            if (unlinkError) {
+                console.error('[IG Auth] Unlink error:', unlinkError);
+                return res.status(500).json({ error: 'Failed to unlink account' });
+            }
+            
+            console.log(`[IG Auth] Unlinked Instagram account for user ${userId}`);
+            return res.status(200).json({ success: true });
+        }
         
-        console.log('[IG Auth] Generated OAuth URL for user:', userId);
-        return res.status(200).json({ authUrl: authUrl.toString() });
+        return res.status(400).json({ error: 'Invalid action' });
     }
     
     // ============= DELETE: Unlink Instagram =============

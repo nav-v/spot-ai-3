@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from './AuthContext';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { LogOut, User, Settings, Heart, Utensils, Loader2, Check, X, Camera, Instagram, Link2, Unlink } from 'lucide-react';
+import { LogOut, User, Settings, Heart, Utensils, Loader2, Check, X, Camera, Instagram, Link2, Unlink, Copy } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { instagramApi, InstagramAccount } from '@/lib/api';
 
@@ -64,10 +64,11 @@ export function UserProfileSheet({ open, onOpenChange }: UserProfileSheetProps) 
     const [interests, setInterests] = useState<string[]>(user?.preferences?.interests || []);
     const [foodPrefs, setFoodPrefs] = useState<string[]>(user?.preferences?.foodPreferences || []);
 
-    // Instagram linking state
-    const [igAccount, setIgAccount] = useState<InstagramAccount | null>(null);
+    // Instagram linking state - now supports multiple accounts
+    const [igAccounts, setIgAccounts] = useState<InstagramAccount[]>([]);
     const [igLoading, setIgLoading] = useState(false);
-    const [igError, setIgError] = useState<string | null>(null);
+    const [verificationCode, setVerificationCode] = useState<string | null>(null);
+    const [codeExpiry, setCodeExpiry] = useState<Date | null>(null);
 
     // Sync form state when user data changes
     React.useEffect(() => {
@@ -81,64 +82,52 @@ export function UserProfileSheet({ open, onOpenChange }: UserProfileSheetProps) 
         }
     }, [user]);
 
-    // Load Instagram account when sheet opens
+    // Load Instagram accounts when sheet opens
     useEffect(() => {
         if (open && user) {
-            loadInstagramAccount();
+            loadInstagramAccounts();
         }
     }, [open, user]);
 
-    // Check for Instagram OAuth callback result
-    useEffect(() => {
-        const urlParams = new URLSearchParams(window.location.search);
-        const igSuccess = urlParams.get('ig_success');
-        const igUsername = urlParams.get('ig_username');
-        const igErrorParam = urlParams.get('ig_error');
-
-        if (igSuccess === 'true' && igUsername) {
-            toast({ title: `Instagram linked!`, description: `@${igUsername} is now connected to Spot.` });
-            loadInstagramAccount();
-            // Clean up URL
-            window.history.replaceState({}, document.title, window.location.pathname);
-        } else if (igErrorParam) {
-            toast({ title: 'Instagram linking failed', description: decodeURIComponent(igErrorParam), variant: 'destructive' });
-            window.history.replaceState({}, document.title, window.location.pathname);
-        }
-    }, []);
-
-    const loadInstagramAccount = async () => {
+    const loadInstagramAccounts = async () => {
         try {
-            const account = await instagramApi.getLinkedAccount();
-            setIgAccount(account);
+            const accounts = await instagramApi.getLinkedAccounts();
+            setIgAccounts(accounts);
         } catch (error) {
-            console.error('Failed to load Instagram account:', error);
+            console.error('Failed to load Instagram accounts:', error);
         }
     };
 
-    const handleLinkInstagram = async () => {
+    const handleGenerateCode = async () => {
         setIgLoading(true);
-        setIgError(null);
         try {
-            const { authUrl } = await instagramApi.getAuthUrl();
-            // Redirect to Instagram OAuth
-            window.location.href = authUrl;
+            const result = await instagramApi.generateCode();
+            setVerificationCode(result.code);
+            setCodeExpiry(new Date(result.expiresAt));
+            toast({ title: 'Code generated!', description: 'DM this code to @save.this.spot on Instagram' });
         } catch (error: any) {
-            setIgError(error.message || 'Failed to start Instagram linking');
-            toast({ title: 'Error', description: 'Could not start Instagram linking', variant: 'destructive' });
+            toast({ title: 'Error', description: 'Could not generate code', variant: 'destructive' });
         }
         setIgLoading(false);
     };
 
-    const handleUnlinkInstagram = async () => {
+    const handleUnlinkInstagram = async (accountId: string, username: string) => {
         setIgLoading(true);
         try {
-            await instagramApi.unlinkAccount();
-            setIgAccount(null);
-            toast({ title: 'Instagram unlinked', description: 'Your Instagram account has been disconnected.' });
+            await instagramApi.unlinkAccount(accountId);
+            setIgAccounts(igAccounts.filter(a => a.id !== accountId));
+            toast({ title: 'Instagram unlinked', description: `@${username} has been disconnected.` });
         } catch (error: any) {
             toast({ title: 'Error', description: 'Could not unlink Instagram', variant: 'destructive' });
         }
         setIgLoading(false);
+    };
+
+    const copyCodeToClipboard = () => {
+        if (verificationCode) {
+            navigator.clipboard.writeText(verificationCode);
+            toast({ title: 'Copied!', description: 'Code copied to clipboard' });
+        }
     };
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -431,40 +420,67 @@ export function UserProfileSheet({ open, onOpenChange }: UserProfileSheetProps) 
                         </div>
 
                         <p className="text-sm text-muted-foreground">
-                            Link your Instagram to save places directly from DMs. Just send a Reel or post to our Spot account!
+                            Link your Instagram to save places by DM. Send any Reel or restaurant link to @save.this.spot!
                         </p>
 
-                        {igAccount ? (
-                            <div className="bg-secondary/50 rounded-lg p-4 space-y-3">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-orange-500 flex items-center justify-center">
-                                        <Instagram className="w-5 h-5 text-white" />
+                        {/* Linked Accounts */}
+                        {igAccounts.length > 0 && (
+                            <div className="space-y-2">
+                                <p className="text-xs text-muted-foreground font-medium">Linked accounts:</p>
+                                {igAccounts.map((account) => (
+                                    <div key={account.id} className="bg-secondary/50 rounded-lg p-3 flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-orange-500 flex items-center justify-center">
+                                                <Instagram className="w-4 h-4 text-white" />
+                                            </div>
+                                            <div>
+                                                <p className="font-medium text-foreground text-sm">@{account.username || 'Instagram'}</p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    Linked {new Date(account.linkedAt).toLocaleDateString()}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => handleUnlinkInstagram(account.id, account.username)}
+                                            disabled={igLoading}
+                                            className="p-2 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+                                            title="Unlink"
+                                        >
+                                            <Unlink className="w-4 h-4" />
+                                        </button>
                                     </div>
-                                    <div>
-                                        <p className="font-medium text-foreground">@{igAccount.igUsername}</p>
-                                        <p className="text-xs text-muted-foreground">
-                                            Linked {new Date(igAccount.linkedAt).toLocaleDateString()}
-                                        </p>
-                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Verification Code */}
+                        {verificationCode ? (
+                            <div className="bg-gradient-to-br from-purple-500/10 via-pink-500/10 to-orange-500/10 rounded-xl p-4 space-y-3 border border-purple-500/20">
+                                <p className="text-sm font-medium text-foreground">Your verification code:</p>
+                                <div 
+                                    onClick={copyCodeToClipboard}
+                                    className="bg-background rounded-lg p-4 text-center cursor-pointer hover:bg-secondary transition-colors"
+                                >
+                                    <p className="text-2xl font-mono font-bold tracking-wider text-foreground">{verificationCode}</p>
+                                    <p className="text-xs text-muted-foreground mt-1">Tap to copy</p>
+                                </div>
+                                <div className="text-xs text-muted-foreground space-y-1">
+                                    <p>📱 Open Instagram and DM this code to <strong>@save.this.spot</strong></p>
+                                    {codeExpiry && (
+                                        <p className="text-orange-500">⏰ Expires {codeExpiry.toLocaleTimeString()}</p>
+                                    )}
                                 </div>
                                 <button
-                                    onClick={handleUnlinkInstagram}
+                                    onClick={handleGenerateCode}
                                     disabled={igLoading}
-                                    className="w-full py-2 rounded-lg bg-secondary text-muted-foreground hover:text-foreground hover:bg-secondary/80 transition-colors flex items-center justify-center gap-2 text-sm"
+                                    className="w-full py-2 rounded-lg bg-secondary text-muted-foreground hover:text-foreground transition-colors text-sm"
                                 >
-                                    {igLoading ? (
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                    ) : (
-                                        <>
-                                            <Unlink className="w-4 h-4" />
-                                            Unlink Instagram
-                                        </>
-                                    )}
+                                    Generate new code
                                 </button>
                             </div>
                         ) : (
                             <button
-                                onClick={handleLinkInstagram}
+                                onClick={handleGenerateCode}
                                 disabled={igLoading}
                                 className="w-full py-3 rounded-xl bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500 text-white font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
                             >
@@ -473,22 +489,18 @@ export function UserProfileSheet({ open, onOpenChange }: UserProfileSheetProps) 
                                 ) : (
                                     <>
                                         <Link2 className="w-4 h-4" />
-                                        Link Instagram
+                                        {igAccounts.length > 0 ? 'Link Another Instagram' : 'Link Instagram'}
                                     </>
                                 )}
                             </button>
                         )}
 
-                        {igError && (
-                            <p className="text-sm text-red-500">{igError}</p>
-                        )}
-
                         <div className="text-xs text-muted-foreground space-y-1">
                             <p><strong>How it works:</strong></p>
                             <ol className="list-decimal list-inside space-y-0.5">
-                                <li>Link your Instagram account above</li>
-                                <li>DM any restaurant Reel or post to @SpotApp</li>
-                                <li>We'll automatically save it to your list!</li>
+                                <li>Click "Link Instagram" to get a code</li>
+                                <li>DM the code to @save.this.spot</li>
+                                <li>Then send any restaurant link to save it!</li>
                             </ol>
                         </div>
                     </div>

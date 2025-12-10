@@ -249,6 +249,94 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
     
     console.log(`[Webhook] Processing message from ${senderId}: "${messageText.substring(0, 100)}..."`);
     
+    // ============= CHECK FOR VERIFICATION CODE =============
+    // Format: SPOT-XXXX (case insensitive)
+    const codeMatch = messageText.toUpperCase().match(/SPOT-[A-Z0-9]{4}/);
+    
+    if (codeMatch) {
+        const code = codeMatch[0];
+        console.log(`[Webhook] Detected verification code: ${code}`);
+        
+        // Look up the verification code
+        const { data: verification, error: verifyError } = await getSupabase()
+            .from('instagram_verification_codes')
+            .select('user_id, expires_at, used')
+            .eq('code', code)
+            .single();
+        
+        if (verifyError || !verification) {
+            console.log(`[Webhook] Invalid verification code: ${code}`);
+            await sendInstagramMessage(
+                senderId,
+                `Hmm, that code doesn't look right. 🤔\n\nMake sure you're using the code from the Spot app (format: SPOT-XXXX). Codes expire after 30 minutes!`
+            );
+            return;
+        }
+        
+        if (verification.used) {
+            await sendInstagramMessage(
+                senderId,
+                `That code has already been used! Generate a new one in the Spot app. 🔄`
+            );
+            return;
+        }
+        
+        if (new Date(verification.expires_at) < new Date()) {
+            await sendInstagramMessage(
+                senderId,
+                `That code has expired. ⏰\n\nGenerate a new one in the Spot app and try again!`
+            );
+            return;
+        }
+        
+        // Get sender's Instagram username (we'll try to fetch it)
+        let igUsername = `ig_${senderId}`;
+        
+        // Link the Instagram account to the Spot user
+        const { error: linkError } = await getSupabase()
+            .from('instagram_accounts')
+            .insert({
+                user_id: verification.user_id,
+                ig_user_id: senderId,
+                ig_username: igUsername,
+                is_active: true,
+                linked_at: new Date().toISOString(),
+            });
+        
+        if (linkError) {
+            // Check if already linked
+            if (linkError.code === '23505') { // Unique violation
+                await sendInstagramMessage(
+                    senderId,
+                    `This Instagram account is already linked to Spot! 🎉\n\nYou can start sending me restaurant links to save.`
+                );
+            } else {
+                console.error('[Webhook] Link error:', linkError);
+                await sendInstagramMessage(
+                    senderId,
+                    `Oops, something went wrong linking your account. Please try again! 😅`
+                );
+            }
+            return;
+        }
+        
+        // Mark code as used
+        await getSupabase()
+            .from('instagram_verification_codes')
+            .update({ used: true })
+            .eq('code', code);
+        
+        console.log(`[Webhook] Successfully linked IG ${senderId} to Spot user ${verification.user_id}`);
+        
+        await sendInstagramMessage(
+            senderId,
+            `You're all set! 🎉✨\n\nYour Instagram is now linked to Spot. Just send me any restaurant Reel, post, or link and I'll save it to your list!\n\nTry it now - send me a link! 📍`
+        );
+        return;
+    }
+    
+    // ============= REGULAR MESSAGE PROCESSING =============
+    
     // Look up Spot user by Instagram ID
     const { data: igAccount, error: lookupError } = await getSupabase()
         .from('instagram_accounts')
@@ -263,7 +351,7 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
         // Send message asking them to link their account
         await sendInstagramMessage(
             senderId,
-            `Hey! 👋 I don't recognize you yet. To save places to Spot, please link your Instagram account in the Spot app first!\n\nGo to Spot → Settings → Link Instagram`
+            `Hey! 👋 I don't recognize you yet.\n\nTo save places to Spot:\n1. Open the Spot app\n2. Go to Profile → Link Instagram\n3. You'll get a code like SPOT-XXXX\n4. Send that code here!\n\nThen you can DM me any restaurant link to save it! 📍`
         );
         return;
     }

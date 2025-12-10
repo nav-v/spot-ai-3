@@ -1,11 +1,35 @@
 -- Instagram DM Capture Feature
 -- Tables for linking Instagram accounts and tracking ingested links
 
+-- Table to store verification codes for DM-based linking
+CREATE TABLE IF NOT EXISTS public.instagram_verification_codes (
+  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id TEXT NOT NULL,  -- Spot user ID
+  code TEXT NOT NULL UNIQUE,  -- e.g., "SPOT-A7X9"
+  expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  used BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+  
+  CONSTRAINT fk_verify_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_verification_codes_code ON public.instagram_verification_codes(code);
+CREATE INDEX idx_verification_codes_user ON public.instagram_verification_codes(user_id);
+
+-- Allow upsert by user_id (one pending code per user)
+CREATE UNIQUE INDEX idx_verification_codes_user_unique ON public.instagram_verification_codes(user_id) WHERE NOT used;
+
+-- RLS for verification codes
+ALTER TABLE public.instagram_verification_codes ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "System can manage verification codes" ON public.instagram_verification_codes FOR ALL USING (true);
+
 -- Table to store Instagram account linkings
-CREATE TABLE public.instagram_accounts (
+-- One Spot user can link multiple Instagram accounts
+-- One Instagram account can only be linked to one Spot user (when active)
+CREATE TABLE IF NOT EXISTS public.instagram_accounts (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id TEXT NOT NULL,  -- Spot user ID (matches places.user_id)
-  ig_user_id TEXT NOT NULL UNIQUE,  -- Instagram User ID (IGSID)
+  ig_user_id TEXT NOT NULL,  -- Instagram User ID (IGSID)
   ig_username TEXT,  -- Instagram username (for display)
   access_token TEXT,  -- Long-lived Page/User access token (encrypted in production)
   token_expires_at TIMESTAMP WITH TIME ZONE,
@@ -16,6 +40,9 @@ CREATE TABLE public.instagram_accounts (
   
   CONSTRAINT fk_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+-- Ensure one active IG account links to only one Spot user
+CREATE UNIQUE INDEX idx_instagram_accounts_ig_active ON public.instagram_accounts(ig_user_id) WHERE is_active = true;
 
 -- Table to store ingested links from DMs
 CREATE TABLE public.ingested_links (
