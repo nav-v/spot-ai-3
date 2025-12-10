@@ -229,11 +229,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 user_id: spotUserId,
                 ig_user_id: igUser.id,
                 ig_username: igUser.username,
-                access_token: finalToken,
-                token_expires_at: expiresAt.toISOString(),
-                scopes: ['instagram_basic', 'instagram_manage_messages', 'pages_messaging'],
                 is_active: true,
-                updated_at: new Date().toISOString(),
+                linked_at: new Date().toISOString(),
             }, {
                 onConflict: 'ig_user_id',
             });
@@ -330,7 +327,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             
             let query = getSupabase()
                 .from('instagram_accounts')
-                .update({ is_active: false, updated_at: new Date().toISOString() })
+                .update({ is_active: false })
                 .eq('user_id', userId);
             
             if (accountId) {
