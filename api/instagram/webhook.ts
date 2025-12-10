@@ -22,6 +22,12 @@ async function supabaseQuery(table: string, params: {
         }
         
         console.log(`[DB] Query: ${table}, params: ${JSON.stringify(params)}`);
+        console.log(`[DB] URL: ${url.toString().substring(0, 80)}...`);
+        console.log(`[DB] Key present: ${SUPABASE_KEY ? 'yes (' + SUPABASE_KEY.substring(0, 20) + '...)' : 'NO'}`);
+        console.log(`[DB] Fetching...`);
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
         
         const response = await fetch(url.toString(), {
             headers: {
@@ -29,10 +35,14 @@ async function supabaseQuery(table: string, params: {
                 'Authorization': `Bearer ${SUPABASE_KEY}`,
                 'Content-Type': 'application/json',
             },
+            signal: controller.signal,
         });
         
+        clearTimeout(timeoutId);
+        console.log(`[DB] Got response: ${response.status}`);
+        
         const data = await response.json();
-        console.log(`[DB] Response: ${JSON.stringify(data).substring(0, 200)}`);
+        console.log(`[DB] Response data: ${JSON.stringify(data).substring(0, 200)}`);
         
         if (!response.ok) {
             return { data: null, error: data };
@@ -43,8 +53,8 @@ async function supabaseQuery(table: string, params: {
         }
         return { data, error: null };
     } catch (error: any) {
-        console.error(`[DB] Error:`, error.message);
-        return { data: null, error: { message: error.message } };
+        console.error(`[DB] Error:`, error.message || error);
+        return { data: null, error: { message: error.message || 'Unknown error' } };
     }
 }
 
