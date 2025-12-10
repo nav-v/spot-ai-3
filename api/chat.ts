@@ -2,6 +2,78 @@ import { GoogleGenAI } from '@google/genai';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
+// ============= RESEARCH TOOL CONFIGURATION =============
+
+// Base subreddits that are ALWAYS searched for each tool type
+const TOOL_SUBREDDITS = {
+    research_food: ['nyc', 'AskNYC', 'FoodNYC', 'NYCbitcheswithtaste', 'newyorkcity'],
+    research_places: ['nyc', 'AskNYC', 'NYCbitcheswithtaste', 'newyorkcity'],
+    research_events: ['nyc', 'AskNYC', 'NYCbitcheswithtaste', 'newyorkcity']
+};
+
+// Additional web sources for food research
+const FOOD_WEB_SOURCES = ['eater.com', 'nytimes.com/section/food'];
+
+// Event sites to SCRAPE (not search) - these must be scraped directly
+const EVENT_SCRAPE_SITES = [
+    'https://theskint.com/',
+    'https://happeningsnyc.io/',
+    'https://www.ohmyrockness.com/shows/popular',
+    'https://ny-event-radar.com/',
+    'https://edmtrain.com/new-york-city-ny',
+    'https://ra.co/events/us/newyorkcity/ra-picks',
+    'https://www.timeout.com/newyork/things-to-do'
+];
+
+// Location-specific subreddits - AI picks from these based on query
+const LOCATION_SUBREDDITS: Record<string, string[]> = {
+    // Manhattan neighborhoods
+    manhattan: ['manhattan'],
+    harlem: ['Harlem'],
+    east_village: ['EastVillage'],
+    upper_east_side: ['TheUpperEastSide'],
+    upper_west_side: ['Upperwestside'],
+    washington_heights: ['WashingtonHeights'],
+    inwood: ['Inwood'],
+    west_village: ['WestVillage'],
+    chelsea: ['ChelseaNYC'],
+    
+    // Brooklyn - borough-wide + neighborhoods
+    brooklyn: ['Brooklyn', 'BayRidge', 'BedStuy', 'Bushwick', 'CarrollGardens', 'ConeyIsland', 'DitmasPark', 'DowntownBrooklyn', 'DUMBO', 'Flatbush', 'fortgreene', 'Greenpoint', 'ParkSlope', 'Williamsburg'],
+    bay_ridge: ['BayRidge'],
+    bed_stuy: ['BedStuy'],
+    bushwick: ['Bushwick'],
+    carroll_gardens: ['CarrollGardens'],
+    coney_island: ['ConeyIsland'],
+    ditmas_park: ['DitmasPark'],
+    downtown_brooklyn: ['DowntownBrooklyn'],
+    dumbo: ['DUMBO'],
+    flatbush: ['Flatbush'],
+    fort_greene: ['fortGreene'],
+    greenpoint: ['Greenpoint'],
+    park_slope: ['ParkSlope'],
+    williamsburg: ['Williamsburg'],
+    
+    // Queens - borough-wide + neighborhoods
+    queens: ['Queens', 'astoria', 'Bayside', 'Flushing', 'ForestHills', 'jacksonheights', 'longislandcity', 'ridgewood', 'Woodhaven', 'woodside'],
+    astoria: ['astoria'],
+    bayside: ['Bayside'],
+    flushing: ['Flushing'],
+    forest_hills: ['ForestHills'],
+    jackson_heights: ['jacksonheights'],
+    lic: ['longislandcity'],
+    long_island_city: ['longislandcity'],
+    ridgewood: ['ridgewood'],
+    woodhaven: ['Woodhaven'],
+    woodside: ['woodside'],
+    
+    // Bronx
+    bronx: ['Bronx']
+};
+
+// Flatten all location subreddits for validation
+const ALL_LOCATION_SUBREDDITS = [...new Set(Object.values(LOCATION_SUBREDDITS).flat())];
+
 // ============= LAZY INITIALIZATION =============
 
 let supabase: SupabaseClient;
@@ -31,7 +103,7 @@ function getAI() {
 
 // ============= HELPER FUNCTIONS =============
 
-// Extract JSON action from text
+// Extract single JSON action from text
 function extractAction(text: string): { action: any; match: string } | null {
     const match = text.match(/\{\s*"action":/);
     if (!match || match.index === undefined) return null;
@@ -60,6 +132,272 @@ function extractAction(text: string): { action: any; match: string } | null {
         }
     }
     return null;
+}
+
+// Extract ALL JSON actions from text (for multiple tool calls)
+function extractAllActions(text: string): { action: any; match: string }[] {
+    const actions: { action: any; match: string }[] = [];
+    let remainingText = text;
+    let safety = 0;
+    
+    while (safety < 10) { // Prevent infinite loops
+        safety++;
+        const extracted = extractAction(remainingText);
+        if (!extracted) break;
+        
+        actions.push(extracted);
+        // Remove the found action from remaining text
+        const idx = remainingText.indexOf(extracted.match);
+        if (idx === -1) break;
+        remainingText = remainingText.substring(idx + extracted.match.length);
+    }
+    
+    console.log(`[extractAllActions] Found ${actions.length} actions in text`);
+    return actions;
+}
+
+// Interface for research tools
+interface ResearchTool {
+    tool: 'research_food' | 'research_places' | 'research_events' | 'analyse_saved_food' | 'analyse_saved_see';
+    query?: string;
+    subreddits?: string[];
+    dates?: string;
+}
+
+// Interface for taste profile from analysis
+interface TasteProfile {
+    inferences: string[];
+    cuisinePreferences: string[];
+    priceRange: string;
+    vibePreferences: string[];
+    locationPreferences: string[];
+}
+
+// Interface for place mentions with cross-corroboration scoring
+interface PlaceMention {
+    name: string;
+    normalizedName: string;
+    sources: string[];
+    quotes: string[];
+    mentionCount: number;
+    score: number;
+    location?: string;
+    type?: string;
+}
+
+// Normalize place names for comparison
+function normalizePlaceName(name: string): string {
+    return name
+        .toLowerCase()
+        .replace(/[''`]/g, "'")
+        .replace(/[^a-z0-9\s']/g, '')
+        .replace(/\s+/g, ' ')
+        .replace(/^the\s+/, '')
+        .trim();
+}
+
+// Build cross-corroboration map from multiple sources
+function buildCrossCorroborationMap(
+    redditResults: any[],
+    webSources: { text: string; source: string }[]
+): Map<string, PlaceMention> {
+    const mentionMap = new Map<string, PlaceMention>();
+    
+    // Process Reddit results
+    for (const post of redditResults) {
+        // Extract potential place names from title and text (simple heuristic)
+        const textToAnalyze = `${post.title} ${post.text}`.toLowerCase();
+        const source = post.source || `r/${post.subreddit}`;
+        
+        // This is a simplified extraction - the full AI will do better
+        // For now, just track the post as a potential source
+        const normalizedTitle = normalizePlaceName(post.title);
+        
+        if (!mentionMap.has(normalizedTitle)) {
+            mentionMap.set(normalizedTitle, {
+                name: post.title,
+                normalizedName: normalizedTitle,
+                sources: [source],
+                quotes: [post.text?.slice(0, 200) || ''],
+                mentionCount: 1,
+                score: 10 + Math.log(post.upvotes + 1) * 2
+            });
+        } else {
+            const existing = mentionMap.get(normalizedTitle)!;
+            if (!existing.sources.includes(source)) {
+                existing.sources.push(source);
+                existing.mentionCount++;
+                existing.score += 15; // Bonus for cross-source mention
+            }
+            if (post.text) {
+                existing.quotes.push(post.text.slice(0, 200));
+            }
+        }
+    }
+    
+    console.log(`[Cross-Corroboration] Built map with ${mentionMap.size} unique mentions`);
+    
+    // Calculate final scores
+    for (const [key, mention] of mentionMap) {
+        // Score = mentionCount * 10 + uniqueSourceCount * 5
+        mention.score = mention.mentionCount * 10 + mention.sources.length * 5;
+    }
+    
+    return mentionMap;
+}
+
+// Get top cross-corroborated places
+function getTopCorroboratedPlaces(mentionMap: Map<string, PlaceMention>, limit: number = 15): PlaceMention[] {
+    return Array.from(mentionMap.values())
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit);
+}
+
+// ============= PARALLEL RESEARCH EXECUTION ENGINE =============
+
+interface ResearchResults {
+    redditResults: any[];
+    webResults: { text: string; textWithCitations: string; sources: any[]; citations: any[] };
+    eventScrapedContent: string;
+    tasteProfile: TasteProfile | null;
+    toolsUsed: string[];
+}
+
+async function executeSmartResearch(
+    tools: ResearchTool[],
+    userPlaces: any[],
+    userPreferences: any
+): Promise<ResearchResults> {
+    console.log(`[Smart Research] Executing ${tools.length} research tools in parallel`);
+    
+    const results: ResearchResults = {
+        redditResults: [],
+        webResults: { text: '', textWithCitations: '', sources: [], citations: [] },
+        eventScrapedContent: '',
+        tasteProfile: null,
+        toolsUsed: []
+    };
+    
+    // Group tools by type for efficient execution
+    const foodTools = tools.filter(t => t.tool === 'research_food');
+    const placesTools = tools.filter(t => t.tool === 'research_places');
+    const eventsTools = tools.filter(t => t.tool === 'research_events');
+    const analyseFoodTools = tools.filter(t => t.tool === 'analyse_saved_food');
+    const analyseSeeTools = tools.filter(t => t.tool === 'analyse_saved_see');
+    
+    // Build parallel execution promises
+    const promises: Promise<void>[] = [];
+    
+    // RESEARCH_FOOD: Reddit + Eater + NYT
+    if (foodTools.length > 0) {
+        results.toolsUsed.push('research_food');
+        const tool = foodTools[0]; // Use first tool's query
+        const queries = [tool.query || 'best food'];
+        const baseSubreddits = TOOL_SUBREDDITS.research_food;
+        const locationSubreddits = tool.subreddits || [];
+        
+        console.log(`[Smart Research] research_food: query="${tool.query}", location subreddits: ${locationSubreddits.join(', ') || 'none'}`);
+        
+        promises.push(
+            (async () => {
+                // Reddit search
+                const redditResults = await searchRedditMultiQuery(queries, baseSubreddits, locationSubreddits);
+                results.redditResults.push(...redditResults);
+                
+                // Web search for Eater + NYT
+                const webQueries = [
+                    `${tool.query} site:eater.com NYC`,
+                    `${tool.query} site:nytimes.com/section/food NYC`
+                ];
+                for (const wq of webQueries) {
+                    const webResult = await singleGeminiSearch(wq);
+                    results.webResults.text += webResult.text + '\n';
+                    results.webResults.textWithCitations += webResult.textWithCitations + '\n';
+                    results.webResults.sources.push(...webResult.sources);
+                    results.webResults.citations.push(...webResult.citations);
+                }
+            })()
+        );
+    }
+    
+    // RESEARCH_PLACES: Reddit only (non-food)
+    if (placesTools.length > 0) {
+        results.toolsUsed.push('research_places');
+        const tool = placesTools[0];
+        const queries = [tool.query || 'things to do'];
+        const baseSubreddits = TOOL_SUBREDDITS.research_places;
+        const locationSubreddits = tool.subreddits || [];
+        
+        console.log(`[Smart Research] research_places: query="${tool.query}", location subreddits: ${locationSubreddits.join(', ') || 'none'}`);
+        
+        promises.push(
+            (async () => {
+                const redditResults = await searchRedditMultiQuery(queries, baseSubreddits, locationSubreddits);
+                results.redditResults.push(...redditResults);
+            })()
+        );
+    }
+    
+    // RESEARCH_EVENTS: Reddit + Scrape all event sites
+    if (eventsTools.length > 0) {
+        results.toolsUsed.push('research_events');
+        const tool = eventsTools[0];
+        const queries = [tool.query || 'things to do'];
+        const baseSubreddits = TOOL_SUBREDDITS.research_events;
+        const locationSubreddits = tool.subreddits || [];
+        
+        console.log(`[Smart Research] research_events: query="${tool.query}", dates="${tool.dates || 'any'}"`);
+        
+        promises.push(
+            (async () => {
+                // Reddit search for events
+                const redditResults = await searchRedditMultiQuery(queries, baseSubreddits, locationSubreddits);
+                results.redditResults.push(...redditResults);
+                
+                // Scrape ALL event sites in parallel
+                const eventScrape = await scrapeEventSites(tool.dates);
+                results.eventScrapedContent = eventScrape.rawContent;
+            })()
+        );
+    }
+    
+    // ANALYSE_SAVED_FOOD: Taste analysis (Gemini 2.5 Pro)
+    if (analyseFoodTools.length > 0) {
+        results.toolsUsed.push('analyse_saved_food');
+        console.log(`[Smart Research] analyse_saved_food: analyzing ${userPlaces.length} places`);
+        
+        promises.push(
+            (async () => {
+                results.tasteProfile = await analyseSavedPlaces(userPlaces, 'food', userPreferences);
+            })()
+        );
+    }
+    
+    // ANALYSE_SAVED_SEE: Taste analysis for non-food
+    if (analyseSeeTools.length > 0) {
+        results.toolsUsed.push('analyse_saved_see');
+        console.log(`[Smart Research] analyse_saved_see: analyzing ${userPlaces.length} places`);
+        
+        promises.push(
+            (async () => {
+                const seeProfile = await analyseSavedPlaces(userPlaces, 'see', userPreferences);
+                // Merge with existing taste profile or set as new
+                if (results.tasteProfile) {
+                    results.tasteProfile.inferences.push(...seeProfile.inferences);
+                    results.tasteProfile.vibePreferences.push(...seeProfile.vibePreferences);
+                } else {
+                    results.tasteProfile = seeProfile;
+                }
+            })()
+        );
+    }
+    
+    // Execute all in parallel
+    await Promise.all(promises);
+    
+    console.log(`[Smart Research] Completed. Reddit: ${results.redditResults.length}, Web sources: ${results.webResults.sources.length}, Event content: ${results.eventScrapedContent.length} chars, Taste inferences: ${results.tasteProfile?.inferences?.length || 0}`);
+    
+    return results;
 }
 
 // Remove ALL JSON actions from text
@@ -149,14 +487,116 @@ async function searchGooglePlaces(placeName: string, location: string = 'New Yor
     }
 }
 
+// ============= TASTE ANALYSIS (Gemini 2.5 Pro) =============
+
+async function analyseSavedPlaces(
+    places: any[], 
+    type: 'food' | 'see',
+    userPreferences?: any
+): Promise<TasteProfile> {
+    console.log(`[Taste Analysis] Analyzing ${places.length} places for type: ${type}`);
+    
+    // Filter places by type
+    const foodTypes = ['restaurant', 'bar', 'cafe', 'food', 'drinks'];
+    const seeTypes = ['activity', 'attraction', 'museum', 'park', 'entertainment'];
+    
+    const filtered = type === 'food'
+        ? places.filter(p => foodTypes.includes((p.type || 'restaurant').toLowerCase()))
+        : places.filter(p => seeTypes.includes((p.type || '').toLowerCase()) || p.is_event);
+    
+    if (filtered.length === 0) {
+        console.log(`[Taste Analysis] No ${type} places found, returning empty profile`);
+        return {
+            inferences: [],
+            cuisinePreferences: [],
+            priceRange: 'moderate',
+            vibePreferences: [],
+            locationPreferences: []
+        };
+    }
+    
+    // Build a summary of saved places for analysis
+    const placesSummary = filtered.slice(0, 30).map(p => {
+        const parts = [p.name];
+        if (p.cuisine) parts.push(`(${p.cuisine})`);
+        if (p.type) parts.push(`[${p.type}]`);
+        if (p.address) parts.push(`@ ${p.address}`);
+        if (p.rating) parts.push(`Rating: ${p.rating}`);
+        if (p.notes) parts.push(`Notes: ${p.notes}`);
+        if (p.is_favorite) parts.push('★ FAVORITE');
+        if (p.is_visited) parts.push('✓ VISITED');
+        return parts.join(' ');
+    }).join('\n');
+    
+    const userPrefsText = userPreferences ? `
+User stated preferences:
+- Dietary restrictions: ${userPreferences.dietaryRestrictions?.join(', ') || 'None'}
+- Food preferences: ${userPreferences.foodPreferences?.join(', ') || 'Not specified'}
+- Interests: ${userPreferences.interests?.join(', ') || 'Not specified'}
+` : '';
+    
+    const prompt = `You are a taste analyst. Based on these saved ${type === 'food' ? 'restaurants/food spots' : 'places/activities'}, infer 10-25 specific things about this person's tastes and preferences.
+
+${userPrefsText}
+
+SAVED ${type.toUpperCase()} PLACES:
+${placesSummary}
+
+Analyze patterns and return a JSON object with:
+{
+  "inferences": ["specific observation 1", "specific observation 2", ...], // 10-25 inferences like "prefers intimate settings over loud venues", "loves trying new cuisines", "values authenticity over trendiness"
+  "cuisinePreferences": ["Italian", "Japanese", ...], // for food, or ["Museums", "Outdoor activities", ...] for see
+  "priceRange": "budget" | "moderate" | "upscale" | "mixed",
+  "vibePreferences": ["cozy", "trendy", "casual", ...],
+  "locationPreferences": ["Williamsburg", "East Village", ...] // neighborhoods they seem to favor
+}
+
+Be SPECIFIC and INSIGHTFUL. Don't just list what they saved - infer WHY they might like those places.
+Return ONLY the JSON object, no other text.`;
+
+    try {
+        const response = await getAI().models.generateContent({
+            model: 'gemini-2.5-pro',
+            contents: [{ role: 'user', parts: [{ text: prompt }] }]
+        });
+        
+        const text = response.text || '';
+        const cleanJson = text.replace(/```json|```/g, '').trim();
+        const profile = JSON.parse(cleanJson);
+        
+        console.log(`[Taste Analysis] Generated ${profile.inferences?.length || 0} inferences`);
+        return profile;
+    } catch (error: any) {
+        console.error('[Taste Analysis] Error:', error.message);
+        return {
+            inferences: [],
+            cuisinePreferences: [],
+            priceRange: 'moderate',
+            vibePreferences: [],
+            locationPreferences: []
+        };
+    }
+}
+
 // ============= REDDIT API =============
 
-async function searchRedditMultiQuery(queries: string[], subreddits: string[] = ['foodnyc', 'AskNYC']) {
+async function searchRedditMultiQuery(
+    queries: string[], 
+    baseSubreddits: string[] = ['foodnyc', 'AskNYC'],
+    locationSubreddits: string[] = []
+) {
     const results: any[] = [];
+    
+    // Merge base subreddits with location-specific ones, removing duplicates
+    const allSubreddits = [...new Set([...baseSubreddits, ...locationSubreddits])];
 
-    console.log(`[Reddit] Running ${queries.length} queries across ${subreddits.length} subreddits`);
+    console.log(`[Reddit] Running ${queries.length} queries across ${allSubreddits.length} subreddits`);
+    console.log(`[Reddit] Base: ${baseSubreddits.join(', ')}`);
+    if (locationSubreddits.length > 0) {
+        console.log(`[Reddit] Location-specific: ${locationSubreddits.join(', ')}`);
+    }
 
-    for (const subreddit of subreddits) {
+    for (const subreddit of allSubreddits) {
         for (const query of queries) {
             try {
                 const searchUrl = `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&restrict_sr=1&limit=5&sort=relevance`;
@@ -187,7 +627,8 @@ async function searchRedditMultiQuery(queries: string[], subreddits: string[] = 
                             author: p.author,
                             upvotes: p.ups,
                             text: p.selftext?.slice(0, 500) || '',
-                            numComments: p.num_comments
+                            numComments: p.num_comments,
+                            source: `r/${p.subreddit}`
                         });
                     }
                 }
@@ -200,7 +641,7 @@ async function searchRedditMultiQuery(queries: string[], subreddits: string[] = 
     }
 
     results.sort((a, b) => (b.upvotes + b.numComments) - (a.upvotes + a.numComments));
-    return results.slice(0, 15);
+    return results.slice(0, 20); // Increased limit for more options
 }
 
 async function getRedditComments(postUrl: string) {
@@ -261,6 +702,61 @@ async function scrapeWithFirecrawl(url: string) {
         console.error(`[Firecrawl] Exception:`, error);
         return { success: false, error: error.message };
     }
+}
+
+// ============= EVENT SITE SCRAPER =============
+
+interface ScrapedEvent {
+    name: string;
+    venue?: string;
+    date?: string;
+    description?: string;
+    url?: string;
+    source: string;
+}
+
+async function scrapeEventSites(dateFilter?: string): Promise<{ events: ScrapedEvent[]; rawContent: string }> {
+    console.log(`[Event Scraper] Scraping ${EVENT_SCRAPE_SITES.length} event sites in parallel...`);
+    if (dateFilter) {
+        console.log(`[Event Scraper] Date filter: ${dateFilter}`);
+    }
+    
+    const scrapePromises = EVENT_SCRAPE_SITES.map(async (url) => {
+        try {
+            console.log(`[Event Scraper] Scraping: ${url}`);
+            const result = await scrapeWithFirecrawl(url);
+            
+            if (result.success && result.data?.markdown) {
+                const content = result.data.markdown.slice(0, 4000); // Increased limit for event data
+                const sourceName = new URL(url).hostname.replace('www.', '');
+                console.log(`[Event Scraper] Got ${content.length} chars from ${sourceName}`);
+                
+                return {
+                    content: `\n--- ${sourceName.toUpperCase()} ---\n${content}\n`,
+                    source: sourceName,
+                    url
+                };
+            }
+        } catch (e: any) {
+            console.error(`[Event Scraper] Error scraping ${url}:`, e.message);
+        }
+        return null;
+    });
+    
+    const results = await Promise.all(scrapePromises);
+    const validResults = results.filter(r => r !== null);
+    
+    // Combine all raw content for AI parsing
+    const rawContent = validResults.map(r => r!.content).join('\n');
+    
+    console.log(`[Event Scraper] Successfully scraped ${validResults.length}/${EVENT_SCRAPE_SITES.length} sites`);
+    console.log(`[Event Scraper] Total content: ${rawContent.length} chars`);
+    
+    // Return raw content - the recommender AI will parse it
+    return {
+        events: [], // Will be parsed by the recommender
+        rawContent
+    };
 }
 
 // ============= WEB SEARCH WITH GROUNDING =============
@@ -833,7 +1329,7 @@ SAVED PLACES:
 ${placesContext}
 
 TOOLS & ACTIONS:
-You have access to these tools. output the JSON action ONLY when needed.
+You have access to these tools. Output JSON actions ONLY when needed.
 
 1. ADD PLACE / EVENT (NO RESEARCH NEEDED - just use this action directly):
 If user says "Add [Place/Event Name] to my list":
@@ -856,31 +1352,71 @@ If user provides a list or caption with multiple places/events and asks to add t
 Response: "I can't check availability directly, but I've found the booking links for you! Check these out:"
 {\"action\": \"findReservations\", \"restaurantName\": \"NAME\", \"partySize\": 2, \"date\": \"YYYY-MM-DD\"}
 
-4. RESEARCH / PLAN (⚠️ REQUIRED BEFORE EXTERNAL RECOMMENDATIONS):
-**You MUST use research before recommending ANY places not already on the user's saved list.**
-This includes: restaurants, events, activities, anything external.
+4. SMART RESEARCH (⚠️ REQUIRED BEFORE EXTERNAL RECOMMENDATIONS):
+**You MUST use research tools before recommending ANY places not already on the user's saved list.**
 
-⚠️ CRITICAL: When you need to research, OUTPUT THE ACTION IMMEDIATELY in your response. Do NOT just say "let me search" without including the actual JSON action. Your response MUST contain the action like this:
+YOU CAN USE MULTIPLE TOOLS AT ONCE! Output them as an array:
+{"action": "smartResearch", "tools": [...]}
 
-Let me look that up for you! {"action": "research", "queries": ["things to do williamsburg brooklyn", "williamsburg activities", "title:williamsburg"]}
+AVAILABLE RESEARCH TOOLS:
 
-⚠️ QUERY GENERATION RULES:
-Reddit supports boolean operators. Generate 2-3 query variations for better results:
-1. Simple query: "indian food upper west side" (basic keywords)
-2. Boolean AND with exact phrase: "indian AND \"upper west side\"" (forces both terms)
-3. Title search: "title:indian manhattan" (searches only post titles)
+a) research_food - For restaurants, cafes, bars, food spots
+   {"tool": "research_food", "query": "best pizza", "subreddits": ["Williamsburg", "Greenpoint"]}
+   - Base subreddits (always searched): nyc, AskNYC, FoodNYC, NYCbitcheswithtaste, newyorkcity
+   - Also searches: Eater, NY Times food section
+   - Add location-specific subreddits if the query mentions a neighborhood!
 
-⚠️ JSON SAFETY: If using double quotes INSIDE a query string, you MUST escape them (e.g. "term AND \"exact phrase\"").
-Alternatively, use single quotes inside the query string (e.g. "term AND 'exact phrase'").
+b) research_places - For attractions, museums, activities (NON-FOOD)
+   {"tool": "research_places", "query": "hidden gems", "subreddits": ["EastVillage"]}
+   - Base subreddits: nyc, AskNYC, NYCbitcheswithtaste, newyorkcity
+   - Add location-specific subreddits if relevant!
 
-Other operators: OR, NOT, quotes for exact phrase
+c) research_events - For events, shows, concerts, markets, pop-ups
+   {"tool": "research_events", "query": "things to do december ${currentYear}", "dates": "this weekend"}
+   - Base subreddits: nyc, AskNYC, NYCbitcheswithtaste, newyorkcity
+   - ALSO SCRAPES these event sites: theskint.com, happeningsnyc.io, ohmyrockness.com, timeout.com, ra.co, edmtrain.com
+   - For date-specific queries, start with "things to do [month] [year]" then narrow down
 
-📅 FOR EVENTS/ACTIVITIES:
-- ALWAYS include the current year (${new Date().getFullYear()}) in at least one query
-- Include keywords like: "event", "show", "things to do", "happening", "market", etc.
-- Examples: "holiday markets nyc december 2024", "things to do this weekend nyc", "title:concert december"
+d) analyse_saved_food - Analyze user's saved restaurants to understand their taste
+   {"tool": "analyse_saved_food"}
+   - Returns 10-25 taste inferences based on their saved food spots
+   - Use this when you want to give PERSONALIZED recommendations
 
-Keep each query SHORT (3-6 words). Do NOT output recommendPlaces together with research.
+e) analyse_saved_see - Analyze user's saved places/events to understand preferences  
+   {"tool": "analyse_saved_see"}
+   - Returns 10-25 preference inferences based on their saved activities
+   - Use this for personalized non-food recommendations
+
+LOCATION-SPECIFIC SUBREDDITS (pick relevant ones based on query):
+Manhattan: manhattan, Harlem, EastVillage, TheUpperEastSide, Upperwestside, WashingtonHeights, Inwood, WestVillage, ChelseaNYC
+Brooklyn: Brooklyn, BayRidge, BedStuy, Bushwick, CarrollGardens, ConeyIsland, DitmasPark, DowntownBrooklyn, DUMBO, Flatbush, fortGreene, Greenpoint, ParkSlope, Williamsburg
+Queens: Queens, astoria, Bayside, Flushing, ForestHills, jacksonheights, longislandcity, ridgewood, Woodhaven, woodside
+Bronx: Bronx
+
+EXAMPLE - Complex query "romantic dinner in williamsburg this weekend":
+{"action": "smartResearch", "tools": [
+  {"tool": "research_food", "query": "romantic dinner date night", "subreddits": ["Williamsburg", "Brooklyn"]},
+  {"tool": "research_events", "query": "things to do december ${currentYear}", "dates": "this weekend"},
+  {"tool": "analyse_saved_food"}
+]}
+
+EXAMPLE - Simple food query "best ramen":
+{"action": "smartResearch", "tools": [
+  {"tool": "research_food", "query": "best ramen"},
+  {"tool": "analyse_saved_food"}
+]}
+
+EXAMPLE - Events only "what's happening this weekend":
+{"action": "smartResearch", "tools": [
+  {"tool": "research_events", "query": "things to do december ${currentYear}", "dates": "this weekend"}
+]}
+
+⚠️ CRITICAL RULES:
+- OUTPUT THE ACTION IMMEDIATELY. Do NOT just say "let me search" without the JSON!
+- You MUST specify location-specific subreddits if the query mentions a neighborhood
+- For events, ALWAYS include current year (${currentYear}) in the query
+- Keep each query SHORT (3-6 words)
+- Do NOT output recommendPlaces together with research
 
 5. SCRAPE URL:
 If user shares a link:
@@ -1166,6 +1702,222 @@ Assistant:`;
                 }
             }
 
+            // ============= SMART RESEARCH ACTION (NEW) =============
+            else if (action.action === 'smartResearch' && action.tools && Array.isArray(action.tools)) {
+                console.log('[Chat API] ========================================');
+                console.log('[Chat API] Starting SMART RESEARCH with parallel tools...');
+                console.log('[Chat API] Tools requested:', action.tools.map((t: any) => t.tool).join(', '));
+
+                // Execute all research tools in parallel
+                const researchResults = await executeSmartResearch(
+                    action.tools as ResearchTool[],
+                    userPlaces,
+                    userPreferences
+                );
+
+                // Build comprehensive search results for the recommender
+                let searchResults = '';
+
+                // Add Reddit results with source tracking
+                if (researchResults.redditResults.length > 0) {
+                    searchResults += '=== REDDIT RESULTS (PRIORITIZE THESE - CROSS-CORROBORATION MATTERS) ===\n';
+                    
+                    // Score and sort by relevance
+                    const scoredPosts = researchResults.redditResults
+                        .sort((a: any, b: any) => (b.upvotes + b.numComments) - (a.upvotes + a.numComments));
+
+                    // Fetch comments for top posts
+                    const topPosts = scoredPosts.slice(0, 7);
+                    const commentPromises = topPosts.map(async (post: any) => {
+                        const comments = await getRedditComments(post.url);
+                        let postResult = `\n--- THREAD: "${post.title}" (${post.source || 'r/' + post.subreddit}, ${post.upvotes} upvotes) ---\nURL: ${post.url}\n`;
+                        if (comments.length > 0) {
+                            postResult += `TOP COMMENTS:\n`;
+                            for (const comment of comments.slice(0, 8)) {
+                                postResult += `💬 [${comment.upvotes}] u/${comment.author}: "${comment.text}"\n\n`;
+                            }
+                        }
+                        return postResult;
+                    });
+
+                    const commentsResults = await Promise.all(commentPromises);
+                    searchResults += commentsResults.join('');
+                }
+
+                // Add web results (Eater, NYT, etc.)
+                if (researchResults.webResults.text) {
+                    searchResults += '\n=== WEB SOURCES (Eater, NY Times, etc.) ===\n' + researchResults.webResults.textWithCitations;
+                }
+
+                // Add scraped event content
+                if (researchResults.eventScrapedContent) {
+                    searchResults += '\n=== SCRAPED EVENT SITES (theskint, timeout, ra.co, etc.) ===\n' + researchResults.eventScrapedContent;
+                }
+
+                // Build taste profile context for the recommender
+                let tasteContext = '';
+                if (researchResults.tasteProfile && researchResults.tasteProfile.inferences.length > 0) {
+                    tasteContext = `
+=== USER TASTE PROFILE (from analyzing their saved places) ===
+Key Inferences:
+${researchResults.tasteProfile.inferences.slice(0, 15).map((i, idx) => `${idx + 1}. ${i}`).join('\n')}
+
+Cuisine/Category Preferences: ${researchResults.tasteProfile.cuisinePreferences.join(', ') || 'Varied'}
+Price Range: ${researchResults.tasteProfile.priceRange}
+Vibe Preferences: ${researchResults.tasteProfile.vibePreferences.join(', ') || 'Flexible'}
+Neighborhood Preferences: ${researchResults.tasteProfile.locationPreferences.join(', ') || 'Open to exploring'}
+
+⚠️ Use these insights to PERSONALIZE recommendations, but don't over-emphasize them. 
+   Balance user taste with highly-recommended/cross-corroborated places from research.
+`;
+                }
+
+                // Build the RECOMMENDER prompt (Gemini 2.5 Pro)
+                const recommenderPrompt = `${fullPrompt}\n${content}\n\n[SYSTEM: Research complete. You are now a RECOMMENDER SYSTEM.
+
+${tasteContext}
+
+RESEARCH DATA:
+${searchResults}
+
+YOUR TASK:
+1. Parse the research results and identify the BEST places to recommend
+2. PRIORITIZE places that are mentioned MULTIPLE TIMES across different sources (cross-corroboration = higher confidence)
+3. Consider the user's taste profile BUT don't over-emphasize it - a highly recommended place should still be included even if it's outside their usual preferences
+4. If user asked for personalized recommendations, lean more on taste profile
+5. If user asked for "best" or "top" places, lean more on cross-corroboration and upvotes
+
+CROSS-CORROBORATION SCORING:
+- Place mentioned in 3+ sources = HIGHLY RECOMMENDED, prioritize this
+- Place mentioned in 2 sources = Good recommendation
+- Place mentioned in 1 source with high upvotes = Include if relevant
+- Place with conflicting reviews = Mention the controversy if recommending
+
+OUTPUT FORMAT:
+Write a SHORT intro (1-2 sentences with Spot's personality), then output the JSON action with SECTIONS.
+DO NOT list places in text - only in the JSON!
+
+{
+  "action": "recommendPlaces",
+  "sections": [
+    {
+      "title": "🔥 The Heavy Hitters",
+      "intro": "These spots kept coming up again and again across Reddit, Eater, and more - when multiple sources agree, you know it's legit.",
+      "places": [
+        {
+          "name": "Place Name",
+          "type": "restaurant",
+          "description": "Why it's recommended - mention if cross-corroborated!",
+          "location": "Neighborhood",
+          "sourceName": "r/FoodNYC, Eater",
+          "sourceQuote": "Actual quote from research",
+          "mentionCount": 3
+        }
+      ]
+    },
+    {
+      "title": "✨ Matches Your Vibe",
+      "intro": "Based on your saved spots, these feel very you - similar energy to places you already love.",
+      "places": [...]
+    }
+  ]
+}
+
+SECTION SUGGESTIONS based on tools used (${researchResults.toolsUsed.join(', ')}):
+${researchResults.toolsUsed.includes('research_food') ? '- "🔥 The Heavy Hitters" (cross-corroborated), "✨ Hidden Gems", "💰 Budget-Friendly"' : ''}
+${researchResults.toolsUsed.includes('research_events') ? '- "📅 This Weekend", "🎭 Shows & Performances", "🎪 Markets & Pop-ups"' : ''}
+${researchResults.toolsUsed.includes('research_places') ? '- "🗽 Must-See", "🌿 Outdoors", "🎨 Culture & Arts"' : ''}
+${researchResults.tasteProfile ? '- "💜 Matches Your Taste" (personalized picks)' : ''}
+
+RULES:
+- MAX 10 places total across all sections
+- If a place is cross-corroborated, include "sourceName" with multiple sources (e.g., "r/FoodNYC, Eater")
+- Include actual quotes from the research in sourceQuote
+- DO NOT make up quotes or sources
+- Keep text response SHORT - just a fun intro!]`;
+
+                // Call Gemini 2.5 Pro as the recommender
+                console.log('[Smart Research] Calling Gemini 2.5 Pro recommender...');
+                const recommenderResponse = await getAI().models.generateContent({
+                    model: 'gemini-2.5-pro',
+                    contents: [{ role: 'user', parts: [{ text: recommenderPrompt }] }]
+                });
+
+                content = recommenderResponse.text || '';
+                console.log("[Chat API] --- RECOMMENDER RESPONSE ---");
+                console.log(content.substring(0, 500) + '...');
+
+                // Extract recommendPlaces action from recommender response
+                const recommenderExtracted = extractAction(content);
+                console.log(`[Smart Research] Recommender action:`, recommenderExtracted?.action?.action);
+
+                if (recommenderExtracted && recommenderExtracted.action.action === 'recommendPlaces') {
+                    const hasSections = recommenderExtracted.action.sections?.length > 0;
+                    const hasPlaces = recommenderExtracted.action.places?.length > 0;
+
+                    let sections = hasSections
+                        ? recommenderExtracted.action.sections
+                        : hasPlaces
+                            ? [{ title: "Recommendations", places: recommenderExtracted.action.places }]
+                            : [];
+
+                    // Enrich all places with Google Places data
+                    const enrichedSections = await Promise.all(sections.map(async (section: any) => {
+                        const enrichedPlaces = await Promise.all((section.places || []).map(async (p: any) => {
+                            try {
+                                const placeData = await searchGooglePlaces(p.name, p.location || 'New York, NY');
+                                if (placeData) {
+                                    return { ...p, imageUrl: placeData.imageUrl, rating: placeData.rating, website: placeData.sourceUrl };
+                                }
+                                return p;
+                            } catch (e) {
+                                return p;
+                            }
+                        }));
+                        return { title: section.title, intro: section.intro, places: enrichedPlaces };
+                    }));
+
+                    // Helper to extract favicon domain
+                    const extractDomainForFavicon = (title: string): string => {
+                        const titleLower = title.toLowerCase();
+                        if (titleLower.includes('eater')) return 'eater.com';
+                        if (titleLower.includes('infatuation')) return 'theinfatuation.com';
+                        if (titleLower.includes('timeout') || titleLower.includes('time out')) return 'timeout.com';
+                        if (titleLower.includes('secretnyc') || titleLower.includes('secret nyc')) return 'secretnyc.co';
+                        if (titleLower.includes('skint')) return 'theskint.com';
+                        if (titleLower.includes('reddit') || titleLower.includes('r/')) return 'reddit.com';
+                        if (titleLower.includes('nytimes') || titleLower.includes('ny times')) return 'nytimes.com';
+                        if (titleLower.includes('ra.co') || titleLower.includes('resident advisor')) return 'ra.co';
+                        if (titleLower.includes('edmtrain')) return 'edmtrain.com';
+                        if (titleLower.includes('ohmyrockness')) return 'ohmyrockness.com';
+                        return 'google.com';
+                    };
+
+                    // Collect all sources
+                    const allSources = researchResults.webResults.sources.slice(0, 25);
+
+                    const totalPlaces = enrichedSections.reduce((acc: number, s: any) => acc + (s.places?.length || 0), 0);
+                    console.log(`[Smart Research] Final: ${enrichedSections.length} sections, ${totalPlaces} places, ${allSources.length} sources`);
+
+                    actionResult = {
+                        type: 'recommendations',
+                        sections: enrichedSections,
+                        sources: allSources.map(s => ({
+                            title: s.title,
+                            url: s.url,
+                            domain: extractDomainForFavicon(s.title),
+                            favicon: `https://www.google.com/s2/favicons?domain=${extractDomainForFavicon(s.title)}&sz=32`
+                        })),
+                        tasteProfile: researchResults.tasteProfile ? {
+                            inferences: researchResults.tasteProfile.inferences.slice(0, 5),
+                            cuisines: researchResults.tasteProfile.cuisinePreferences.slice(0, 5)
+                        } : null
+                    };
+                } else {
+                    console.log('[Smart Research] WARNING: No recommendPlaces action in recommender response');
+                }
+            }
+
             // ============= RECOMMEND PLACES ACTION =============
             else if (action.action === 'recommendPlaces' && (action.sections || action.places)) {
                 // Handle both new (sections) and legacy (places) format
@@ -1199,7 +1951,7 @@ Assistant:`;
                         actionResult = { added: true, place: result.place };
                 } else {
                     actionResult = { added: false, message: result.message };
-                }
+                    }
                     }
 
             // ============= ADD MULTIPLE PLACES ACTION =============
@@ -1251,8 +2003,8 @@ If no places found, return { "places": [] }.`;
                                 actionResult = { type: 'batch_add', results };
                             } else {
                                 actionResult = { added: false, message: "Could not identify any places in the post." };
-                            }
-                        } catch (e) {
+                }
+            } catch (e) {
                             actionResult = { added: false, error: 'Failed to extract places from post.' };
                         }
                     } else {
