@@ -2039,27 +2039,20 @@ ${preferenceSummary}
 ${searchResults || '(No data found - use general NYC knowledge)'}
 === END ===
 
-CHAIN OF THOUGHT REASONING (follow these steps):
+INTERNAL REASONING (do NOT output this - use it to think):
+1. Check user's TOP CATEGORIES and CUISINES for preference matching
+2. Find places from research that match their preferences
+3. Prioritize cross-referenced places (mentioned in multiple sources)
+4. Include saved places that fit the query
+5. Group into 2-4 logical sections
 
-STEP 1: ANALYZE USER PREFERENCES
-- What types of places does this user typically save? (look at TOP CATEGORIES)
-- What cuisines/vibes do they prefer? 
-- What neighborhoods do they frequent?
+⚠️ DO NOT output your thinking process. Just output a brief intro and the JSON.
 
-STEP 2: SCAN RESEARCH RESULTS  
-- Which places from research MATCH their preferences?
-- Which places are mentioned by MULTIPLE sources? (higher credibility)
-- Which are highly rated or strongly recommended?
-
-STEP 3: MATCH & RANK
-- Prioritize places that match user preferences AND are well-recommended
-- Include 1-2 "exploration" picks that expand their horizons
-- For events: filter out past dates, prioritize upcoming ones
-
-STEP 4: GENERATE RECOMMENDATIONS
-- Group into logical sections based on query type
-- Write engaging descriptions that reference WHY this matches them
-- Return 7-10 total places
+⚠️ OUTPUT RULES:
+- Write a 1-2 sentence playful intro
+- Then IMMEDIATELY output the JSON (no thinking, no headers, no markdown)
+- DO NOT write "## Thinking Process" or explain your reasoning
+- DO NOT write section headers in markdown - put them in the JSON
 
 OUTPUT FORMAT:
 {"action": "recommendPlaces", "sections": [
