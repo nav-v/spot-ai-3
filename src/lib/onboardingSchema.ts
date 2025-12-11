@@ -76,23 +76,6 @@ export const ONBOARDING_QUESTIONS: OnboardingQuestion[] = [
       { id: 'social', emoji: '🧑‍🤝‍🧑', label: 'Social meetups, mixers', tags: ['social', 'meetup', 'networking'] },
     ],
   },
-  {
-    id: 'event_energy',
-    category: 'events',
-    question: "What kind of energy do you like at events?",
-    subtext: "Be honest — no judgment here",
-    maxPicks: 3,
-    options: [
-      { id: 'chill', emoji: '🕯️', label: 'Super chill, seated, low noise', tags: ['chill', 'quiet', 'relaxed'] },
-      { id: 'intimate', emoji: '🛋️', label: 'Intimate & cozy (small venues)', tags: ['intimate', 'small_venue', 'cozy'] },
-      { id: 'lively', emoji: '😊', label: 'Lively but not overwhelming', tags: ['lively', 'moderate_energy'] },
-      { id: 'high_energy', emoji: '🎉', label: 'Big buzz, crowds, high energy', tags: ['high_energy', 'crowded', 'buzzy'] },
-      { id: 'party', emoji: '🔊', label: 'Full-on party / club energy', tags: ['party', 'club_energy', 'loud'] },
-      { id: 'family', emoji: '👨‍👩‍👧‍👦', label: 'Family-friendly vibes', tags: ['family_friendly', 'kid_friendly', 'daytime'] },
-      { id: 'indie', emoji: '🎨', label: 'Indie / underground, experimental', tags: ['indie', 'underground', 'experimental'] },
-    ],
-  },
-
   // ============ PLACES QUESTIONS (2) ============
   {
     id: 'place_types',
@@ -138,7 +121,7 @@ export const SPLASH_CONTENT = {
     "I'm basically that friend who always knows a place.",
     "But first, I need to get to know you a little.",
     "",
-    "6 quick questions. Pick what vibes with you.",
+    "5 quick questions. Pick what vibes with you.",
     "Let's go?"
   ],
   ctaStart: "Let's do it",
