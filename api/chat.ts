@@ -1623,7 +1623,12 @@ Keep responses conversational`;
             `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`
         ).join('\n');
 
-        let fullPrompt = `${systemPrompt}\n\nConversation:\n${conversationText}\n\nAssistant:`;
+        let fullPrompt = `${systemPrompt}
+
+REMINDER: You MUST output a smartResearch action JSON if the user asks for recommendations. Do NOT just say "let me search" without including the JSON!
+
+Conversation:
+${conversationText}`;
 
         // First Gemini call
         const response = await getAI().models.generateContent({
