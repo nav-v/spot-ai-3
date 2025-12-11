@@ -1790,7 +1790,7 @@ Assistant:`;
                                 
                                 // Filter out past events
                                 if (isEvent && p.startDate) {
-                                    const eventDate = new Date(p.startDate);
+                                    const eventDate = new Date(p.startDate + 'T12:00:00');
                                     const today = new Date();
                                     today.setHours(0, 0, 0, 0);
                                     if (eventDate < today) {
@@ -2013,7 +2013,7 @@ ${researchResults.toolsUsed.includes('research_places') ? 'Use sections: "🗽 M
                                 
                                 // Filter out past events
                                 if (isEvent && p.startDate) {
-                                    const eventDate = new Date(p.startDate);
+                                    const eventDate = new Date(p.startDate + 'T12:00:00');
                                     const today = new Date();
                                     today.setHours(0, 0, 0, 0);
                                     if (eventDate < today) {
@@ -2110,7 +2110,7 @@ ${researchResults.toolsUsed.includes('research_places') ? 'Use sections: "🗽 M
                             
                             // Filter out past events
                             if (isEvent && p.startDate) {
-                                const eventDate = new Date(p.startDate);
+                                const eventDate = new Date(p.startDate + 'T12:00:00');
                                 const today = new Date();
                                 today.setHours(0, 0, 0, 0);
                                 if (eventDate < today) {
