@@ -610,7 +610,7 @@ User stated preferences:
 - Interests: ${userPreferences.interests?.join(', ') || 'Not specified'}
 ` : '';
     
-    const prompt = `You are a taste analyst. Based on these saved ${type === 'food' ? 'restaurants/food spots' : 'places/activities'}, infer 10-25 specific things about this person's tastes and preferences.
+    const prompt = `You are a taste analyst creating a deep psychological profile. Based on these saved ${type === 'food' ? 'restaurants/food spots' : 'places/activities'}, infer 10-25 DETAILED observations about this person's tastes, preferences, and personality.
 
 ${userPrefsText}
 
@@ -619,14 +619,28 @@ ${placesSummary}
 
 Analyze patterns and return a JSON object with:
 {
-  "inferences": ["specific observation 1", "specific observation 2", ...], // 10-25 inferences like "prefers intimate settings over loud venues", "loves trying new cuisines", "values authenticity over trendiness"
+  "inferences": [
+    "DETAILED inference 1 - at least 2-3 sentences explaining the observation with reasoning",
+    "DETAILED inference 2 - at least 2-3 sentences...",
+    ...
+  ],
   "cuisinePreferences": ["Italian", "Japanese", ...], // for food, or ["Museums", "Outdoor activities", ...] for see
   "priceRange": "budget" | "moderate" | "upscale" | "mixed",
   "vibePreferences": ["cozy", "trendy", "casual", ...],
   "locationPreferences": ["Williamsburg", "East Village", ...] // neighborhoods they seem to favor
 }
 
-Be SPECIFIC and INSIGHTFUL. Don't just list what they saved - infer WHY they might like those places.
+INFERENCE RULES:
+- Each inference MUST be 2-3 sentences minimum, not just a phrase
+- Explain the WHY behind the observation - what does this say about them?
+- Go deep into psychology: what motivates them? what do they value?
+- Connect multiple data points when possible ("They saved X and Y, which suggests...")
+- Be specific about patterns, not generic observations
+- Include insights about: decision-making style, social preferences, adventure level, authenticity vs convenience, nostalgia, cultural curiosity
+
+Example good inference:
+"This person appears to value depth over breadth in their cultural experiences. Rather than checking off famous landmarks, they gravitate toward specialized museums (Transit Museum, Philip Williams Posters) that offer niche expertise. This suggests someone who researches thoroughly before visiting and wants to learn something specific, not just 'see the sights.'"
+
 Return ONLY the JSON object, no other text.`;
 
     try {
