@@ -677,7 +677,7 @@ Return ONLY the JSON object, no other text.`;
 
     try {
         const response = await getAI().models.generateContent({
-            model: 'gemini-2.5-pro',
+            model: 'gemini-2.5-flash', // Fast pattern extraction (Pro not needed)
             contents: [{ role: 'user', parts: [{ text: prompt }] }]
         });
         
@@ -1688,7 +1688,7 @@ ${conversationText}`;
 
         // First Gemini call
         const response = await getAI().models.generateContent({
-            model: 'gemini-2.5-pro', // full planning
+            model: 'gemini-2.5-flash', // Fast action detection
             contents: [{ role: 'user', parts: [{ text: fullPrompt }] }]
         });
 
