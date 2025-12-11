@@ -28,8 +28,8 @@ export const ONBOARDING_QUESTIONS: OnboardingQuestion[] = [
     options: [
       { id: 'brunch_spots', emoji: '🥞', label: 'Cozy brunch spots', tags: ['brunch', 'weekend', 'casual'] },
       { id: 'cafes', emoji: '☕', label: 'Cute cafés to sit & hang', tags: ['cafe', 'chill', 'coffee'] },
-      { id: 'comfort_food', emoji: '🍕', label: 'Casual comfort food (pizza, burgers, wings)', tags: ['casual', 'comfort', 'budget_friendly'] },
-      { id: 'trendy', emoji: '🍣', label: 'Trendy spots (sushi bars, small plates)', tags: ['trendy', 'upscale', 'date_spot'] },
+      { id: 'comfort_food', emoji: '🍕', label: 'Casual comfort food', tags: ['casual', 'comfort', 'budget_friendly'] },
+      { id: 'trendy', emoji: '🍣', label: 'Trendy spots', tags: ['trendy', 'upscale', 'date_spot'] },
       { id: 'street_food', emoji: '🌯', label: 'Street food & food trucks', tags: ['street_food', 'cheap_eats', 'adventurous'] },
       { id: 'wine_bars', emoji: '🍷', label: 'Wine bars & cocktails with bites', tags: ['drinks_focused', 'date_spot', 'upscale'] },
       { id: 'healthy', emoji: '🥗', label: 'Healthy-ish bowls & salads', tags: ['healthy', 'light', 'quick'] },
@@ -56,27 +56,6 @@ export const ONBOARDING_QUESTIONS: OnboardingQuestion[] = [
       { id: 'variety', emoji: '🍜', label: 'Honestly, a bit of everything', tags: ['variety_lover', 'adventurous', 'open_minded'] },
     ],
   },
-  {
-    id: 'food_rules',
-    category: 'food',
-    question: "Any food rules I should know about?",
-    subtext: "So I don't recommend the wrong stuff",
-    maxPicks: 3,
-    options: [
-      { id: 'vegetarian', emoji: '🌱', label: 'Vegetarian', tags: ['dietary:vegetarian'] },
-      { id: 'vegan', emoji: '🌿', label: 'Vegan', tags: ['dietary:vegan'] },
-      { id: 'no_pork', emoji: '🚫', label: 'No pork', tags: ['dietary:no_pork'] },
-      { id: 'halal', emoji: '✓', label: 'Halal only', tags: ['dietary:halal'] },
-      { id: 'gluten_free', emoji: '🌾', label: 'Gluten-free', tags: ['dietary:gluten_free'] },
-      { id: 'dairy_free', emoji: '🥛', label: 'Dairy-free / lactose-free', tags: ['dietary:dairy_free'] },
-      { id: 'spicy_lover', emoji: '🔥', label: 'I love spicy food', tags: ['spicy_lover'] },
-      { id: 'mild_only', emoji: '❄️', label: 'Keep it mild please', tags: ['spice_avoid'] },
-      { id: 'cheap_eats', emoji: '💸', label: 'Prefer cheap eats most of the time', tags: ['cheap_eats', 'budget'] },
-      { id: 'premium', emoji: '💳', label: 'Happy to pay more for great food', tags: ['premium', 'splurge'] },
-      { id: 'drinks_matter', emoji: '🍹', label: 'Drinks matter (cocktails, wine, etc.)', tags: ['drinks_focused', 'cocktails'] },
-    ],
-  },
-
   // ============ EVENTS QUESTIONS (3) ============
   {
     id: 'event_types',
@@ -91,6 +70,7 @@ export const ONBOARDING_QUESTIONS: OnboardingQuestion[] = [
       { id: 'comedy', emoji: '😂', label: 'Stand-up comedy, improv', tags: ['comedy', 'standup', 'improv'] },
       { id: 'art_shows', emoji: '🎨', label: 'Art shows, gallery openings', tags: ['art', 'gallery', 'cultural'] },
       { id: 'talks', emoji: '🎓', label: 'Talks, panels, book events', tags: ['talks', 'intellectual', 'learning'] },
+      { id: 'seasonal_popups', emoji: '🧑‍🎄', label: 'Local pop-ups & seasonal happenings', tags: ['seasonal', 'pop_up', 'local_events', 'market'] },
       { id: 'festivals', emoji: '🎪', label: 'Festivals & big outdoor events', tags: ['festival', 'outdoor', 'big_event'] },
       { id: 'sports', emoji: '🏟️', label: 'Sports games / watch parties', tags: ['sports', 'games', 'watch_party'] },
       { id: 'social', emoji: '🧑‍🤝‍🧑', label: 'Social meetups, mixers', tags: ['social', 'meetup', 'networking'] },
@@ -129,6 +109,7 @@ export const ONBOARDING_QUESTIONS: OnboardingQuestion[] = [
       { id: 'shopping', emoji: '🛍️', label: 'Cool streets, bookstores, record shops', tags: ['shopping', 'bookstore', 'browse', 'street'] },
       { id: 'quirky', emoji: '🧪', label: 'Quirky / immersive (VR, escape rooms)', tags: ['quirky', 'immersive', 'interactive', 'unique'] },
       { id: 'quiet', emoji: '🧘', label: 'Quiet places to read, think, or work', tags: ['quiet', 'peaceful', 'work_friendly'] },
+      { id: 'science', emoji: '🔭', label: 'Science museums & planetariums', tags: ['museum', 'science', 'learning', 'curiosity'] },
     ],
   },
   {
@@ -145,6 +126,7 @@ export const ONBOARDING_QUESTIONS: OnboardingQuestion[] = [
       { id: 'photo_spots', emoji: '📷', label: 'Walkable photo spots / street art', tags: ['photo_spots', 'street_art', 'aesthetic'] },
       { id: 'nature_walks', emoji: '🌿', label: 'Nature-y walks (rivers, greenery)', tags: ['nature', 'waterfront', 'greenery', 'walks'] },
       { id: 'compact', emoji: '🔁', label: 'Compact areas, minimal walking', tags: ['compact', 'low_mobility', 'accessible'] },
+      { id: 'guided_history', emoji: '📜', label: 'Guided history walks or tours', tags: ['historic', 'learning', 'guided', 'curious'] },
     ],
   },
 ];
@@ -156,7 +138,7 @@ export const SPLASH_CONTENT = {
     "I'm basically that friend who always knows a place.",
     "But first, I need to get to know you a little.",
     "",
-    "7 quick questions. Pick what vibes with you.",
+    "6 quick questions. Pick what vibes with you.",
     "Let's go?"
   ],
   ctaStart: "Let's do it",
