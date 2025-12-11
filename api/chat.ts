@@ -311,7 +311,7 @@ async function executeSmartResearch(
         );
     };
 
-    // RESEARCH_FOOD: Subreddit searches + scrape food sites
+    // RESEARCH_FOOD: Subreddit searches + Gemini search for food publications
     if (foodTools.length > 0) {
         results.toolsUsed.push('research_food');
         const tool = foodTools[0];
@@ -331,28 +331,10 @@ async function executeSmartResearch(
             addSearch(`${query} site:reddit.com/r/${sub}`, `r/${sub}`);
         }
         
-        // Scrape food publication sites directly (more reliable than Gemini search)
-        const foodSitesToScrape = [
-            `https://ny.eater.com/search?q=${encodeURIComponent(query)}`,
-            `https://www.theinfatuation.com/new-york/search?query=${encodeURIComponent(query)}`
-        ];
-        
-        for (const url of foodSitesToScrape) {
-            promises.push(
-                (async () => {
-                    try {
-                        const result = await scrapeWebsite(url);
-                        if (result.success && result.content) {
-                            const sourceName = new URL(url).hostname.replace('www.', '');
-                            results.webResults.text += `\n=== ${sourceName} ===\n${result.content}\n`;
-                            console.log(`[Smart Research] Scraped ${sourceName}: ${result.content.length} chars`);
-                        }
-                    } catch (e: any) {
-                        console.error(`[Smart Research] Scrape failed for ${url}:`, e.message);
-                    }
-                })()
-            );
-        }
+        // Food publications via Gemini search (articles/reviews, not lists - so search is better than scraping)
+        addSearch(`${query} NYC site:eater.com`, 'Eater');
+        addSearch(`${query} NYC site:nytimes.com/section/food`, 'NY Times Food');
+        addSearch(`${query} NYC site:theinfatuation.com`, 'The Infatuation');
     }
     
     // RESEARCH_PLACES: Subreddit searches + scrape TimeOut
