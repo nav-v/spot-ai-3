@@ -292,7 +292,26 @@ async function executeSmartResearch(
     // Build parallel execution promises
     const promises: Promise<void>[] = [];
     
-    // RESEARCH_FOOD: Use Gemini grounded search with site: operators
+    // Helper to add a Gemini search promise
+    const addSearch = (searchQuery: string, label: string) => {
+        promises.push(
+            (async () => {
+                try {
+                    console.log(`[Smart Research] ${label}: ${searchQuery.substring(0, 70)}...`);
+                    const searchResult = await singleGeminiSearch(searchQuery);
+                    results.webResults.text += `\n=== ${label} ===\n${searchResult.text}\n`;
+                    results.webResults.textWithCitations += `\n=== ${label} ===\n${searchResult.textWithCitations}\n`;
+                    results.webResults.sources.push(...searchResult.sources);
+                    results.webResults.citations.push(...searchResult.citations);
+                    console.log(`[Smart Research] ${label} returned ${searchResult.sources.length} sources`);
+                } catch (e: any) {
+                    console.error(`[Smart Research] ${label} failed:`, e.message);
+                }
+            })()
+        );
+    };
+
+    // RESEARCH_FOOD: Subreddit searches + scrape food sites
     if (foodTools.length > 0) {
         results.toolsUsed.push('research_food');
         const tool = foodTools[0];
@@ -301,40 +320,42 @@ async function executeSmartResearch(
         
         console.log(`[Smart Research] research_food: query="${query}", location subreddits: ${locationSubs.join(', ') || 'none'}`);
         
-        // Build search queries for Gemini grounded search
-        const searchQueries = [
-            `${query} NYC site:reddit.com/r/FoodNYC OR site:reddit.com/r/AskNYC`,
-            `${query} NYC site:eater.com`,
-            `${query} NYC site:nytimes.com/section/food OR site:theinfatuation.com`
-        ];
-        
-        // Add location-specific Reddit searches
-        if (locationSubs.length > 0) {
-            const locationQuery = locationSubs.map(s => `site:reddit.com/r/${s}`).join(' OR ');
-            searchQueries.push(`${query} ${locationQuery}`);
+        // Base subreddits - one Gemini search each
+        const baseFoodSubs = TOOL_SUBREDDITS.research_food;
+        for (const sub of baseFoodSubs) {
+            addSearch(`${query} NYC site:reddit.com/r/${sub}`, `r/${sub}`);
         }
         
-        // Run all Gemini searches in PARALLEL
-        for (const sq of searchQueries) {
+        // Location-specific subreddits - one Gemini search each
+        for (const sub of locationSubs) {
+            addSearch(`${query} site:reddit.com/r/${sub}`, `r/${sub}`);
+        }
+        
+        // Scrape food publication sites directly (more reliable than Gemini search)
+        const foodSitesToScrape = [
+            `https://ny.eater.com/search?q=${encodeURIComponent(query)}`,
+            `https://www.theinfatuation.com/new-york/search?query=${encodeURIComponent(query)}`
+        ];
+        
+        for (const url of foodSitesToScrape) {
             promises.push(
                 (async () => {
                     try {
-                        console.log(`[Smart Research] Gemini search: ${sq.substring(0, 60)}...`);
-                        const searchResult = await singleGeminiSearch(sq);
-                        results.webResults.text += searchResult.text + '\n';
-                        results.webResults.textWithCitations += searchResult.textWithCitations + '\n';
-                        results.webResults.sources.push(...searchResult.sources);
-                        results.webResults.citations.push(...searchResult.citations);
-                        console.log(`[Smart Research] Search returned ${searchResult.sources.length} sources`);
+                        const result = await scrapeWebsite(url);
+                        if (result.success && result.content) {
+                            const sourceName = new URL(url).hostname.replace('www.', '');
+                            results.webResults.text += `\n=== ${sourceName} ===\n${result.content}\n`;
+                            console.log(`[Smart Research] Scraped ${sourceName}: ${result.content.length} chars`);
+                        }
                     } catch (e: any) {
-                        console.error(`[Smart Research] Search failed:`, e.message);
+                        console.error(`[Smart Research] Scrape failed for ${url}:`, e.message);
                     }
                 })()
             );
         }
     }
     
-    // RESEARCH_PLACES: Use Gemini grounded search
+    // RESEARCH_PLACES: Subreddit searches + scrape TimeOut
     if (placesTools.length > 0) {
         results.toolsUsed.push('research_places');
         const tool = placesTools[0];
@@ -343,72 +364,54 @@ async function executeSmartResearch(
         
         console.log(`[Smart Research] research_places: query="${query}", location subreddits: ${locationSubs.join(', ') || 'none'}`);
         
-        const searchQueries = [
-            `${query} NYC site:reddit.com/r/AskNYC OR site:reddit.com/r/nyc`,
-            `${query} NYC site:timeout.com/newyork`
-        ];
-        
-        if (locationSubs.length > 0) {
-            const locationQuery = locationSubs.map(s => `site:reddit.com/r/${s}`).join(' OR ');
-            searchQueries.push(`${query} ${locationQuery}`);
+        // Base subreddits - Gemini search
+        const basePlacesSubs = TOOL_SUBREDDITS.research_places;
+        for (const sub of basePlacesSubs) {
+            addSearch(`${query} NYC site:reddit.com/r/${sub}`, `r/${sub}`);
         }
         
-        // Run all Gemini searches in PARALLEL
-        for (const sq of searchQueries) {
-            promises.push(
-                (async () => {
-                    try {
-                        console.log(`[Smart Research] Gemini search: ${sq.substring(0, 60)}...`);
-                        const searchResult = await singleGeminiSearch(sq);
-                        results.webResults.text += searchResult.text + '\n';
-                        results.webResults.textWithCitations += searchResult.textWithCitations + '\n';
-                        results.webResults.sources.push(...searchResult.sources);
-                        results.webResults.citations.push(...searchResult.citations);
-                        console.log(`[Smart Research] Search returned ${searchResult.sources.length} sources`);
-                    } catch (e: any) {
-                        console.error(`[Smart Research] Search failed:`, e.message);
+        // Location-specific subreddits - Gemini search
+        for (const sub of locationSubs) {
+            addSearch(`${query} site:reddit.com/r/${sub}`, `r/${sub}`);
+        }
+        
+        // Scrape TimeOut directly
+        promises.push(
+            (async () => {
+                try {
+                    const url = `https://www.timeout.com/newyork/search?q=${encodeURIComponent(query)}`;
+                    const result = await scrapeWebsite(url);
+                    if (result.success && result.content) {
+                        results.webResults.text += `\n=== timeout.com ===\n${result.content}\n`;
+                        console.log(`[Smart Research] Scraped TimeOut: ${result.content.length} chars`);
                     }
-                })()
-            );
-        }
+                } catch (e: any) {
+                    console.error(`[Smart Research] TimeOut scrape failed:`, e.message);
+                }
+            })()
+        );
     }
     
-    // RESEARCH_EVENTS: Use Gemini grounded search + scrape event sites
+    // RESEARCH_EVENTS: Subreddit searches + direct scraping (no duplicate Gemini searches for scraped sites)
     if (eventsTools.length > 0) {
         results.toolsUsed.push('research_events');
         const tool = eventsTools[0];
         const query = tool.query || 'things to do december 2025';
         const dateFilter = tool.dates || '';
+        const fullQuery = `${query} ${dateFilter}`.trim();
         
-        console.log(`[Smart Research] research_events: query="${query}", dates="${dateFilter}"`);
+        console.log(`[Smart Research] research_events: query="${fullQuery}"`);
         
-        // Gemini search for events
-        const searchQueries = [
-            `${query} ${dateFilter} site:reddit.com/r/AskNYC OR site:reddit.com/r/nyc`,
-            `${query} ${dateFilter} site:timeout.com/newyork`,
-            `${query} ${dateFilter} site:secretnyc.co OR site:theskint.com`
-        ];
-        
-        // Run all Gemini searches in PARALLEL (not sequential) to avoid timeouts
-        for (const sq of searchQueries) {
-            promises.push(
-                (async () => {
-                    try {
-                        console.log(`[Smart Research] Gemini search: ${sq.substring(0, 60)}...`);
-                        const searchResult = await singleGeminiSearch(sq);
-                        results.webResults.text += searchResult.text + '\n';
-                        results.webResults.textWithCitations += searchResult.textWithCitations + '\n';
-                        results.webResults.sources.push(...searchResult.sources);
-                        results.webResults.citations.push(...searchResult.citations);
-                        console.log(`[Smart Research] Search returned ${searchResult.sources.length} sources`);
-                    } catch (e: any) {
-                        console.error(`[Smart Research] Search failed for "${sq.substring(0, 40)}...":`, e.message);
-                    }
-                })()
-            );
+        // Subreddit searches via Gemini (these can't be scraped)
+        const baseEventsSubs = TOOL_SUBREDDITS.research_events;
+        for (const sub of baseEventsSubs) {
+            addSearch(`${fullQuery} site:reddit.com/r/${sub}`, `r/${sub}`);
         }
         
-        // Also scrape event sites directly (fallback)
+        // NOTE: We scrape event sites directly (theskint, timeout, secretnyc, etc.)
+        // so no need to also search them via Gemini - that would be redundant
+        
+        // Scrape all event sites directly
         promises.push(
             (async () => {
                 try {
