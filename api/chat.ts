@@ -2069,12 +2069,9 @@ OUTPUT FORMAT:
 ]}
 
 SECTION GUIDELINES:
-${researchResults.toolsUsed.includes('research_events') ? '- For EVENTS: "📅 This Weekend", "🎭 Shows & Performances", "🎪 Markets & Pop-ups"
-- Event names should be the EVENT, not the venue (e.g., "Jingle Ball" not "MSG")' : ''}
-${researchResults.toolsUsed.includes('research_food') ? '- For FOOD: "🔥 Top Picks", "✨ Hidden Gems", "💜 Matches Your Vibe"
-- Reference their cuisine preferences in descriptions' : ''}
-${researchResults.toolsUsed.includes('research_places') ? '- For PLACES: "🗽 Must-See", "🎨 Culture & Arts", "🌳 Outdoor Fun"
-- Match to their saved activity types' : ''}
+${researchResults.toolsUsed.includes('research_events') ? '- For EVENTS: "📅 This Weekend", "🎭 Shows & Performances", "🎪 Markets & Pop-ups"\n- Event names should be the EVENT, not the venue (e.g., "Jingle Ball" not "MSG")' : ''}
+${researchResults.toolsUsed.includes('research_food') ? '- For FOOD: "🔥 Top Picks", "✨ Hidden Gems", "💜 Matches Your Vibe"\n- Reference their cuisine preferences in descriptions' : ''}
+${researchResults.toolsUsed.includes('research_places') ? '- For PLACES: "🗽 Must-See", "🎨 Culture & Arts", "🌳 Outdoor Fun"\n- Match to their saved activity types' : ''}
 
 ⚠️ CRITICAL: Return 7-10 places. Do NOT return fewer than 7!`;
 
