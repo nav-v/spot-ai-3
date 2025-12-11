@@ -1789,6 +1789,28 @@ Assistant:`;
                     const enrichedSections = await Promise.all(sections.map(async (section: any) => {
                         const enrichedPlaces = await Promise.all((section.places || []).map(async (p: any) => {
                             try {
+                                // For events, generate booking URL instead of venue website
+                                const isEvent = p.type === 'event' || p.startDate || p.isEvent;
+                                
+                                if (isEvent) {
+                                    // Generate ticket search URL for events
+                                    const eventQuery = encodeURIComponent(`${p.name} ${p.location || ''} tickets`);
+                                    const bookingUrl = `https://www.google.com/search?q=${eventQuery}`;
+                                    
+                                    // Try to get venue image from Google Places
+                                    const venueLocation = p.location?.split(',')[0] || p.location; // Extract venue name from "Venue, Neighborhood"
+                                    const placeData = await searchGooglePlaces(venueLocation || p.name, 'New York, NY');
+                                    
+                                    return { 
+                                        ...p, 
+                                        imageUrl: placeData?.imageUrl || null, 
+                                        rating: null, // Events don't have ratings
+                                        website: bookingUrl,
+                                        isEvent: true
+                                    };
+                                }
+                                
+                                // For regular places, use Google Places website
                                 const placeData = await searchGooglePlaces(p.name, p.location || 'New York, NY');
                                 if (placeData) {
                                     return { ...p, imageUrl: placeData.imageUrl, rating: placeData.rating, website: placeData.sourceUrl };
@@ -1979,6 +2001,28 @@ ${researchResults.toolsUsed.includes('research_places') ? 'Use sections: "🗽 M
                     const enrichedSections = await Promise.all(sections.map(async (section: any) => {
                         const enrichedPlaces = await Promise.all((section.places || []).map(async (p: any) => {
                             try {
+                                // For events, generate booking URL instead of venue website
+                                const isEvent = p.type === 'event' || p.startDate || p.isEvent;
+                                
+                                if (isEvent) {
+                                    // Generate ticket search URL for events
+                                    const eventQuery = encodeURIComponent(`${p.name} ${p.location || ''} tickets`);
+                                    const bookingUrl = `https://www.google.com/search?q=${eventQuery}`;
+                                    
+                                    // Try to get venue image from Google Places
+                                    const venueLocation = p.location?.split(',')[0] || p.location; // Extract venue name from "Venue, Neighborhood"
+                                    const placeData = await searchGooglePlaces(venueLocation || p.name, 'New York, NY');
+                                    
+                                    return { 
+                                        ...p, 
+                                        imageUrl: placeData?.imageUrl || null, 
+                                        rating: null, // Events don't have ratings
+                                        website: bookingUrl,
+                                        isEvent: true
+                                    };
+                                }
+                                
+                                // For regular places, use Google Places website
                                 const placeData = await searchGooglePlaces(p.name, p.location || 'New York, NY');
                                 if (placeData) {
                                     return { ...p, imageUrl: placeData.imageUrl, rating: placeData.rating, website: placeData.sourceUrl };
@@ -2043,6 +2087,24 @@ ${researchResults.toolsUsed.includes('research_places') ? 'Use sections: "🗽 M
                 const enrichedSections = await Promise.all(sections.map(async (section: any) => {
                     const enrichedPlaces = await Promise.all((section.places || []).map(async (p: any) => {
                         try {
+                            // For events, generate booking URL instead of venue website
+                            const isEvent = p.type === 'event' || p.startDate || p.isEvent;
+                            
+                            if (isEvent) {
+                                const eventQuery = encodeURIComponent(`${p.name} ${p.location || ''} tickets`);
+                                const bookingUrl = `https://www.google.com/search?q=${eventQuery}`;
+                                const venueLocation = p.location?.split(',')[0] || p.location;
+                                const placeData = await searchGooglePlaces(venueLocation || p.name, 'New York, NY');
+                                
+                                return { 
+                                    ...p, 
+                                    imageUrl: placeData?.imageUrl || null, 
+                                    rating: null,
+                                    website: bookingUrl,
+                                    isEvent: true
+                                };
+                            }
+                            
                             const placeData = await searchGooglePlaces(p.name, p.location || 'New York, NY');
                             if (placeData) {
                                 return { ...p, imageUrl: placeData.imageUrl, rating: placeData.rating, website: placeData.sourceUrl };
