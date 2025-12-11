@@ -3,13 +3,14 @@ import { MapView } from '@/components/MapView';
 import { PlaceCard } from '@/components/PlaceCard';
 import { PlaceDetailModal } from '@/components/PlaceDetailModal';
 import { ChatInterface } from '@/components/ChatInterface';
-import { placesApi, Place } from '@/lib/api';
+import { placesApi, preferencesApi, Place } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { eatCategories, seeCategories } from '@/data/categories';
 import { useAuth } from '@/components/AuthContext';
 import { LoginScreen } from '@/components/LoginScreen';
 import { UserAvatar } from '@/components/UserAvatar';
 import { UserProfileSheet } from '@/components/UserProfileSheet';
+import { OnboardingFlow } from '@/components/Onboarding';
 import {
   Search, MessageCircle, MapPin, Utensils, Heart, CheckCircle, Plus, Loader2,
   // Food icons
@@ -54,7 +55,24 @@ const Index = () => {
   const [showCompleted, setShowCompleted] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
   const { toast } = useToast();
+
+  // Check if user needs onboarding
+  useEffect(() => {
+    const checkOnboarding = async () => {
+      if (isAuthenticated) {
+        try {
+          const needsOnboarding = await preferencesApi.needsOnboarding();
+          setShowOnboarding(needsOnboarding);
+        } catch (error) {
+          console.error('Error checking onboarding status:', error);
+          setShowOnboarding(false); // Don't block on error
+        }
+      }
+    };
+    checkOnboarding();
+  }, [isAuthenticated]);
 
   // Get categories that actually have matching places
   const getAvailableCategories = () => {
@@ -183,6 +201,24 @@ const Index = () => {
   // Show login screen if not authenticated
   if (!isAuthenticated) {
     return <LoginScreen />;
+  }
+
+  // Show onboarding if needed (null = still checking)
+  if (showOnboarding === null) {
+    return (
+      <div className="h-[100dvh] flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (showOnboarding) {
+    return (
+      <OnboardingFlow
+        onComplete={() => setShowOnboarding(false)}
+        onSkip={() => setShowOnboarding(false)}
+      />
+    );
   }
 
   return (

@@ -444,6 +444,180 @@ export const instagramApi = {
     },
 };
 
+// ============= ONBOARDING PREFERENCES API =============
+
+export interface UserPreferences {
+    userId: string;
+    // Raw selections
+    foodOutingTypes: string[];
+    foodCuisines: string[];
+    foodRules: string[];
+    eventTypes: string[];
+    eventEnergy: string[];
+    eventTiming: string[];
+    placeTypes: string[];
+    exploreStyle: string[];
+    // Computed
+    allTags: string[];
+    primaryPersona: string | null;
+    secondaryPersona: string | null;
+    // Dietary flags
+    dietaryVegetarian: boolean;
+    dietaryVegan: boolean;
+    dietaryHalal: boolean;
+    dietaryGlutenFree: boolean;
+    dietaryDairyFree: boolean;
+    dietaryNoPork: boolean;
+    // Meta
+    onboardingCompleted: boolean;
+    onboardingSkipped: boolean;
+}
+
+export const preferencesApi = {
+    // Get preferences for current user
+    async get(): Promise<UserPreferences | null> {
+        const userId = getCurrentUserId();
+        if (!userId) return null;
+
+        const { data, error } = await supabase
+            .from('user_preferences')
+            .select('*')
+            .eq('user_id', userId)
+            .single();
+
+        if (error || !data) return null;
+
+        return {
+            userId: data.user_id,
+            foodOutingTypes: data.food_outing_types || [],
+            foodCuisines: data.food_cuisines || [],
+            foodRules: data.food_rules || [],
+            eventTypes: data.event_types || [],
+            eventEnergy: data.event_energy || [],
+            eventTiming: data.event_timing || [],
+            placeTypes: data.place_types || [],
+            exploreStyle: data.explore_style || [],
+            allTags: data.all_tags || [],
+            primaryPersona: data.primary_persona,
+            secondaryPersona: data.secondary_persona,
+            dietaryVegetarian: data.dietary_vegetarian || false,
+            dietaryVegan: data.dietary_vegan || false,
+            dietaryHalal: data.dietary_halal || false,
+            dietaryGlutenFree: data.dietary_gluten_free || false,
+            dietaryDairyFree: data.dietary_dairy_free || false,
+            dietaryNoPork: data.dietary_no_pork || false,
+            onboardingCompleted: data.onboarding_completed || false,
+            onboardingSkipped: data.onboarding_skipped || false,
+        };
+    },
+
+    // Save onboarding preferences
+    async save(
+        selections: Record<string, string[]>,
+        allTags: string[],
+        primaryPersona: string,
+        secondaryPersona: string | null
+    ): Promise<UserPreferences> {
+        const userId = getCurrentUserId();
+        if (!userId) throw new Error('Not authenticated');
+
+        // Extract dietary flags from tags
+        const dietaryVegetarian = allTags.includes('dietary:vegetarian');
+        const dietaryVegan = allTags.includes('dietary:vegan');
+        const dietaryHalal = allTags.includes('dietary:halal');
+        const dietaryGlutenFree = allTags.includes('dietary:gluten_free');
+        const dietaryDairyFree = allTags.includes('dietary:dairy_free');
+        const dietaryNoPork = allTags.includes('dietary:no_pork');
+
+        const dbRecord = {
+            user_id: userId,
+            food_outing_types: selections.food_outing_type || [],
+            food_cuisines: selections.food_cuisines || [],
+            food_rules: selections.food_rules || [],
+            event_types: selections.event_types || [],
+            event_energy: selections.event_energy || [],
+            event_timing: selections.event_timing || [],
+            place_types: selections.place_types || [],
+            explore_style: selections.explore_style || [],
+            all_tags: allTags,
+            primary_persona: primaryPersona,
+            secondary_persona: secondaryPersona,
+            dietary_vegetarian: dietaryVegetarian,
+            dietary_vegan: dietaryVegan,
+            dietary_halal: dietaryHalal,
+            dietary_gluten_free: dietaryGlutenFree,
+            dietary_dairy_free: dietaryDairyFree,
+            dietary_no_pork: dietaryNoPork,
+            onboarding_completed: true,
+            onboarding_skipped: false,
+            updated_at: new Date().toISOString(),
+        };
+
+        const { data, error } = await supabase
+            .from('user_preferences')
+            .upsert(dbRecord, { onConflict: 'user_id' })
+            .select()
+            .single();
+
+        if (error) throw new Error('Failed to save preferences');
+
+        return {
+            userId: data.user_id,
+            foodOutingTypes: data.food_outing_types || [],
+            foodCuisines: data.food_cuisines || [],
+            foodRules: data.food_rules || [],
+            eventTypes: data.event_types || [],
+            eventEnergy: data.event_energy || [],
+            eventTiming: data.event_timing || [],
+            placeTypes: data.place_types || [],
+            exploreStyle: data.explore_style || [],
+            allTags: data.all_tags || [],
+            primaryPersona: data.primary_persona,
+            secondaryPersona: data.secondary_persona,
+            dietaryVegetarian: data.dietary_vegetarian || false,
+            dietaryVegan: data.dietary_vegan || false,
+            dietaryHalal: data.dietary_halal || false,
+            dietaryGlutenFree: data.dietary_gluten_free || false,
+            dietaryDairyFree: data.dietary_dairy_free || false,
+            dietaryNoPork: data.dietary_no_pork || false,
+            onboardingCompleted: data.onboarding_completed || false,
+            onboardingSkipped: data.onboarding_skipped || false,
+        };
+    },
+
+    // Mark onboarding as skipped
+    async skip(): Promise<void> {
+        const userId = getCurrentUserId();
+        if (!userId) throw new Error('Not authenticated');
+
+        const { error } = await supabase
+            .from('user_preferences')
+            .upsert({
+                user_id: userId,
+                onboarding_skipped: true,
+                onboarding_completed: false,
+                updated_at: new Date().toISOString(),
+            }, { onConflict: 'user_id' });
+
+        if (error) throw new Error('Failed to skip onboarding');
+    },
+
+    // Check if user needs onboarding
+    async needsOnboarding(): Promise<boolean> {
+        const userId = getCurrentUserId();
+        if (!userId) return false;
+
+        const { data, error } = await supabase
+            .from('user_preferences')
+            .select('onboarding_completed, onboarding_skipped')
+            .eq('user_id', userId)
+            .single();
+
+        if (error || !data) return true; // No record = needs onboarding
+        return !data.onboarding_completed && !data.onboarding_skipped;
+    },
+};
+
 // Legacy exports for compatibility
 export const setAuthToken = setCurrentUser;
 export const getAuthToken = getCurrentUserId;
