@@ -217,6 +217,7 @@ const Index = () => {
       <OnboardingFlow
         onComplete={() => setShowOnboarding(false)}
         onSkip={() => setShowOnboarding(false)}
+        onLinkInstagram={() => setProfileSheetOpen(true)}
       />
     );
   }

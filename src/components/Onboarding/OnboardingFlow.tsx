@@ -14,9 +14,10 @@ type OnboardingStage = 'splash' | 'questions' | 'reveal' | 'complete';
 interface OnboardingFlowProps {
   onComplete: () => void;
   onSkip: () => void;
+  onLinkInstagram?: () => void;
 }
 
-export function OnboardingFlow({ onComplete, onSkip }: OnboardingFlowProps) {
+export function OnboardingFlow({ onComplete, onSkip, onLinkInstagram }: OnboardingFlowProps) {
   const [stage, setStage] = useState<OnboardingStage>('splash');
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selections, setSelections] = useState<Record<string, string[]>>({});
@@ -110,6 +111,7 @@ export function OnboardingFlow({ onComplete, onSkip }: OnboardingFlowProps) {
         primaryPersona={personas.primary}
         secondaryPersona={personas.secondary}
         onComplete={handleRevealComplete}
+        onLinkInstagram={onLinkInstagram}
       />
     );
   }
