@@ -1940,15 +1940,25 @@ Assistant:`;
                 // Build taste profile context for the recommender
                 let tasteContext = '';
                 if (researchResults.tasteProfile && researchResults.tasteProfile.inferences.length > 0) {
+                    const cuisinePrefs = Array.isArray(researchResults.tasteProfile.cuisinePreferences)
+                        ? researchResults.tasteProfile.cuisinePreferences
+                        : [];
+                    const vibePrefs = Array.isArray(researchResults.tasteProfile.vibePreferences)
+                        ? researchResults.tasteProfile.vibePreferences
+                        : [];
+                    const locationPrefs = Array.isArray(researchResults.tasteProfile.locationPreferences)
+                        ? researchResults.tasteProfile.locationPreferences
+                        : [];
+
                     tasteContext = `
 === USER TASTE PROFILE (from analyzing their saved places) ===
 Key Inferences:
 ${researchResults.tasteProfile.inferences.slice(0, 15).map((i, idx) => `${idx + 1}. ${i}`).join('\n')}
 
-Cuisine/Category Preferences: ${researchResults.tasteProfile.cuisinePreferences.join(', ') || 'Varied'}
+Cuisine/Category Preferences: ${cuisinePrefs.join(', ') || 'Varied'}
 Price Range: ${researchResults.tasteProfile.priceRange}
-Vibe Preferences: ${researchResults.tasteProfile.vibePreferences.join(', ') || 'Flexible'}
-Neighborhood Preferences: ${researchResults.tasteProfile.locationPreferences.join(', ') || 'Open to exploring'}
+Vibe Preferences: ${vibePrefs.join(', ') || 'Flexible'}
+Neighborhood Preferences: ${locationPrefs.join(', ') || 'Open to exploring'}
 
 ⚠️ Use these insights to PERSONALIZE recommendations, but don't over-emphasize them. 
    Balance user taste with highly-recommended/cross-corroborated places from research.
