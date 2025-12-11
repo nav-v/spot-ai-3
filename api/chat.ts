@@ -967,21 +967,25 @@ interface SearchResultWithCitations {
 
 // Single search helper - extracts native Gemini citations
 async function singleGeminiSearch(searchQuery: string): Promise<SearchResultWithCitations> {
-    const searchPrompt = `Search: "${searchQuery}"
+    const searchPrompt = `Find information about: ${searchQuery}
 
-List NYC places mentioned. For each place include:
-- Place name
-- Neighborhood  
-- Why it's recommended
+Based on your search results, write a helpful summary of the NYC places, events, or restaurants mentioned. 
 
-Only include real places from search results.`;
+For each place you find, include:
+- The place name
+- The neighborhood/location
+- Why people recommend it (summarize the sentiment)
+
+Write in a natural, readable format - NOT as raw search results or JSON. 
+Synthesize the information into a cohesive response.
+Only mention places that actually appear in the search results.`;
 
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // Increased timeout for grounded search
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
 
         const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`,
             {
                 method: 'POST',
                 headers: {
@@ -991,7 +995,7 @@ Only include real places from search results.`;
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: searchPrompt }] }],
                     tools: [{ google_search: {} }],
-                    generationConfig: { temperature: 0.2, maxOutputTokens: 1500 }
+                    generationConfig: { temperature: 0.3, maxOutputTokens: 2500 }
                 }),
                 signal: controller.signal
             }
