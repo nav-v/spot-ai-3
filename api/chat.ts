@@ -1218,70 +1218,16 @@ async function searchWeb(query: string): Promise<{ text: string; textWithCitatio
     let allText = '';
     let allSources: VerifiedSource[] = [];
 
-    // For events: scrape the 3 trusted event sites directly via Firecrawl
-    if (queryType === 'event' || queryType === 'show' || isMixed) {
-        console.log('[Web Search] Event query - scraping TimeOut, Secret NYC, The Skint...');
-        
-        const eventSources = [
-            { name: 'TimeOut NY', url: 'https://www.timeout.com/newyork/things-to-do/things-to-do-in-new-york-this-week' },
-            { name: 'Secret NYC', url: 'https://secretnyc.co/what-to-do-this-weekend-nyc/' },
-            { name: 'The Skint', url: 'https://theskint.com/' }
-        ];
+    // DISABLED: Legacy event scraping - smart research now handles all event sites
+    // Event sites are scraped in executeSmartResearch via scrapeEventSites()
+    console.log('[Web Search] Skipping legacy event scraping - smart research handles it');
 
-        // Scrape all 3 in parallel
-        const scrapePromises = eventSources.map(async (source) => {
-            try {
-                console.log(`[Web Search] Scraping ${source.name}...`);
-                const result = await scrapeWithFirecrawl(source.url);
-                if (result.success && result.data?.markdown) {
-                    const content = result.data.markdown.slice(0, 3000);
-                    console.log(`[Web Search] Got ${content.length} chars from ${source.name}`);
-                    return { 
-                        text: `\n--- ${source.name} ---\n${content}\n`,
-                        source: { title: source.name, url: source.url }
-                    };
-                }
-            } catch (e: any) {
-                console.error(`[Web Search] ${source.name} error:`, e.message);
-            }
-            return null;
-        });
-
-        const scrapeResults = await Promise.all(scrapePromises);
-        for (const result of scrapeResults) {
-            if (result) {
-                allText += result.text;
-                allSources.push(result.source);
-            }
-        }
-    }
-
-    // Use Gemini with Google Search - returns verified sources with citations!
-    // If mixed intent, run both event and food searches and merge.
-    let geminiResults: { text: string; textWithCitations: string; sources: VerifiedSource[]; citations: GroundingCitation[] }[] = [];
-
-    // For mixed queries, only do event search (food is handled by smart research with targeted site searches)
-    if (queryType === 'mixed') {
-        geminiResults = [await callGeminiWithSearch(query, 'event')];
-    } else if (queryType === 'food') {
-        // Skip general food search - smart research uses targeted site:ny.eater.com etc.
-        console.log('[Web Search] Skipping general food search - using smart research instead');
-        geminiResults = [];
-    } else {
-        geminiResults = [await callGeminiWithSearch(query, queryType)];
-    }
-
-    let allTextWithCitations = allText; // Start with scraped content (no citations)
+    // DISABLED: General Gemini searches - smart research now handles everything with targeted site: queries
+    // All searches are now done in executeSmartResearch with specific site: operators
+    console.log('[Web Search] Skipping general Gemini search - smart research handles all targeted searches');
+    
+    let allTextWithCitations = allText;
     let allCitations: GroundingCitation[] = [];
-
-    for (const geminiResult of geminiResults) {
-        if (geminiResult.text) {
-            allText += `\n\n=== WEB SEARCH RESULTS ===\n${geminiResult.text}`;
-            allTextWithCitations += `\n\n=== WEB SEARCH RESULTS ===\n${geminiResult.textWithCitations}`;
-        }
-        allSources = [...allSources, ...geminiResult.sources];
-        allCitations = [...allCitations, ...geminiResult.citations];
-    }
 
     return { 
         text: allText || "No results found.",
