@@ -20,19 +20,12 @@ const FOOD_SCRAPE_SITES = [
     'https://www.theinfatuation.com/new-york/guides/best-new-restaurants-nyc'
 ];
 
-// Event sites to SCRAPE - ONLY static HTML sites (JS-heavy sites wont work)
+// Event sites to SCRAPE with Jina.ai (handles JS rendering)
 const EVENT_SCRAPE_SITES = [
-    'https://theskint.com/'  // Only theskint works - its static HTML
-];
-
-// Event sites to SEARCH via Gemini (JS-heavy sites that need browser rendering)
-const EVENT_SEARCH_SITES = [
-    'ohmyrockness.com',      // Concert listings
-    'ra.co',                 // Resident Advisor - club/DJ events
-    'edmtrain.com',          // EDM concerts
-    'timeout.com/newyork',   // TimeOut NYC events
-    'songkick.com',          // Concert tracker
-    'bandsintown.com'        // Concert announcements
+    'https://theskint.com/',
+    'https://www.ohmyrockness.com/shows/popular',
+    'https://edmtrain.com/new-york-city-ny',
+    'https://www.timeout.com/newyork/things-to-do/this-weekend'
 ];
 
 // Location-specific subreddits - AI picks from these based on query
@@ -392,10 +385,6 @@ async function executeSmartResearch(
         const baseEventsSubs = TOOL_SUBREDDITS.research_events;
         for (const sub of baseEventsSubs) {
             addSearch(`${fullQuery} site:reddit.com/r/${sub}`, `r/${sub}`);
-        }
-        // Gemini search for JS-heavy event sites (one search per site)
-        for (const site of EVENT_SEARCH_SITES) {
-            addSearch(`${fullQuery} site:${site}`, site);
         }
         
         // Scrape all event sites directly
@@ -759,70 +748,44 @@ async function getRedditComments(postUrl: string) {
 // ============= SIMPLE WEB SCRAPER (no external API needed) =============
 
 async function scrapeWebsite(url: string): Promise<{ success: boolean; content: string; error?: string }> {
-    console.log(`[Scraper] Fetching: ${url}`);
+    console.log(`[Jina] Scraping: ${url}`);
     
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s timeout
         
-        const response = await fetch(url, {
+        // Use Jina.ai Reader API - handles JS rendering, returns clean markdown
+        const jinaUrl = `https://r.jina.ai/${url}`;
+        
+        const response = await fetch(jinaUrl, {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept': 'text/plain',
             },
             signal: controller.signal
         });
         clearTimeout(timeoutId);
         
         if (!response.ok) {
-            console.log(`[Scraper] HTTP ${response.status} for ${url}`);
+            console.log(`[Jina] HTTP ${response.status} for ${url}`);
             return { success: false, content: '', error: `HTTP ${response.status}` };
         }
         
-        const html = await response.text();
-        
-        // Simple HTML to text extraction
-        let text = html
-            // Remove script and style tags with content
-            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-            .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '')
-            // Remove HTML comments
-            .replace(/<!--[\s\S]*?-->/g, '')
-            // Convert common block elements to newlines
-            .replace(/<\/(p|div|h[1-6]|li|tr|article|section)>/gi, '\n')
-            .replace(/<br\s*\/?>/gi, '\n')
-            // Remove remaining HTML tags
-            .replace(/<[^>]+>/g, ' ')
-            // Decode HTML entities
-            .replace(/&nbsp;/g, ' ')
-            .replace(/&amp;/g, '&')
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/&quot;/g, '"')
-            .replace(/&#39;/g, "'")
-            .replace(/&mdash;/g, '—')
-            .replace(/&ndash;/g, '–')
-            // Clean up whitespace
-            .replace(/\s+/g, ' ')
-            .replace(/\n\s*\n/g, '\n')
-            .trim();
+        let text = await response.text();
         
         // Limit content length
-        if (text.length > 8000) {
-            text = text.substring(0, 8000) + '...';
+        if (text.length > 10000) {
+            text = text.substring(0, 10000) + '...';
         }
         
-        console.log(`[Scraper] SUCCESS for ${url}: ${text.length} chars`);
+        console.log(`[Jina] SUCCESS for ${url}: ${text.length} chars`);
         return { success: true, content: text };
         
     } catch (error: any) {
         if (error.name === 'AbortError') {
-            console.log(`[Scraper] TIMEOUT for ${url}`);
+            console.log(`[Jina] TIMEOUT for ${url}`);
             return { success: false, content: '', error: 'Timeout' };
         }
-        console.error(`[Scraper] ERROR for ${url}:`, error.message);
+        console.error(`[Jina] ERROR for ${url}:`, error.message);
         return { success: false, content: '', error: error.message };
     }
 }
