@@ -752,11 +752,89 @@ async function getRedditComments(postUrl: string) {
 
 // ============= FIRECRAWL SCRAPING =============
 
+// ============= SIMPLE WEB SCRAPER (no external API needed) =============
+
+async function scrapeWebsite(url: string): Promise<{ success: boolean; content: string; error?: string }> {
+    console.log(`[Scraper] Fetching: ${url}`);
+    
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+            },
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+            console.log(`[Scraper] HTTP ${response.status} for ${url}`);
+            return { success: false, content: '', error: `HTTP ${response.status}` };
+        }
+        
+        const html = await response.text();
+        
+        // Simple HTML to text extraction
+        let text = html
+            // Remove script and style tags with content
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+            .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '')
+            // Remove HTML comments
+            .replace(/<!--[\s\S]*?-->/g, '')
+            // Convert common block elements to newlines
+            .replace(/<\/(p|div|h[1-6]|li|tr|article|section)>/gi, '\n')
+            .replace(/<br\s*\/?>/gi, '\n')
+            // Remove remaining HTML tags
+            .replace(/<[^>]+>/g, ' ')
+            // Decode HTML entities
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/&mdash;/g, '—')
+            .replace(/&ndash;/g, '–')
+            // Clean up whitespace
+            .replace(/\s+/g, ' ')
+            .replace(/\n\s*\n/g, '\n')
+            .trim();
+        
+        // Limit content length
+        if (text.length > 8000) {
+            text = text.substring(0, 8000) + '...';
+        }
+        
+        console.log(`[Scraper] SUCCESS for ${url}: ${text.length} chars`);
+        return { success: true, content: text };
+        
+    } catch (error: any) {
+        if (error.name === 'AbortError') {
+            console.log(`[Scraper] TIMEOUT for ${url}`);
+            return { success: false, content: '', error: 'Timeout' };
+        }
+        console.error(`[Scraper] ERROR for ${url}:`, error.message);
+        return { success: false, content: '', error: error.message };
+    }
+}
+
+// Legacy Firecrawl function (kept as fallback if API key exists)
 async function scrapeWithFirecrawl(url: string) {
     const apiKey = process.env.FIRECRAWL_API_KEY;
+    
+    // If no Firecrawl API key, use our simple scraper
     if (!apiKey) {
-        console.log('[Firecrawl] No API key configured');
-        return { success: false, error: 'No API key' };
+        const result = await scrapeWebsite(url);
+        return { 
+            success: result.success, 
+            data: { markdown: result.content },
+            error: result.error 
+        };
     }
 
     console.log(`[Firecrawl] Scraping URL: ${url}`);
@@ -775,15 +853,30 @@ async function scrapeWithFirecrawl(url: string) {
             }),
         });
         const result = await response.json();
+        
+        // If Firecrawl fails (e.g., out of credits), fallback to simple scraper
         if (!result.success) {
             console.log(`[Firecrawl] FAILED for ${url}: ${result.error || 'Unknown error'}`);
-        } else {
-            console.log(`[Firecrawl] SUCCESS for ${url}: ${result.data?.markdown?.length || 0} chars`);
+            console.log(`[Firecrawl] Falling back to simple scraper...`);
+            const fallbackResult = await scrapeWebsite(url);
+            return { 
+                success: fallbackResult.success, 
+                data: { markdown: fallbackResult.content },
+                error: fallbackResult.error 
+            };
         }
+        
+        console.log(`[Firecrawl] SUCCESS for ${url}: ${result.data?.markdown?.length || 0} chars`);
         return result;
     } catch (error: any) {
         console.error(`[Firecrawl] Exception for ${url}:`, error.message);
-        return { success: false, error: error.message };
+        // Fallback to simple scraper on exception
+        const fallbackResult = await scrapeWebsite(url);
+        return { 
+            success: fallbackResult.success, 
+            data: { markdown: fallbackResult.content },
+            error: fallbackResult.error 
+        };
     }
 }
 
