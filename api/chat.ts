@@ -2050,16 +2050,21 @@ ${searchResults || '(No data found - use general NYC knowledge)'}
 === END ===
 
 INTERNAL REASONING (do NOT output this - use it to think):
-1. CHECK TIMING: Does query mention "weekend/tonight/tomorrow/this week"? If YES → events go FIRST!
-2. Scan the user's SAVED PLACES list - any that fit the query go in early sections
-3. Check their TOP CATEGORIES and CUISINES for preference matching
-4. From research, find NEW places that complement their saved picks
-5. Prioritize cross-referenced places (mentioned in multiple sources)
-6. Group into 2-4 sections - if time-sensitive, events section FIRST; otherwise saved places first
+1. CHECK TIMING: Does query mention "weekend/tonight/tomorrow"? If YES → saved events go FIRST!
+2. SCAN SAVED LIST CAREFULLY: Match saved places to the query - these are your PRIMARY recommendations!
+   - "best pizza" → look for ALL pizza spots in saved list
+   - "museums" → look for ALL museums/attractions in saved list
+   - "date ideas" → look for romantic spots, events, activities in saved list
+3. From research, find 2-3 NEW places to complement their saved picks
+4. Group into 2-4 sections - SAVED PLACES should dominate the response (4-5 out of 7-10)
 
-⚠️ SAVED PLACES PRIORITY: If the user asks for "pizza" and they have pizza places saved, THOSE GO FIRST. 
-If asking for "things to do" and they have saved attractions, INCLUDE THEM. Don't just recommend new places - 
-remind them of spots they already want to try!
+⚠️ SAVED PLACES ARE THE PRIORITY! The saved list IS their wishlist. They saved these for a reason!
+- "pizza" query + saved pizza spots = THOSE ARE YOUR TOP PICKS (L'industrie, Ceres, Mama's TOO, etc.)
+- "museum" query + saved museums = THOSE ARE YOUR TOP PICKS (The Met, MoMA, Whitney, Transit Museum, etc.)  
+- "things to do" + saved attractions = SURFACE ALL OF THEM!
+- "date ideas" + saved romantic spots or events = PUT THEM FRONT AND CENTER!
+
+Your job is to remind them of amazing places they ALREADY saved, not just find new ones!
 
 ⏰ TIME-SENSITIVE = EVENTS FIRST: If user mentions "this weekend", "tonight", "tomorrow", "this week", etc. → 
 PRIORITIZE EVENTS over permanent places! Events are date-specific and more urgent. Put event section FIRST.
@@ -2093,7 +2098,13 @@ ${researchResults.toolsUsed.includes('research_places') ? '- For PLACES: "🗽 M
    - Concerts, shows, markets, pop-ups are date-specific → more urgent than restaurants
    - Put "📅 This Weekend" or "🎭 Happening Now" section FIRST before food/places
 
-⚠️ CRITICAL: Return 7-10 places. Include 2-4 from saved list if relevant. Do NOT return fewer than 7!`;
+🔥 SAVED LIST = THEIR WISHLIST! At least HALF of recommendations should come from saved list if they match!
+   - User saved pizza spots? → PUT THEM FIRST when they ask for food!
+   - User saved museums/attractions? → PUT THEM FIRST when they ask for things to do!
+   - User saved events? → PUT THEM FIRST when they ask about weekend plans!
+   - The saved list is what they WANT to try - surface it!
+
+⚠️ CRITICAL: Return 7-10 places. At least 4-5 should be from saved list if relevant!`;
 
                 // Call Gemini 2.5 Pro as the recommender
                 console.log('[Smart Research] Calling Gemini 2.5 Pro recommender...');
