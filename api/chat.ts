@@ -387,6 +387,9 @@ async function executeSmartResearch(
             addSearch(`${fullQuery} site:reddit.com/r/${sub}`, `r/${sub}`);
         }
         
+        // Generic Gemini search for events (no site restriction - catches everything)
+        addSearch(`${fullQuery} NYC concerts shows events tickets`, 'General Web');
+        
         // Scrape all event sites directly
         promises.push(
             (async () => {
