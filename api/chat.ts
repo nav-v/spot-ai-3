@@ -1026,7 +1026,7 @@ Only mention places that actually appear in the search results.`;
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: searchPrompt }] }],
                     tools: [{ google_search: {} }],
-                    generationConfig: { temperature: 0.3, maxOutputTokens: 2500 }
+                    generationConfig: { temperature: 0.3, maxOutputTokens: 8192 }
                 }),
                 signal: controller.signal
             }
