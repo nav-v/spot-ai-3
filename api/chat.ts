@@ -20,15 +20,19 @@ const FOOD_SCRAPE_SITES = [
     'https://www.theinfatuation.com/new-york/guides/best-new-restaurants-nyc'
 ];
 
-// Event sites to SCRAPE (not search) - these must be scraped directly
+// Event sites to SCRAPE - ONLY static HTML sites (JS-heavy sites wont work)
 const EVENT_SCRAPE_SITES = [
-    'https://theskint.com/',
-    'https://happeningsnyc.io/',
-    'https://www.ohmyrockness.com/shows/popular',
-    'https://ny-event-radar.com/',
-    'https://edmtrain.com/new-york-city-ny',
-    'https://ra.co/events/us/newyorkcity/ra-picks',
-    'https://www.timeout.com/newyork/things-to-do'
+    'https://theskint.com/'  // Only theskint works - its static HTML
+];
+
+// Event sites to SEARCH via Gemini (JS-heavy sites that need browser rendering)
+const EVENT_SEARCH_SITES = [
+    'ohmyrockness.com',      // Concert listings
+    'ra.co',                 // Resident Advisor - club/DJ events
+    'edmtrain.com',          // EDM concerts
+    'timeout.com/newyork',   // TimeOut NYC events
+    'songkick.com',          // Concert tracker
+    'bandsintown.com'        // Concert announcements
 ];
 
 // Location-specific subreddits - AI picks from these based on query
@@ -389,9 +393,10 @@ async function executeSmartResearch(
         for (const sub of baseEventsSubs) {
             addSearch(`${fullQuery} site:reddit.com/r/${sub}`, `r/${sub}`);
         }
-        
-        // NOTE: We scrape event sites directly (theskint, timeout, secretnyc, etc.)
-        // so no need to also search them via Gemini - that would be redundant
+        // Gemini search for JS-heavy event sites (one search per site)
+        for (const site of EVENT_SEARCH_SITES) {
+            addSearch(`${fullQuery} site:${site}`, site);
+        }
         
         // Scrape all event sites directly
         promises.push(
