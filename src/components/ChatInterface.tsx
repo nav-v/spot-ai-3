@@ -813,7 +813,13 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                           </div>
 
                           {place.location && (
-                            <p className="text-[10px] text-muted-foreground mb-2">📍 {place.location}</p>
+                            <p className="text-[10px] text-muted-foreground mb-1">📍 {place.location}</p>
+                          )}
+
+                          {(place as any).startDate && (
+                            <p className="text-[10px] text-primary font-medium mb-2">
+                              📅 {new Date((place as any).startDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                            </p>
                           )}
 
                           <p className="text-xs text-muted-foreground mb-2 flex-1">
@@ -891,7 +897,13 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                           </div>
 
                           {place.location && (
-                            <p className="text-[10px] text-muted-foreground mb-2">📍 {place.location}</p>
+                            <p className="text-[10px] text-muted-foreground mb-1">📍 {place.location}</p>
+                          )}
+
+                          {(place as any).startDate && (
+                            <p className="text-[10px] text-primary font-medium mb-2">
+                              📅 {new Date((place as any).startDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                            </p>
                           )}
 
                           <p className="text-xs text-muted-foreground mb-2 flex-1">
