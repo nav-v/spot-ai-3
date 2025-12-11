@@ -1,54 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from './AuthContext';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { LogOut, User, Settings, Heart, Utensils, Loader2, Check, X, Camera, Instagram, Link2, Unlink, Copy } from 'lucide-react';
+import { LogOut, User, Settings, Loader2, Check, X, Camera, Instagram, Link2, Unlink, Sparkles, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { instagramApi, InstagramAccount } from '@/lib/api';
+import { instagramApi, preferencesApi, InstagramAccount, UserPreferences } from '@/lib/api';
+import { OnboardingFlow } from '@/components/Onboarding';
+import { getPersonaById, PERSONAS } from '@/lib/personaCalculator';
 
 interface UserProfileSheetProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }
 
-const DIETARY_OPTIONS = [
-    'Vegetarian',
-    'Vegan',
-    'Halal',
-    'Kosher',
-    'Gluten-Free',
-    'Dairy-Free',
-    'Nut-Free',
-    'Pescatarian',
-];
-
-const INTEREST_OPTIONS = [
-    'Art & Museums',
-    'Music & Concerts',
-    'History',
-    'Outdoors & Parks',
-    'Nightlife',
-    'Shopping',
-    'Food Tours',
-    'Sports',
-    'Theater & Shows',
-    'Architecture',
-];
-
-const FOOD_PREFERENCE_OPTIONS = [
-    'Spicy',
-    'Sweet',
-    'Savory',
-    'Healthy',
-    'Indulgent',
-    'Adventurous',
-    'Comfort Food',
-    'Fine Dining',
-    'Casual',
-    'Street Food',
-];
 
 export function UserProfileSheet({ open, onOpenChange }: UserProfileSheetProps) {
-    const { user, updateUser, updatePreferences, logout } = useAuth();
+    const { user, updateUser, logout } = useAuth();
     const { toast } = useToast();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -60,9 +26,6 @@ export function UserProfileSheet({ open, onOpenChange }: UserProfileSheetProps) 
     const [newPassword, setNewPassword] = useState('');
     const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl || '');
 
-    const [dietary, setDietary] = useState<string[]>(user?.preferences?.dietaryRestrictions || []);
-    const [interests, setInterests] = useState<string[]>(user?.preferences?.interests || []);
-    const [foodPrefs, setFoodPrefs] = useState<string[]>(user?.preferences?.foodPreferences || []);
 
     // Instagram linking state - now supports multiple accounts
     const [igAccounts, setIgAccounts] = useState<InstagramAccount[]>([]);
@@ -70,24 +33,45 @@ export function UserProfileSheet({ open, onOpenChange }: UserProfileSheetProps) 
     const [verificationCode, setVerificationCode] = useState<string | null>(null);
     const [codeExpiry, setCodeExpiry] = useState<Date | null>(null);
 
+    // Onboarding quiz state
+    const [showQuiz, setShowQuiz] = useState(false);
+    const [onboardingPrefs, setOnboardingPrefs] = useState<UserPreferences | null>(null);
+    const [prefsLoading, setPrefsLoading] = useState(false);
+
     // Sync form state when user data changes
     React.useEffect(() => {
         if (user) {
             setName(user.name || '');
             setEmail(user.email || '');
             setAvatarUrl(user.avatarUrl || '');
-            setDietary(user.preferences?.dietaryRestrictions || []);
-            setInterests(user.preferences?.interests || []);
-            setFoodPrefs(user.preferences?.foodPreferences || []);
         }
     }, [user]);
 
-    // Load Instagram accounts when sheet opens
+    // Load Instagram accounts and onboarding prefs when sheet opens
     useEffect(() => {
         if (open && user) {
             loadInstagramAccounts();
+            loadOnboardingPrefs();
         }
     }, [open, user]);
+
+    const loadOnboardingPrefs = async () => {
+        setPrefsLoading(true);
+        try {
+            const prefs = await preferencesApi.get();
+            setOnboardingPrefs(prefs);
+        } catch (error) {
+            console.error('Failed to load onboarding prefs:', error);
+        }
+        setPrefsLoading(false);
+    };
+
+    const handleQuizComplete = async () => {
+        setShowQuiz(false);
+        // Reload preferences after quiz completion
+        await loadOnboardingPrefs();
+        toast({ title: 'Preferences updated!', description: 'Your recommendations will now be more personalized.' });
+    };
 
     const loadInstagramAccounts = async () => {
         try {
@@ -175,28 +159,6 @@ export function UserProfileSheet({ open, onOpenChange }: UserProfileSheetProps) 
         setIsSaving(false);
     };
 
-    const handleSavePreferences = async () => {
-        setIsSaving(true);
-        try {
-            await updatePreferences({
-                dietaryRestrictions: dietary,
-                interests: interests,
-                foodPreferences: foodPrefs,
-            });
-            toast({ title: 'Preferences saved!' });
-        } catch (error) {
-            toast({ title: 'Error saving preferences', variant: 'destructive' });
-        }
-        setIsSaving(false);
-    };
-
-    const toggleItem = (item: string, list: string[], setList: (items: string[]) => void) => {
-        if (list.includes(item)) {
-            setList(list.filter((i) => i !== item));
-        } else {
-            setList([...list, item]);
-        }
-    };
 
     const handleLogout = async () => {
         await logout();
@@ -204,6 +166,16 @@ export function UserProfileSheet({ open, onOpenChange }: UserProfileSheetProps) 
     };
 
     if (!user) return null;
+
+    // Show quiz fullscreen when active
+    if (showQuiz) {
+        return (
+            <OnboardingFlow
+                onComplete={handleQuizComplete}
+                onSkip={() => setShowQuiz(false)}
+            />
+        );
+    }
 
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
@@ -325,89 +297,118 @@ export function UserProfileSheet({ open, onOpenChange }: UserProfileSheetProps) 
                         </div>
                     </div>
 
-                    {/* Preferences Section */}
+                    {/* Your Vibe Section - Onboarding Quiz Results */}
                     <div className="space-y-4 pt-4 border-t border-border">
                         <div className="flex items-center justify-between">
                             <h3 className="font-medium text-foreground flex items-center gap-2">
-                                <Heart className="w-4 h-4" />
-                                Your Preferences
+                                <Sparkles className="w-4 h-4" />
+                                Your Vibe
                             </h3>
-                            <button
-                                onClick={handleSavePreferences}
-                                disabled={isSaving}
-                                className="text-sm text-primary hover:underline flex items-center gap-1"
-                            >
-                                {isSaving ? (
-                                    <Loader2 className="w-3 h-3 animate-spin" />
-                                ) : (
-                                    'Save'
+                        </div>
+
+                        {prefsLoading ? (
+                            <div className="flex items-center justify-center py-8">
+                                <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                            </div>
+                        ) : onboardingPrefs?.onboardingCompleted ? (
+                            // Show persona results
+                            <div className="space-y-4">
+                                {/* Primary Persona */}
+                                {onboardingPrefs.primaryPersona && (
+                                    <div className="bg-gradient-to-br from-primary/10 to-primary/5 rounded-xl p-4 border border-primary/20">
+                                        <div className="flex items-center gap-3 mb-2">
+                                            <span className="text-3xl">
+                                                {getPersonaById(onboardingPrefs.primaryPersona)?.emoji || '✨'}
+                                            </span>
+                                            <div>
+                                                <p className="font-semibold text-foreground">
+                                                    {getPersonaById(onboardingPrefs.primaryPersona)?.name || 'Explorer'}
+                                                </p>
+                                                {onboardingPrefs.secondaryPersona && (
+                                                    <p className="text-xs text-muted-foreground">
+                                                        + {getPersonaById(onboardingPrefs.secondaryPersona)?.emoji} {getPersonaById(onboardingPrefs.secondaryPersona)?.name}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <p className="text-sm text-muted-foreground">
+                                            {getPersonaById(onboardingPrefs.primaryPersona)?.description}
+                                        </p>
+                                    </div>
                                 )}
+
+                                {/* Key tags */}
+                                {onboardingPrefs.allTags && onboardingPrefs.allTags.length > 0 && (
+                                    <div>
+                                        <p className="text-xs text-muted-foreground mb-2">Your preferences:</p>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {onboardingPrefs.allTags
+                                                .filter(tag => !tag.startsWith('dietary:'))
+                                                .slice(0, 12)
+                                                .map((tag) => (
+                                                    <span
+                                                        key={tag}
+                                                        className="px-2 py-0.5 rounded-full text-xs bg-secondary text-muted-foreground"
+                                                    >
+                                                        {tag.replace(/_/g, ' ')}
+                                                    </span>
+                                                ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Dietary */}
+                                {(onboardingPrefs.dietaryVegetarian || onboardingPrefs.dietaryVegan || 
+                                  onboardingPrefs.dietaryHalal || onboardingPrefs.dietaryGlutenFree) && (
+                                    <div>
+                                        <p className="text-xs text-muted-foreground mb-2">Dietary:</p>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {onboardingPrefs.dietaryVegetarian && (
+                                                <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">🌱 Vegetarian</span>
+                                            )}
+                                            {onboardingPrefs.dietaryVegan && (
+                                                <span className="px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700">🌿 Vegan</span>
+                                            )}
+                                            {onboardingPrefs.dietaryHalal && (
+                                                <span className="px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700">✓ Halal</span>
+                                            )}
+                                            {onboardingPrefs.dietaryGlutenFree && (
+                                                <span className="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-700">🌾 Gluten-free</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Retake Quiz Button */}
+                                <button
+                                    onClick={() => setShowQuiz(true)}
+                                    className="w-full py-2.5 rounded-xl bg-secondary text-foreground font-medium hover:bg-secondary/80 transition-colors flex items-center justify-center gap-2"
+                                >
+                                    <RefreshCw className="w-4 h-4" />
+                                    Retake Quiz
                             </button>
                         </div>
-
-                        {/* Dietary Restrictions */}
+                        ) : (
+                            // No quiz taken yet
+                            <div className="text-center py-6 space-y-4">
+                                <div className="w-16 h-16 mx-auto rounded-full bg-primary/10 flex items-center justify-center">
+                                    <Sparkles className="w-8 h-8 text-primary" />
+                                </div>
                         <div>
-                            <label className="text-sm text-muted-foreground mb-2 block">
-                                Dietary Restrictions
-                            </label>
-                            <div className="flex flex-wrap gap-2">
-                                {DIETARY_OPTIONS.map((option) => (
+                                    <p className="font-medium text-foreground mb-1">Personalize your experience</p>
+                                    <p className="text-sm text-muted-foreground">
+                                        Take a quick quiz so Spot can learn your vibe and give better recommendations.
+                                    </p>
+                                </div>
                                     <button
-                                        key={option}
-                                        onClick={() => toggleItem(option, dietary, setDietary)}
-                                        className={`px-3 py-1.5 rounded-full text-sm transition-colors ${dietary.includes(option)
-                                            ? 'bg-primary text-primary-foreground'
-                                            : 'bg-secondary text-muted-foreground hover:text-foreground'
-                                            }`}
-                                    >
-                                        {option}
+                                    onClick={() => setShowQuiz(true)}
+                                    className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
+                                >
+                                    <Sparkles className="w-4 h-4" />
+                                    Take the Quiz
                                     </button>
-                                ))}
                             </div>
-                        </div>
-
-                        {/* Interests */}
-                        <div>
-                            <label className="text-sm text-muted-foreground mb-2 block">
-                                Interests (for events & things to see)
-                            </label>
-                            <div className="flex flex-wrap gap-2">
-                                {INTEREST_OPTIONS.map((option) => (
-                                    <button
-                                        key={option}
-                                        onClick={() => toggleItem(option, interests, setInterests)}
-                                        className={`px-3 py-1.5 rounded-full text-sm transition-colors ${interests.includes(option)
-                                            ? 'bg-primary text-primary-foreground'
-                                            : 'bg-secondary text-muted-foreground hover:text-foreground'
-                                            }`}
-                                    >
-                                        {option}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Food Preferences */}
-                        <div>
-                            <label className="text-sm text-muted-foreground mb-2 block flex items-center gap-1">
-                                <Utensils className="w-3 h-3" />
-                                Food Preferences
-                            </label>
-                            <div className="flex flex-wrap gap-2">
-                                {FOOD_PREFERENCE_OPTIONS.map((option) => (
-                                    <button
-                                        key={option}
-                                        onClick={() => toggleItem(option, foodPrefs, setFoodPrefs)}
-                                        className={`px-3 py-1.5 rounded-full text-sm transition-colors ${foodPrefs.includes(option)
-                                            ? 'bg-primary text-primary-foreground'
-                                            : 'bg-secondary text-muted-foreground hover:text-foreground'
-                                            }`}
-                                    >
-                                        {option}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
+                        )}
                     </div>
 
                     {/* Instagram Linking */}
@@ -433,21 +434,21 @@ export function UserProfileSheet({ open, onOpenChange }: UserProfileSheetProps) 
                                             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-orange-500 flex items-center justify-center">
                                                 <Instagram className="w-4 h-4 text-white" />
                                             </div>
-                                            <div>
+                        <div>
                                                 <p className="font-medium text-foreground text-sm">@{account.username || 'Instagram'}</p>
                                                 <p className="text-xs text-muted-foreground">
                                                     Linked {new Date(account.linkedAt).toLocaleDateString()}
                                                 </p>
                                             </div>
                                         </div>
-                                        <button
+                                    <button
                                             onClick={() => handleUnlinkInstagram(account.id, account.username)}
                                             disabled={igLoading}
                                             className="p-2 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
                                             title="Unlink"
                                         >
                                             <Unlink className="w-4 h-4" />
-                                        </button>
+                                    </button>
                                     </div>
                                 ))}
                             </div>
@@ -469,14 +470,14 @@ export function UserProfileSheet({ open, onOpenChange }: UserProfileSheetProps) 
                                     {codeExpiry && (
                                         <p className="text-orange-500">⏰ Expires {codeExpiry.toLocaleTimeString()}</p>
                                     )}
-                                </div>
-                                <button
+                        </div>
+                                    <button
                                     onClick={handleGenerateCode}
                                     disabled={igLoading}
                                     className="w-full py-2 rounded-lg bg-secondary text-muted-foreground hover:text-foreground transition-colors text-sm"
                                 >
                                     Generate new code
-                                </button>
+                                    </button>
                             </div>
                         ) : (
                             <button
@@ -520,3 +521,4 @@ export function UserProfileSheet({ open, onOpenChange }: UserProfileSheetProps) 
         </Sheet>
     );
 }
+
