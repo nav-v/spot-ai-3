@@ -1260,12 +1260,13 @@ async function searchWeb(query: string): Promise<{ text: string; textWithCitatio
     // If mixed intent, run both event and food searches and merge.
     let geminiResults: { text: string; textWithCitations: string; sources: VerifiedSource[]; citations: GroundingCitation[] }[] = [];
 
+    // For mixed queries, only do event search (food is handled by smart research with targeted site searches)
     if (queryType === 'mixed') {
-        const [eventResult, foodResult] = await Promise.all([
-            callGeminiWithSearch(query, 'event'),
-            callGeminiWithSearch(query, 'food')
-        ]);
-        geminiResults = [eventResult, foodResult];
+        geminiResults = [await callGeminiWithSearch(query, 'event')];
+    } else if (queryType === 'food') {
+        // Skip general food search - smart research uses targeted site:ny.eater.com etc.
+        console.log('[Web Search] Skipping general food search - using smart research instead');
+        geminiResults = [];
     } else {
         geminiResults = [await callGeminiWithSearch(query, queryType)];
     }
