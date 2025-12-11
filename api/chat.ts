@@ -621,7 +621,7 @@ Return ONLY the JSON object, no other text.`;
 
     try {
         const response = await getAI().models.generateContent({
-            model: 'gemini-2.5-pro',
+            model: 'gemini-2.5-flash', // Switched from Pro for speed
             contents: [{ role: 'user', parts: [{ text: prompt }] }]
         });
         
@@ -752,7 +752,7 @@ async function scrapeWebsite(url: string): Promise<{ success: boolean; content: 
     
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 20000); // 20s timeout
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 20s timeout
         
         // Use Jina.ai Reader API - handles JS rendering, returns clean markdown
         const jinaUrl = `https://r.jina.ai/${url}`;
@@ -790,11 +790,20 @@ async function scrapeWebsite(url: string): Promise<{ success: boolean; content: 
     }
 }
 
-// Legacy Firecrawl function (kept as fallback if API key exists)
+// Scraper function - uses Jina.ai directly (faster than Firecrawl)
 async function scrapeWithFirecrawl(url: string) {
+    // Skip Firecrawl entirely - go straight to Jina for speed
+    const result = await scrapeWebsite(url);
+    return { 
+        success: result.success, 
+        data: { markdown: result.content },
+        error: result.error 
+    };
+}
+
+// Placeholder to match old structure
+async function _unusedFirecrawl(url: string) {
     const apiKey = process.env.FIRECRAWL_API_KEY;
-    
-    // If no Firecrawl API key, use our simple scraper
     if (!apiKey) {
         const result = await scrapeWebsite(url);
         return { 
@@ -821,7 +830,6 @@ async function scrapeWithFirecrawl(url: string) {
         });
         const result = await response.json();
         
-        // If Firecrawl fails (e.g., out of credits), fallback to simple scraper
         if (!result.success) {
             console.log(`[Firecrawl] FAILED for ${url}: ${result.error || 'Unknown error'}`);
             console.log(`[Firecrawl] Falling back to simple scraper...`);
@@ -1982,7 +1990,7 @@ ${researchResults.toolsUsed.includes('research_places') ? 'Use sections: "🗽 M
                 // Call Gemini 2.5 Pro as the recommender
                 console.log('[Smart Research] Calling Gemini 2.5 Pro recommender...');
                 const recommenderResponse = await getAI().models.generateContent({
-                    model: 'gemini-2.5-pro',
+                    model: 'gemini-2.5-flash', // Switched from Pro for speed
                     contents: [{ role: 'user', parts: [{ text: recommenderPrompt }] }]
                 });
 
