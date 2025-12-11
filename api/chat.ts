@@ -314,23 +314,24 @@ async function executeSmartResearch(
             searchQueries.push(`${query} ${locationQuery}`);
         }
         
-        promises.push(
-            (async () => {
-                try {
-                    for (const sq of searchQueries) {
+        // Run all Gemini searches in PARALLEL
+        for (const sq of searchQueries) {
+            promises.push(
+                (async () => {
+                    try {
                         console.log(`[Smart Research] Gemini search: ${sq.substring(0, 60)}...`);
                         const searchResult = await singleGeminiSearch(sq);
                         results.webResults.text += searchResult.text + '\n';
                         results.webResults.textWithCitations += searchResult.textWithCitations + '\n';
                         results.webResults.sources.push(...searchResult.sources);
                         results.webResults.citations.push(...searchResult.citations);
+                        console.log(`[Smart Research] Search returned ${searchResult.sources.length} sources`);
+                    } catch (e: any) {
+                        console.error(`[Smart Research] Search failed:`, e.message);
                     }
-                    console.log(`[Smart Research] Food search returned ${results.webResults.sources.length} sources`);
-                } catch (e: any) {
-                    console.error(`[Smart Research] Food search failed:`, e.message);
-                }
-            })()
-        );
+                })()
+            );
+        }
     }
     
     // RESEARCH_PLACES: Use Gemini grounded search
@@ -352,23 +353,24 @@ async function executeSmartResearch(
             searchQueries.push(`${query} ${locationQuery}`);
         }
         
-        promises.push(
-            (async () => {
-                try {
-                    for (const sq of searchQueries) {
+        // Run all Gemini searches in PARALLEL
+        for (const sq of searchQueries) {
+            promises.push(
+                (async () => {
+                    try {
                         console.log(`[Smart Research] Gemini search: ${sq.substring(0, 60)}...`);
                         const searchResult = await singleGeminiSearch(sq);
                         results.webResults.text += searchResult.text + '\n';
                         results.webResults.textWithCitations += searchResult.textWithCitations + '\n';
                         results.webResults.sources.push(...searchResult.sources);
                         results.webResults.citations.push(...searchResult.citations);
+                        console.log(`[Smart Research] Search returned ${searchResult.sources.length} sources`);
+                    } catch (e: any) {
+                        console.error(`[Smart Research] Search failed:`, e.message);
                     }
-                    console.log(`[Smart Research] Places search returned ${results.webResults.sources.length} sources`);
-                } catch (e: any) {
-                    console.error(`[Smart Research] Places search failed:`, e.message);
-                }
-            })()
-        );
+                })()
+            );
+        }
     }
     
     // RESEARCH_EVENTS: Use Gemini grounded search + scrape event sites
@@ -387,23 +389,24 @@ async function executeSmartResearch(
             `${query} ${dateFilter} site:secretnyc.co OR site:theskint.com`
         ];
         
-        promises.push(
-            (async () => {
-                try {
-                    for (const sq of searchQueries) {
+        // Run all Gemini searches in PARALLEL (not sequential) to avoid timeouts
+        for (const sq of searchQueries) {
+            promises.push(
+                (async () => {
+                    try {
                         console.log(`[Smart Research] Gemini search: ${sq.substring(0, 60)}...`);
                         const searchResult = await singleGeminiSearch(sq);
                         results.webResults.text += searchResult.text + '\n';
                         results.webResults.textWithCitations += searchResult.textWithCitations + '\n';
                         results.webResults.sources.push(...searchResult.sources);
                         results.webResults.citations.push(...searchResult.citations);
+                        console.log(`[Smart Research] Search returned ${searchResult.sources.length} sources`);
+                    } catch (e: any) {
+                        console.error(`[Smart Research] Search failed for "${sq.substring(0, 40)}...":`, e.message);
                     }
-                    console.log(`[Smart Research] Events search returned ${results.webResults.sources.length} sources`);
-                } catch (e: any) {
-                    console.error(`[Smart Research] Events search failed:`, e.message);
-                }
-            })()
-        );
+                })()
+            );
+        }
         
         // Also scrape event sites directly (fallback)
         promises.push(
@@ -882,7 +885,7 @@ Only include real places from search results.`;
 
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // Increased timeout for grounded search
 
         const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent`,
@@ -1859,9 +1862,11 @@ ${searchResults || '(No data found - use general NYC knowledge)'}
 === END ===
 
 INSTRUCTIONS:
-- Return 7-10 places total
+- YOU MUST return 7-10 places total - this is CRITICAL
+- If research has fewer than 7 places, add well-known NYC options that match the query
 - Prioritize places mentioned in MULTIPLE sources (cross-corroboration)
 - Write a 1-sentence playful intro, then output JSON
+- DO NOT return fewer than 7 places!
 
 OUTPUT FORMAT:
 {"action": "recommendPlaces", "sections": [
