@@ -2118,7 +2118,82 @@ If no places found, return { "places": [] }.`;
                         actionResult = { added: false, error: 'Could not fetch post content.' };
                     }
                 } else {
-                    actionResult = { added: false, message: "I can auto-add from Instagram/TikTok links. For others, try asking me to research." };
+                    // Non-social media URL - use Jina.ai to scrape and classify
+                    console.log(`[URL Scrape] Scraping non-social URL: ${action.url}`);
+                    const scrapeResult = await scrapeWebsite(action.url);
+                    
+                    if (scrapeResult.success && scrapeResult.content) {
+                        // Use AI to classify and extract
+                        const classifyPrompt = `Analyze this webpage content and determine if it contains information about:
+1. EVENTS (concerts, shows, performances, pop-ups, markets, festivals)
+2. FOOD/RESTAURANTS (restaurants, cafes, bars, food spots)
+3. PLACES/ACTIVITIES (attractions, museums, activities, things to do)
+4. NOT RELEVANT (blog posts, articles without specific places, etc.)
+
+Content from ${action.url}:
+${scrapeResult.content.substring(0, 4000)}
+
+Return ONLY a JSON object:
+{
+  "category": "event" | "food" | "place" | "not_relevant",
+  "places": [{ "name": "...", "location": "...", "isEvent": boolean, "startDate": "YYYY-MM-DD or null", "description": "brief description" }],
+  "summary": "One sentence summary of what this page is about"
+}
+
+If the page lists multiple events/places, include all of them (up to 10).
+If not relevant, return empty places array.`;
+
+                        const classifyResponse = await getAI().models.generateContent({
+                            model: 'gemini-2.5-flash',
+                            contents: [{ role: 'user', parts: [{ text: classifyPrompt }] }]
+                        });
+
+                        try {
+                            const classifyText = classifyResponse.text || '';
+                            const cleanJson = classifyText.replace(/```json|```/g, '').trim();
+                            const classified = JSON.parse(cleanJson);
+                            
+                            console.log(`[URL Scrape] Classified as: ${classified.category}, found ${classified.places?.length || 0} places`);
+
+                            if (classified.category === 'not_relevant' || !classified.places?.length) {
+                                actionResult = { 
+                                    added: false, 
+                                    message: `This doesn't seem to be about specific places I can save. ${classified.summary || ''}` 
+                                };
+                            } else {
+                                const results = [];
+                                for (const item of classified.places.slice(0, 10)) {
+                                    const placeData = {
+                                        ...item,
+                                        sourceUrl: action.url
+                                    };
+                                    const result = await findAndAddPlace(
+                                        item.name, 
+                                        item.location || 'New York, NY', 
+                                        placeData, 
+                                        userId, 
+                                        token
+                                    );
+                                    results.push({
+                                        name: item.name,
+                                        status: result.added ? 'added' : 'skipped',
+                                        place: result.place
+                                    });
+                                }
+                                actionResult = { 
+                                    type: 'batch_add', 
+                                    results,
+                                    category: classified.category,
+                                    summary: classified.summary
+                                };
+                            }
+                        } catch (e) {
+                            console.error('[URL Scrape] Classification failed:', e);
+                            actionResult = { added: false, error: 'Failed to analyze the page content.' };
+                        }
+                    } else {
+                        actionResult = { added: false, error: `Couldn't fetch that page: ${scrapeResult.error || 'unknown error'}` };
+                    }
                 }
             }
 
