@@ -112,23 +112,6 @@ export const ONBOARDING_QUESTIONS: OnboardingQuestion[] = [
       { id: 'indie', emoji: '🎨', label: 'Indie / underground, experimental', tags: ['indie', 'underground', 'experimental'] },
     ],
   },
-  {
-    id: 'event_timing',
-    category: 'events',
-    question: "When & how do you actually go out?",
-    subtext: "Real life, not aspirational",
-    maxPicks: 3,
-    options: [
-      { id: 'weekend_day', emoji: '🌞', label: 'Weekend daytime (markets, fairs)', tags: ['weekend_day', 'daytime', 'markets'] },
-      { id: 'weeknight', emoji: '🌅', label: 'Weeknight evenings (after work)', tags: ['weeknight', 'after_work', 'evening'] },
-      { id: 'weekend_night', emoji: '🌙', label: 'Weekend nights (8pm–1am)', tags: ['weekend_night', 'prime_time', 'nightlife'] },
-      { id: 'late_night', emoji: '🌃', label: 'Late-night (after midnight)', tags: ['late_night', 'after_hours'] },
-      { id: 'solo', emoji: '🧍', label: "Happy going solo", tags: ['solo_friendly', 'independent'] },
-      { id: 'date', emoji: '❤️', label: 'Usually a date / one other person', tags: ['date_night', 'romantic', 'couples'] },
-      { id: 'friends', emoji: '🧑‍🤝‍🧑', label: 'Small friend group', tags: ['group_friendly', 'friends', 'social'] },
-      { id: 'family_with', emoji: '👨‍👩‍👧‍👦', label: 'Mostly family / with kids', tags: ['family', 'kids', 'all_ages'] },
-    ],
-  },
 
   // ============ PLACES QUESTIONS (2) ============
   {
@@ -173,7 +156,7 @@ export const SPLASH_CONTENT = {
     "I'm basically that friend who always knows a place.",
     "But first, I need to get to know you a little.",
     "",
-    "8 quick questions. Pick what vibes with you.",
+    "7 quick questions. Pick what vibes with you.",
     "Let's go?"
   ],
   ctaStart: "Let's do it",
