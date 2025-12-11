@@ -176,6 +176,59 @@ interface TasteProfile {
     locationPreferences: string[];
 }
 
+// Count categories from user's saved places for explicit preference matching
+function countUserPreferences(places: any[]): { 
+    cuisineCounts: Record<string, number>;
+    typeCounts: Record<string, number>;
+    neighborhoodCounts: Record<string, number>;
+    topCuisines: string[];
+    topTypes: string[];
+    topNeighborhoods: string[];
+} {
+    const cuisineCounts: Record<string, number> = {};
+    const typeCounts: Record<string, number> = {};
+    const neighborhoodCounts: Record<string, number> = {};
+    
+    for (const p of places) {
+        // Count cuisines
+        if (p.cuisine) {
+            const cuisine = p.cuisine.toLowerCase();
+            cuisineCounts[cuisine] = (cuisineCounts[cuisine] || 0) + 1;
+        }
+        // Count types
+        if (p.type) {
+            const type = p.type.toLowerCase();
+            typeCounts[type] = (typeCounts[type] || 0) + 1;
+        }
+        // Extract neighborhood from address
+        if (p.address) {
+            const neighborhoods = ['williamsburg', 'east village', 'west village', 'soho', 'tribeca', 
+                'lower east side', 'upper east side', 'upper west side', 'chelsea', 'midtown',
+                'brooklyn', 'queens', 'harlem', 'bushwick', 'greenpoint', 'dumbo', 'park slope',
+                'astoria', 'flushing', 'jackson heights', 'crown heights', 'bed-stuy', 'cobble hill'];
+            for (const n of neighborhoods) {
+                if (p.address.toLowerCase().includes(n)) {
+                    neighborhoodCounts[n] = (neighborhoodCounts[n] || 0) + 1;
+                    break;
+                }
+            }
+        }
+    }
+    
+    // Sort and get top preferences
+    const sortByCount = (obj: Record<string, number>) => 
+        Object.entries(obj).sort((a, b) => b[1] - a[1]);
+    
+    return {
+        cuisineCounts,
+        typeCounts,
+        neighborhoodCounts,
+        topCuisines: sortByCount(cuisineCounts).slice(0, 5).map(([k, v]) => `${k} (${v})`),
+        topTypes: sortByCount(typeCounts).slice(0, 5).map(([k, v]) => `${k} (${v})`),
+        topNeighborhoods: sortByCount(neighborhoodCounts).slice(0, 5).map(([k, v]) => `${k} (${v})`)
+    };
+}
+
 // Interface for place mentions with cross-corroboration scoring
 interface PlaceMention {
     name: string;
@@ -1958,42 +2011,72 @@ Neighborhood Preferences: ${researchResults.tasteProfile.locationPreferences.joi
                 // Build LEAN recommender prompt - NO full system prompt!
                 const userQuery = messages[messages.length - 1]?.content || 'recommendations';
                 
-                // Build compact taste summary
-                const tasteSummary = researchResults.tasteProfile ? 
-                    `USER PREFERENCES (inferred from saved places):
-- Vibes: ${researchResults.tasteProfile.vibePreferences?.slice(0, 5).join(', ') || 'varied'}
-- Cuisines: ${researchResults.tasteProfile.cuisinePreferences?.slice(0, 5).join(', ') || 'varied'}
-- Price: ${researchResults.tasteProfile.priceRange || 'mixed'}
-- Key traits: ${researchResults.tasteProfile.inferences?.slice(0, 5).join('; ') || 'none'}` : '';
+                // Count explicit preferences from saved places
+                const prefCounts = countUserPreferences(userPlaces);
+                
+                // Build preference summary with counts
+                const preferenceSummary = `
+=== USER PREFERENCE PROFILE ===
+Based on ${userPlaces.length} saved places:
 
-                const recommenderPrompt = `You are Spot, a fun NYC recommendation assistant. Extract the BEST places from research.
+TOP CATEGORIES: ${prefCounts.topTypes.join(', ') || 'varied'}
+TOP CUISINES: ${prefCounts.topCuisines.join(', ') || 'varied'}  
+FAVORITE NEIGHBORHOODS: ${prefCounts.topNeighborhoods.join(', ') || 'exploring'}
+${researchResults.tasteProfile ? `
+INFERRED PREFERENCES:
+- Vibes: ${researchResults.tasteProfile.vibePreferences?.slice(0, 5).join(', ') || 'flexible'}
+- Price Range: ${researchResults.tasteProfile.priceRange || 'mixed'}
+- Key Traits: ${researchResults.tasteProfile.inferences?.slice(0, 3).join('; ') || 'open-minded'}
+` : ''}
+=== END PROFILE ===`;
+
+                const recommenderPrompt = `You are Spot, a fun NYC recommendation assistant using Chain of Thought reasoning.
 
 USER ASKED: "${userQuery}"
-${tasteSummary}
+${preferenceSummary}
 
 === RESEARCH DATA ===
 ${searchResults || '(No data found - use general NYC knowledge)'}
 === END ===
 
-INSTRUCTIONS:
-- YOU MUST return 7-10 places total - this is CRITICAL
-- If research has fewer than 7 places, add well-known NYC options that match the query
-- Prioritize places mentioned in MULTIPLE sources (cross-corroboration)
-- Write a 1-sentence playful intro, then output JSON
-- DO NOT return fewer than 7 places!
+CHAIN OF THOUGHT REASONING (follow these steps):
+
+STEP 1: ANALYZE USER PREFERENCES
+- What types of places does this user typically save? (look at TOP CATEGORIES)
+- What cuisines/vibes do they prefer? 
+- What neighborhoods do they frequent?
+
+STEP 2: SCAN RESEARCH RESULTS  
+- Which places from research MATCH their preferences?
+- Which places are mentioned by MULTIPLE sources? (higher credibility)
+- Which are highly rated or strongly recommended?
+
+STEP 3: MATCH & RANK
+- Prioritize places that match user preferences AND are well-recommended
+- Include 1-2 "exploration" picks that expand their horizons
+- For events: filter out past dates, prioritize upcoming ones
+
+STEP 4: GENERATE RECOMMENDATIONS
+- Group into logical sections based on query type
+- Write engaging descriptions that reference WHY this matches them
+- Return 7-10 total places
 
 OUTPUT FORMAT:
 {"action": "recommendPlaces", "sections": [
-  {"title": "🔥 Top Picks", "intro": "Brief reason...", "places": [
-    {"name": "EVENT or PLACE name", "type": "restaurant|bar|cafe|activity|attraction|event", "description": "1-2 sentences why", "location": "Neighborhood OR Venue, Neighborhood", "startDate": "YYYY-MM-DD (for events)", "isEvent": true}
+  {"title": "Section Title", "intro": "2-3 sentences explaining why these picks match the user...", "places": [
+    {"name": "PLACE or EVENT name", "type": "restaurant|bar|cafe|activity|attraction|event", "description": "Why this fits them + key details", "location": "Neighborhood OR Venue, Neighborhood", "startDate": "YYYY-MM-DD (for events only)", "isEvent": true/false}
   ]}
 ]}
 
-⚠️ FOR CONCERTS/EVENTS: name = "iHeartRadio Jingle Ball" NOT "Madison Square Garden"
+SECTION GUIDELINES:
+${researchResults.toolsUsed.includes('research_events') ? '- For EVENTS: "📅 This Weekend", "🎭 Shows & Performances", "🎪 Markets & Pop-ups"
+- Event names should be the EVENT, not the venue (e.g., "Jingle Ball" not "MSG")' : ''}
+${researchResults.toolsUsed.includes('research_food') ? '- For FOOD: "🔥 Top Picks", "✨ Hidden Gems", "💜 Matches Your Vibe"
+- Reference their cuisine preferences in descriptions' : ''}
+${researchResults.toolsUsed.includes('research_places') ? '- For PLACES: "🗽 Must-See", "🎨 Culture & Arts", "🌳 Outdoor Fun"
+- Match to their saved activity types' : ''}
 
-${researchResults.toolsUsed.includes('research_events') ? 'Use sections: "📅 This Weekend", "🎭 Shows & Performances", "🎪 Markets & Pop-ups"' : ''}
-${researchResults.toolsUsed.includes('research_food') ? 'Use sections: "🔥 Top Picks", "✨ Hidden Gems", "💜 Matches Your Vibe"' : ''}
-${researchResults.toolsUsed.includes('research_places') ? 'Use sections: "🗽 Must-See", "🎨 Culture & Arts"' : ''}`;
+⚠️ CRITICAL: Return 7-10 places. Do NOT return fewer than 7!`;
 
                 // Call Gemini 2.5 Pro as the recommender
                 console.log('[Smart Research] Calling Gemini 2.5 Pro recommender...');
