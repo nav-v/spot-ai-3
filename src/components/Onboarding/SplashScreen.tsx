@@ -77,20 +77,18 @@ Before I start finding your perfect spots, let me get to know you a little...
         initial={{ opacity: 0, y: 20 }}
         animate={showButtons ? { opacity: 1, y: 0 } : {}}
         transition={{ duration: 0.4 }}
-        className="flex flex-col sm:flex-row gap-3 w-full max-w-xs"
+        className="flex flex-col sm:flex-row gap-3 w-full max-w-sm"
       >
         <Button
           onClick={onStart}
-          size="lg"
-          className="flex-1 text-base font-semibold"
+          className="w-full rounded-full py-3 text-base font-semibold shadow-sm"
         >
           Let's do it
         </Button>
         <Button
           onClick={onSkip}
           variant="ghost"
-          size="lg"
-          className="flex-1 text-base text-muted-foreground"
+          className="w-full rounded-full py-3 text-base text-muted-foreground"
         >
           Maybe later
         </Button>
