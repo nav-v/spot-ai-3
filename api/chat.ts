@@ -621,7 +621,7 @@ Return ONLY the JSON object, no other text.`;
 
     try {
         const response = await getAI().models.generateContent({
-            model: 'gemini-2.5-flash', // Switched from Pro for speed
+            model: 'gemini-2.5-pro',
             contents: [{ role: 'user', parts: [{ text: prompt }] }]
         });
         
@@ -1990,7 +1990,7 @@ ${researchResults.toolsUsed.includes('research_places') ? 'Use sections: "🗽 M
                 // Call Gemini 2.5 Pro as the recommender
                 console.log('[Smart Research] Calling Gemini 2.5 Pro recommender...');
                 const recommenderResponse = await getAI().models.generateContent({
-                    model: 'gemini-2.5-flash', // Switched from Pro for speed
+                    model: 'gemini-2.5-pro',
                     contents: [{ role: 'user', parts: [{ text: recommenderPrompt }] }]
                 });
 
