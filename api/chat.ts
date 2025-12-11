@@ -332,9 +332,9 @@ async function executeSmartResearch(
         }
         
         // Food publications via Gemini search (articles/reviews, not lists - so search is better than scraping)
-        addSearch(`${query} NYC site:eater.com`, 'Eater');
+        addSearch(`${query} site:ny.eater.com`, 'Eater NY');
         addSearch(`${query} NYC site:nytimes.com/section/food`, 'NY Times Food');
-        addSearch(`${query} NYC site:theinfatuation.com`, 'The Infatuation');
+        addSearch(`${query} site:theinfatuation.com/new-york`, 'The Infatuation NYC');
     }
     
     // RESEARCH_PLACES: Subreddit searches + scrape TimeOut
@@ -1095,8 +1095,8 @@ async function callGeminiWithSearch(query: string, queryType: string = 'food'): 
             `${query} r/AskNYC`,
             `${query} r/foodnyc`,
             `${query} r/nyc`,
-            `${query} site:eater.com NYC`,
-            `${query} site:theinfatuation.com NYC`
+            `${query} site:ny.eater.com`,
+            `${query} site:theinfatuation.com/new-york`
         ];
     } else if (queryType === 'event' || queryType === 'show') {
         // Events: Reddit + event publications
@@ -1113,7 +1113,7 @@ async function callGeminiWithSearch(query: string, queryType: string = 'food'): 
             `${query} r/AskNYC`,
             `${query} r/nyc`,
             `${query} site:timeout.com/newyork`,
-            `${query} site:eater.com NYC`
+            `${query} site:ny.eater.com`
         ];
     }
 
