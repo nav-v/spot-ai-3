@@ -2049,15 +2049,21 @@ ${searchResults || '(No data found - use general NYC knowledge)'}
 === END ===
 
 INTERNAL REASONING (do NOT output this - use it to think):
-1. FIRST: Scan the user's SAVED PLACES list - any that fit the query go in FIRST!
-2. Check their TOP CATEGORIES and CUISINES for preference matching
-3. From research, find NEW places that complement their saved picks
-4. Prioritize cross-referenced places (mentioned in multiple sources)
-5. Group into 2-4 sections - ALWAYS put relevant saved places at the TOP
+1. CHECK TIMING: Does query mention "weekend/tonight/tomorrow/this week"? If YES → events go FIRST!
+2. Scan the user's SAVED PLACES list - any that fit the query go in early sections
+3. Check their TOP CATEGORIES and CUISINES for preference matching
+4. From research, find NEW places that complement their saved picks
+5. Prioritize cross-referenced places (mentioned in multiple sources)
+6. Group into 2-4 sections - if time-sensitive, events section FIRST; otherwise saved places first
 
 ⚠️ SAVED PLACES PRIORITY: If the user asks for "pizza" and they have pizza places saved, THOSE GO FIRST. 
 If asking for "things to do" and they have saved attractions, INCLUDE THEM. Don't just recommend new places - 
 remind them of spots they already want to try!
+
+⏰ TIME-SENSITIVE = EVENTS FIRST: If user mentions "this weekend", "tonight", "tomorrow", "this week", etc. → 
+PRIORITIZE EVENTS over permanent places! Events are date-specific and more urgent. Put event section FIRST.
+- Holiday markets, concerts, shows, pop-ups = time-limited, push these!
+- Restaurants/museums = always open, can wait
 
 ⚠️ DO NOT output your thinking process. Just output a brief intro and the JSON.
 
@@ -2082,6 +2088,9 @@ ${researchResults.toolsUsed.includes('research_places') ? '- For PLACES: "🗽 M
 
 💡 PRIORITIZE SAVED PLACES: If user asks for "pizza" → their saved pizza spots go FIRST!
 💡 If asking for "museums" → include their saved museums! Surface saved matches before new finds.
+📅 TIME-SENSITIVE QUERIES: If user says "this weekend/tonight/tomorrow" → EVENTS GO FIRST!
+   - Concerts, shows, markets, pop-ups are date-specific → more urgent than restaurants
+   - Put "📅 This Weekend" or "🎭 Happening Now" section FIRST before food/places
 
 ⚠️ CRITICAL: Return 7-10 places. Include 2-4 from saved list if relevant. Do NOT return fewer than 7!`;
 
