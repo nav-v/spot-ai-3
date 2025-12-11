@@ -2014,11 +2014,20 @@ Neighborhood Preferences: ${researchResults.tasteProfile.locationPreferences.joi
                 // Count explicit preferences from saved places
                 const prefCounts = countUserPreferences(userPlaces);
                 
+                // Build saved places list for recommender to reference
+                const savedPlacesList = userPlaces.slice(0, 30).map((p: any) => {
+                    const type = p.cuisine || p.type || 'place';
+                    const neighborhood = p.address?.split(',')[1]?.trim() || p.neighborhood || '';
+                    return `• ${p.name} (${type}) - ${neighborhood}`;
+                }).join('\n');
+                
                 // Build preference summary with counts
                 const preferenceSummary = `
+=== 🌟 USER'S SAVED PLACES - PRIORITIZE THESE! 🌟 ===
+${savedPlacesList || '(No saved places yet)'}
+
 === USER PREFERENCE PROFILE ===
 Based on ${userPlaces.length} saved places:
-
 TOP CATEGORIES: ${prefCounts.topTypes.join(', ') || 'varied'}
 TOP CUISINES: ${prefCounts.topCuisines.join(', ') || 'varied'}  
 FAVORITE NEIGHBORHOODS: ${prefCounts.topNeighborhoods.join(', ') || 'exploring'}
@@ -2040,11 +2049,15 @@ ${searchResults || '(No data found - use general NYC knowledge)'}
 === END ===
 
 INTERNAL REASONING (do NOT output this - use it to think):
-1. Check user's TOP CATEGORIES and CUISINES for preference matching
-2. Find places from research that match their preferences
-3. Prioritize cross-referenced places (mentioned in multiple sources)
-4. Include saved places that fit the query
-5. Group into 2-4 logical sections
+1. FIRST: Scan the user's SAVED PLACES list - any that fit the query go in FIRST!
+2. Check their TOP CATEGORIES and CUISINES for preference matching
+3. From research, find NEW places that complement their saved picks
+4. Prioritize cross-referenced places (mentioned in multiple sources)
+5. Group into 2-4 sections - ALWAYS put relevant saved places at the TOP
+
+⚠️ SAVED PLACES PRIORITY: If the user asks for "pizza" and they have pizza places saved, THOSE GO FIRST. 
+If asking for "things to do" and they have saved attractions, INCLUDE THEM. Don't just recommend new places - 
+remind them of spots they already want to try!
 
 ⚠️ DO NOT output your thinking process. Just output a brief intro and the JSON.
 
@@ -2062,11 +2075,15 @@ OUTPUT FORMAT:
 ]}
 
 SECTION GUIDELINES:
+- 🌟 FIRST SECTION: Use "From Your Saved List" or "Already On Your Radar" for matching SAVED places
 ${researchResults.toolsUsed.includes('research_events') ? '- For EVENTS: "📅 This Weekend", "🎭 Shows & Performances", "🎪 Markets & Pop-ups"\n- Event names should be the EVENT, not the venue (e.g., "Jingle Ball" not "MSG")' : ''}
 ${researchResults.toolsUsed.includes('research_food') ? '- For FOOD: "🔥 Top Picks", "✨ Hidden Gems", "💜 Matches Your Vibe"\n- Reference their cuisine preferences in descriptions' : ''}
 ${researchResults.toolsUsed.includes('research_places') ? '- For PLACES: "🗽 Must-See", "🎨 Culture & Arts", "🌳 Outdoor Fun"\n- Match to their saved activity types' : ''}
 
-⚠️ CRITICAL: Return 7-10 places. Do NOT return fewer than 7!`;
+💡 PRIORITIZE SAVED PLACES: If user asks for "pizza" → their saved pizza spots go FIRST!
+💡 If asking for "museums" → include their saved museums! Surface saved matches before new finds.
+
+⚠️ CRITICAL: Return 7-10 places. Include 2-4 from saved list if relevant. Do NOT return fewer than 7!`;
 
                 // Call Gemini 2.5 Pro as the recommender
                 console.log('[Smart Research] Calling Gemini 2.5 Pro recommender...');
