@@ -11,8 +11,14 @@ const TOOL_SUBREDDITS = {
     research_events: ['nyc', 'AskNYC', 'NYCbitcheswithtaste', 'newyorkcity']
 };
 
-// Additional web sources for food research
+// Additional web sources for food research (for Gemini site: search)
 const FOOD_WEB_SOURCES = ['eater.com', 'nytimes.com/section/food'];
+
+// Food sites to scrape directly as backup
+const FOOD_SCRAPE_SITES = [
+    'https://ny.eater.com/maps/best-new-restaurants-nyc',
+    'https://www.theinfatuation.com/new-york/guides/best-new-restaurants-nyc'
+];
 
 // Event sites to SCRAPE (not search) - these must be scraped directly
 const EVENT_SCRAPE_SITES = [
@@ -256,7 +262,6 @@ function getTopCorroboratedPlaces(mentionMap: Map<string, PlaceMention>, limit: 
 // ============= PARALLEL RESEARCH EXECUTION ENGINE =============
 
 interface ResearchResults {
-    redditResults: any[];
     webResults: { text: string; textWithCitations: string; sources: any[]; citations: any[] };
     eventScrapedContent: string;
     tasteProfile: TasteProfile | null;
@@ -271,7 +276,6 @@ async function executeSmartResearch(
     console.log(`[Smart Research] Executing ${tools.length} research tools in parallel`);
     
     const results: ResearchResults = {
-        redditResults: [],
         webResults: { text: '', textWithCitations: '', sources: [], citations: [] },
         eventScrapedContent: '',
         tasteProfile: null,
@@ -288,103 +292,124 @@ async function executeSmartResearch(
     // Build parallel execution promises
     const promises: Promise<void>[] = [];
     
-    // RESEARCH_FOOD: Reddit + Eater + NYT
+    // RESEARCH_FOOD: Use Gemini grounded search with site: operators
     if (foodTools.length > 0) {
         results.toolsUsed.push('research_food');
-        const tool = foodTools[0]; // Use first tool's query
-        const queries = [tool.query || 'best food'];
-        const baseSubreddits = TOOL_SUBREDDITS.research_food;
-        const locationSubreddits = tool.subreddits || [];
+        const tool = foodTools[0];
+        const query = tool.query || 'best food';
+        const locationSubs = tool.subreddits || [];
         
-        console.log(`[Smart Research] research_food: query="${tool.query}", location subreddits: ${locationSubreddits.join(', ') || 'none'}`);
+        console.log(`[Smart Research] research_food: query="${query}", location subreddits: ${locationSubs.join(', ') || 'none'}`);
         
-        // Reddit search
+        // Build search queries for Gemini grounded search
+        const searchQueries = [
+            `${query} NYC site:reddit.com/r/FoodNYC OR site:reddit.com/r/AskNYC`,
+            `${query} NYC site:eater.com`,
+            `${query} NYC site:nytimes.com/section/food OR site:theinfatuation.com`
+        ];
+        
+        // Add location-specific Reddit searches
+        if (locationSubs.length > 0) {
+            const locationQuery = locationSubs.map(s => `site:reddit.com/r/${s}`).join(' OR ');
+            searchQueries.push(`${query} ${locationQuery}`);
+        }
+        
         promises.push(
             (async () => {
                 try {
-                    const redditResults = await searchRedditMultiQuery(queries, baseSubreddits, locationSubreddits);
-                    console.log(`[Smart Research] Food Reddit returned ${redditResults.length} posts`);
-                    results.redditResults.push(...redditResults);
-                } catch (e: any) {
-                    console.error(`[Smart Research] Food Reddit failed:`, e.message);
-                }
-            })()
-        );
-        
-        // Web search for Eater + NYT
-        promises.push(
-            (async () => {
-                try {
-                    const webQueries = [
-                        `${tool.query} site:eater.com NYC`,
-                        `${tool.query} site:nytimes.com/section/food NYC`
-                    ];
-                    for (const wq of webQueries) {
-                        const webResult = await singleGeminiSearch(wq);
-                        results.webResults.text += webResult.text + '\n';
-                        results.webResults.textWithCitations += webResult.textWithCitations + '\n';
-                        results.webResults.sources.push(...webResult.sources);
-                        results.webResults.citations.push(...webResult.citations);
+                    for (const sq of searchQueries) {
+                        console.log(`[Smart Research] Gemini search: ${sq.substring(0, 60)}...`);
+                        const searchResult = await singleGeminiSearch(sq);
+                        results.webResults.text += searchResult.text + '\n';
+                        results.webResults.textWithCitations += searchResult.textWithCitations + '\n';
+                        results.webResults.sources.push(...searchResult.sources);
+                        results.webResults.citations.push(...searchResult.citations);
                     }
-                    console.log(`[Smart Research] Food web search returned ${results.webResults.sources.length} sources`);
+                    console.log(`[Smart Research] Food search returned ${results.webResults.sources.length} sources`);
                 } catch (e: any) {
-                    console.error(`[Smart Research] Food web search failed:`, e.message);
+                    console.error(`[Smart Research] Food search failed:`, e.message);
                 }
             })()
         );
     }
     
-    // RESEARCH_PLACES: Reddit only (non-food)
+    // RESEARCH_PLACES: Use Gemini grounded search
     if (placesTools.length > 0) {
         results.toolsUsed.push('research_places');
         const tool = placesTools[0];
-        const queries = [tool.query || 'things to do'];
-        const baseSubreddits = TOOL_SUBREDDITS.research_places;
-        const locationSubreddits = tool.subreddits || [];
+        const query = tool.query || 'things to do';
+        const locationSubs = tool.subreddits || [];
         
-        console.log(`[Smart Research] research_places: query="${tool.query}", location subreddits: ${locationSubreddits.join(', ') || 'none'}`);
+        console.log(`[Smart Research] research_places: query="${query}", location subreddits: ${locationSubs.join(', ') || 'none'}`);
+        
+        const searchQueries = [
+            `${query} NYC site:reddit.com/r/AskNYC OR site:reddit.com/r/nyc`,
+            `${query} NYC site:timeout.com/newyork`
+        ];
+        
+        if (locationSubs.length > 0) {
+            const locationQuery = locationSubs.map(s => `site:reddit.com/r/${s}`).join(' OR ');
+            searchQueries.push(`${query} ${locationQuery}`);
+        }
         
         promises.push(
             (async () => {
                 try {
-                    const redditResults = await searchRedditMultiQuery(queries, baseSubreddits, locationSubreddits);
-                    console.log(`[Smart Research] Places Reddit returned ${redditResults.length} posts`);
-                    results.redditResults.push(...redditResults);
+                    for (const sq of searchQueries) {
+                        console.log(`[Smart Research] Gemini search: ${sq.substring(0, 60)}...`);
+                        const searchResult = await singleGeminiSearch(sq);
+                        results.webResults.text += searchResult.text + '\n';
+                        results.webResults.textWithCitations += searchResult.textWithCitations + '\n';
+                        results.webResults.sources.push(...searchResult.sources);
+                        results.webResults.citations.push(...searchResult.citations);
+                    }
+                    console.log(`[Smart Research] Places search returned ${results.webResults.sources.length} sources`);
                 } catch (e: any) {
-                    console.error(`[Smart Research] Places Reddit failed:`, e.message);
+                    console.error(`[Smart Research] Places search failed:`, e.message);
                 }
             })()
         );
     }
     
-    // RESEARCH_EVENTS: Reddit + Scrape all event sites
+    // RESEARCH_EVENTS: Use Gemini grounded search + scrape event sites
     if (eventsTools.length > 0) {
         results.toolsUsed.push('research_events');
         const tool = eventsTools[0];
-        const queries = [tool.query || 'things to do'];
-        const baseSubreddits = TOOL_SUBREDDITS.research_events;
-        const locationSubreddits = tool.subreddits || [];
+        const query = tool.query || 'things to do december 2025';
+        const dateFilter = tool.dates || '';
         
-        console.log(`[Smart Research] research_events: query="${tool.query}", dates="${tool.dates || 'any'}"`);
+        console.log(`[Smart Research] research_events: query="${query}", dates="${dateFilter}"`);
         
-        // Reddit search for events (separate promise with error handling)
+        // Gemini search for events
+        const searchQueries = [
+            `${query} ${dateFilter} site:reddit.com/r/AskNYC OR site:reddit.com/r/nyc`,
+            `${query} ${dateFilter} site:timeout.com/newyork`,
+            `${query} ${dateFilter} site:secretnyc.co OR site:theskint.com`
+        ];
+        
         promises.push(
             (async () => {
                 try {
-                    const redditResults = await searchRedditMultiQuery(queries, baseSubreddits, locationSubreddits);
-                    console.log(`[Smart Research] Events Reddit returned ${redditResults.length} posts`);
-                    results.redditResults.push(...redditResults);
+                    for (const sq of searchQueries) {
+                        console.log(`[Smart Research] Gemini search: ${sq.substring(0, 60)}...`);
+                        const searchResult = await singleGeminiSearch(sq);
+                        results.webResults.text += searchResult.text + '\n';
+                        results.webResults.textWithCitations += searchResult.textWithCitations + '\n';
+                        results.webResults.sources.push(...searchResult.sources);
+                        results.webResults.citations.push(...searchResult.citations);
+                    }
+                    console.log(`[Smart Research] Events search returned ${results.webResults.sources.length} sources`);
                 } catch (e: any) {
-                    console.error(`[Smart Research] Events Reddit failed:`, e.message);
+                    console.error(`[Smart Research] Events search failed:`, e.message);
                 }
             })()
         );
         
-        // Scrape event sites (separate promise with error handling)
+        // Also scrape event sites directly (fallback)
         promises.push(
             (async () => {
                 try {
-                    const eventScrape = await scrapeEventSites(tool.dates);
+                    const eventScrape = await scrapeEventSites(dateFilter);
                     console.log(`[Smart Research] Event scrape returned ${eventScrape.rawContent.length} chars`);
                     results.eventScrapedContent = eventScrape.rawContent;
                 } catch (e: any) {
@@ -439,7 +464,7 @@ async function executeSmartResearch(
     console.log(`[Smart Research] Starting ${promises.length} parallel tasks...`);
     await Promise.all(promises);
     
-    console.log(`[Smart Research] Completed. Reddit: ${results.redditResults.length}, Web sources: ${results.webResults.sources.length}, Event content: ${results.eventScrapedContent.length} chars, Taste inferences: ${results.tasteProfile?.inferences?.length || 0}`);
+    console.log(`[Smart Research] Completed. Web sources: ${results.webResults.sources.length}, Event content: ${results.eventScrapedContent.length} chars, Taste inferences: ${results.tasteProfile?.inferences?.length || 0}`);
     
     return results;
 }
@@ -648,13 +673,19 @@ async function searchRedditMultiQuery(
 
                 const response = await fetch(searchUrl, {
                     headers: {
-                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-                        'Accept': 'application/json'
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'en-US,en;q=0.5',
+                        'Connection': 'keep-alive',
                     }
                 });
 
                 if (!response.ok) {
                     console.log(`[Reddit] r/${subreddit} returned ${response.status}`);
+                    // If rate limited, wait a bit
+                    if (response.status === 429) {
+                        await new Promise(r => setTimeout(r, 2000));
+                    }
                     continue;
                 }
 
@@ -736,14 +767,19 @@ async function scrapeWithFirecrawl(url: string) {
             body: JSON.stringify({
                 url,
                 formats: ['markdown'],
-                onlyMainContent: true
+                onlyMainContent: true,
+                timeout: 30000
             }),
         });
         const result = await response.json();
-        console.log(`[Firecrawl] Result success: ${result.success}`);
+        if (!result.success) {
+            console.log(`[Firecrawl] FAILED for ${url}: ${result.error || 'Unknown error'}`);
+        } else {
+            console.log(`[Firecrawl] SUCCESS for ${url}: ${result.data?.markdown?.length || 0} chars`);
+        }
         return result;
     } catch (error: any) {
-        console.error(`[Firecrawl] Exception:`, error);
+        console.error(`[Firecrawl] Exception for ${url}:`, error.message);
         return { success: false, error: error.message };
     }
 }
@@ -1762,45 +1798,21 @@ Assistant:`;
                 // Build comprehensive search results for the recommender
                 let searchResults = '';
 
-                // Add Reddit results with source tracking
-                if (researchResults.redditResults.length > 0) {
-                    searchResults += '=== REDDIT RESULTS (PRIORITIZE THESE - CROSS-CORROBORATION MATTERS) ===\n';
-                    
-                    // Score and sort by relevance
-                    const scoredPosts = researchResults.redditResults
-                        .sort((a: any, b: any) => (b.upvotes + b.numComments) - (a.upvotes + a.numComments));
-
-                    // Fetch comments for top posts
-                    const topPosts = scoredPosts.slice(0, 7);
-                    const commentPromises = topPosts.map(async (post: any) => {
-                        const comments = await getRedditComments(post.url);
-                        let postResult = `\n--- THREAD: "${post.title}" (${post.source || 'r/' + post.subreddit}, ${post.upvotes} upvotes) ---\nURL: ${post.url}\n`;
-                        if (comments.length > 0) {
-                            postResult += `TOP COMMENTS:\n`;
-                            for (const comment of comments.slice(0, 8)) {
-                                postResult += `💬 [${comment.upvotes}] u/${comment.author}: "${comment.text}"\n\n`;
-                            }
-                        }
-                        return postResult;
-                    });
-
-                    const commentsResults = await Promise.all(commentPromises);
-                    searchResults += commentsResults.join('');
-                }
-
-                // Add web results (Eater, NYT, etc.)
+                // Add Gemini grounded search results (Reddit + publications via site: operators)
                 if (researchResults.webResults.text) {
-                    searchResults += '\n=== WEB SOURCES (Eater, NY Times, etc.) ===\n' + researchResults.webResults.textWithCitations;
+                    searchResults += '=== SEARCH RESULTS (Reddit, Eater, TimeOut, etc. via Gemini) ===\n';
+                    searchResults += researchResults.webResults.textWithCitations;
+                    searchResults += '\n';
                 }
 
-                // Add scraped event content
+                // Add scraped event content (if Firecrawl worked)
                 if (researchResults.eventScrapedContent) {
-                    searchResults += '\n=== SCRAPED EVENT SITES (theskint, timeout, ra.co, etc.) ===\n' + researchResults.eventScrapedContent;
+                    searchResults += '\n=== SCRAPED EVENT SITES ===\n' + researchResults.eventScrapedContent;
                 }
 
                 // Log what we got
                 console.log(`[Smart Research] Final searchResults length: ${searchResults.length} chars`);
-                console.log(`[Smart Research] Reddit: ${researchResults.redditResults.length}, Web: ${researchResults.webResults.sources.length}, Events: ${researchResults.eventScrapedContent.length}`);
+                console.log(`[Smart Research] Web sources: ${researchResults.webResults.sources.length}, Events scraped: ${researchResults.eventScrapedContent.length} chars`);
                 
                 // If no research data, add a note
                 if (!searchResults.trim()) {
