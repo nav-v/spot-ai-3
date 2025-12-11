@@ -1592,13 +1592,18 @@ SECTION RULES:
 - **TOTAL MAX 10 places** across all sections - distribute as you see fit based on what makes sense
 
 Place fields:
-- name: The place name
-- type: One of "restaurant", "bar", "cafe", "activity", "attraction"
+- name: For RESTAURANTS/BARS/CAFES: the venue name. For EVENTS/CONCERTS: the EVENT name (e.g. "iHeartRadio Jingle Ball", NOT "Madison Square Garden")
+- type: One of "restaurant", "bar", "cafe", "activity", "attraction", "event"
 - description: 1-2 sentences why you chose this for them
-- location: Neighborhood (e.g. "Upper East Side")
+- location: For places: Neighborhood. For events: "Venue Name, Neighborhood" (e.g. "Madison Square Garden, Midtown")
+- startDate: (REQUIRED for events) Date in "YYYY-MM-DD" format, or "Dec 13" if exact date unknown
 - DO NOT include sourceUrl - we attach verified URLs from research automatically.
 - sourceName: Who recommended it - PRIORITIZE Reddit (r/foodnyc, r/AskNYC) over other sources. Must be from actual research.
 - sourceQuote: The actual quote from that Reddit post or article. NEVER fabricate quotes.
+
+⚠️ EVENT CARDS: The card name MUST be the event/concert/show name, NOT the venue! 
+   ✅ CORRECT: {"name": "iHeartRadio Jingle Ball", "location": "Madison Square Garden, Midtown", "startDate": "2025-12-13"}
+   ❌ WRONG: {"name": "Madison Square Garden", "location": "Midtown"}
 
 ⚠️ CRITICAL: 
 - You may ONLY cite sources that were returned by the research tool.
@@ -1935,9 +1940,11 @@ INSTRUCTIONS:
 OUTPUT FORMAT:
 {"action": "recommendPlaces", "sections": [
   {"title": "🔥 Top Picks", "intro": "Brief reason...", "places": [
-    {"name": "Place Name", "type": "restaurant|bar|cafe|activity|attraction", "description": "1-2 sentences why", "location": "Neighborhood", "sourceName": "r/AskNYC", "sourceQuote": "actual quote from research"}
+    {"name": "EVENT or PLACE name", "type": "restaurant|bar|cafe|activity|attraction|event", "description": "1-2 sentences why", "location": "Neighborhood OR Venue, Neighborhood", "startDate": "YYYY-MM-DD (for events)", "sourceName": "r/AskNYC", "sourceQuote": "actual quote"}
   ]}
 ]}
+
+⚠️ FOR CONCERTS/EVENTS: name = "iHeartRadio Jingle Ball" NOT "Madison Square Garden"
 
 ${researchResults.toolsUsed.includes('research_events') ? 'Use sections: "📅 This Weekend", "🎭 Shows & Performances", "🎪 Markets & Pop-ups"' : ''}
 ${researchResults.toolsUsed.includes('research_food') ? 'Use sections: "🔥 Top Picks", "✨ Hidden Gems", "💜 Matches Your Vibe"' : ''}
