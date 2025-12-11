@@ -826,11 +826,6 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                             {place.description}
                           </p>
 
-                          {(place as any).sourceName && (
-                            <div className="text-[10px] text-muted-foreground mb-2 italic">
-                                    <span>📰 {(place as any).sourceName}: "{(place as any).sourceQuote || 'Highly recommended'}"</span>
-                                  </div>
-                                )}
 
                                 <div className="flex gap-2 mt-auto">
                                   <a
@@ -910,11 +905,6 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                             {place.description}
                           </p>
 
-                          {(place as any).sourceName && (
-                            <div className="text-[10px] text-muted-foreground mb-2 italic">
-                              <span>📰 {(place as any).sourceName}: "{(place as any).sourceQuote || 'Highly recommended'}"</span>
-                            </div>
-                          )}
 
                           <div className="flex gap-2 mt-auto">
                             <a
