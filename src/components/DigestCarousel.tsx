@@ -147,9 +147,9 @@ export function DigestCarousel({
             const isAdding = addingPlaces.has(place.id);
 
             return (
-              <div key={place.id || idx} className="min-w-[65%] sm:min-w-[220px] sm:w-[220px] bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all snap-center flex flex-col">
-                {/* Image Area - shorter for mobile fit */}
-                <div className="h-28 w-full bg-muted relative overflow-hidden group">
+              <div key={place.id || idx} className="min-w-[70%] sm:min-w-[260px] sm:w-[260px] bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all snap-center flex flex-col">
+                {/* Image Area */}
+                <div className="h-32 w-full bg-muted relative overflow-hidden group">
                   {place.imageUrl ? (
                     <img src={place.imageUrl} alt={place.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
                   ) : (
@@ -157,17 +157,17 @@ export function DigestCarousel({
                       <MapPin className="w-6 h-6 text-muted-foreground/50" />
                     </div>
                   )}
-                  <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md text-white text-[9px] px-1.5 py-0.5 rounded-full font-medium">
+                  <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded-full font-medium">
                     {place.location}
                   </div>
                 </div>
 
-                {/* Content Area - more compact */}
-                <div className="p-2.5 flex flex-col flex-1">
-                  <div className="flex justify-between items-start mb-0.5">
-                    <h3 className="font-semibold text-xs leading-tight text-foreground line-clamp-1">{place.name}</h3>
+                {/* Content Area */}
+                <div className="p-3 flex flex-col flex-1">
+                  <div className="flex justify-between items-start mb-1">
+                    <h3 className="font-semibold text-sm leading-tight text-foreground line-clamp-2">{place.name}</h3>
                     {place.rating && (
-                      <div className="flex items-center gap-0.5 bg-yellow-500/10 text-yellow-600 px-1 py-0.5 rounded text-[9px] font-bold flex-shrink-0">
+                      <div className="flex items-center gap-0.5 bg-yellow-500/10 text-yellow-600 px-1.5 py-0.5 rounded text-[10px] font-bold flex-shrink-0 ml-1">
                         <span>★</span>
                         <span>{place.rating}</span>
                       </div>
@@ -175,56 +175,56 @@ export function DigestCarousel({
                   </div>
 
                   {place.isEvent && place.startDate && (
-                    <p className="text-[9px] text-primary font-medium mb-1">
+                    <p className="text-[11px] text-primary font-medium mb-1">
                       📅 {new Date(place.startDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                     </p>
                   )}
 
-                  <p className="text-[10px] text-muted-foreground line-clamp-2 flex-1 mb-1.5">
+                  <p className="text-xs text-muted-foreground line-clamp-3 flex-1 mb-2">
                     {place.description}
                   </p>
 
                   {place.recommendedDishes && place.recommendedDishes.length > 0 && (
-                    <p className="text-[9px] text-muted-foreground/80 mb-1">
+                    <p className="text-[11px] text-muted-foreground/80 mb-1.5">
                       <span className="font-medium">Try:</span> {place.recommendedDishes.slice(0, 2).join(' · ')}
                     </p>
                   )}
 
                   {place.sources && place.sources.length > 0 && (
-                    <div className="flex items-center gap-1 mb-1.5">
-                      <span className="text-[8px] text-muted-foreground/60">via</span>
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <span className="text-[10px] text-muted-foreground/60">via</span>
                       {place.sources.slice(0, 2).map((source, i) => {
                         const domain = typeof source === 'string' ? source : source.domain;
                         const url = typeof source === 'string' ? `https://${source}` : source.url;
                         return (
                           <a key={i} href={url} target="_blank" rel="noopener noreferrer" title={domain}>
-                            <img src={`https://www.google.com/s2/favicons?domain=${domain}&sz=16`} alt={domain} className="w-3 h-3 rounded-sm opacity-70 hover:opacity-100" />
+                            <img src={`https://www.google.com/s2/favicons?domain=${domain}&sz=16`} alt={domain} className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100" />
                           </a>
                         );
                       })}
                     </div>
                   )}
 
-                  <div className="flex gap-1.5 mt-auto">
+                  <div className="flex gap-2 mt-auto">
                     {place.website && (
                       <a
                         href={place.website}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex-1 flex items-center justify-center gap-1 bg-secondary/50 hover:bg-secondary text-secondary-foreground text-[9px] py-1.5 rounded-lg font-medium"
+                        className="flex-1 flex items-center justify-center gap-1.5 bg-secondary/50 hover:bg-secondary text-secondary-foreground text-[11px] py-2 rounded-lg font-medium"
                       >
-                        <ExternalLink className="w-2.5 h-2.5" />
+                        <ExternalLink className="w-3 h-3" />
                         Website
                       </a>
                     )}
                     <button
                       onClick={() => handleAddPlace(place)}
                       disabled={isSaved || isAdding}
-                      className={`${place.website ? 'flex-1' : 'w-full'} flex items-center justify-center gap-1 text-[9px] py-1.5 rounded-lg font-medium ${
+                      className={`${place.website ? 'flex-1' : 'w-full'} flex items-center justify-center gap-1.5 text-[11px] py-2 rounded-lg font-medium ${
                         isSaved ? 'bg-secondary text-muted-foreground cursor-not-allowed' : 'bg-primary text-primary-foreground hover:bg-primary/90'
                       }`}
                     >
-                      {isAdding ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : isSaved ? <><Check className="w-2.5 h-2.5" /> Saved</> : <><Plus className="w-2.5 h-2.5" /> Add</>}
+                      {isAdding ? <Loader2 className="w-3 h-3 animate-spin" /> : isSaved ? <><Check className="w-3 h-3" /> Saved</> : <><Plus className="w-3 h-3" /> Add</>}
                     </button>
                   </div>
                 </div>
@@ -234,13 +234,13 @@ export function DigestCarousel({
 
           {/* Show More Card */}
           {hasMore && (
-            <div className="min-w-[50%] sm:min-w-[160px] sm:w-[160px] bg-secondary/10 border border-border/50 rounded-xl flex flex-col items-center justify-center p-4 snap-center">
-              <RefreshCw className={`w-6 h-6 text-muted-foreground/40 mb-2 ${isLoading ? 'animate-spin' : ''}`} />
-              <p className="text-[10px] text-muted-foreground text-center mb-2">More options?</p>
+            <div className="min-w-[60%] sm:min-w-[200px] sm:w-[200px] bg-secondary/10 border border-border/50 rounded-xl flex flex-col items-center justify-center p-5 snap-center">
+              <RefreshCw className={`w-7 h-7 text-muted-foreground/40 mb-3 ${isLoading ? 'animate-spin' : ''}`} />
+              <p className="text-xs text-muted-foreground text-center mb-3">More options?</p>
               <button
                 onClick={handleShowMore}
                 disabled={isLoading}
-                className="px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-[10px] font-medium hover:bg-primary/90 disabled:opacity-50"
+                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 disabled:opacity-50"
               >
                 {isLoading ? 'Loading...' : nextBatch.length > 0 ? 'Show More' : 'Load More'}
               </button>
