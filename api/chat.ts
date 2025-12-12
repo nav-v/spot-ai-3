@@ -23,7 +23,7 @@ const FOOD_SCRAPE_SITES = [
 // Event sites to SCRAPE with Jina.ai (handles JS rendering)
 const EVENT_SCRAPE_SITES = [
     'https://theskint.com/',
-    'https://www.ohmyrockness.com/shows/popular',
+    'https://www.ohmyrockness.com/shows',  // Changed from /popular - base shows page has better content
     'https://edmtrain.com/new-york-city-ny',
     'https://www.timeout.com/newyork/things-to-do/this-weekend'
 ];
@@ -2070,6 +2070,7 @@ ${researchResults.toolsUsed.includes('research_places') ? '- For PLACES: "🗽 M
 📅 TIME-SENSITIVE QUERIES: If user says "this weekend/tonight/tomorrow" → EVENTS GO FIRST!
    - Concerts, shows, markets, pop-ups are date-specific → more urgent than restaurants
    - Put "📅 This Weekend" or "🎭 Happening Now" section FIRST before food/places
+   - 🎯 PRIVILEGE SCRAPED EVENT SITES: For events, prioritize data from "=== THESKINT.COM ===" "=== EDMTRAIN.COM ===" "=== OHMYROCKNESS.COM ===" "=== TIMEOUT.COM ===" sections - these are curated, up-to-date event listings!
 
 🔥 SAVED LIST = THEIR WISHLIST! At least HALF of recommendations should come from saved list if they match!
    - User saved pizza spots? → PUT THEM FIRST when they ask for food!
