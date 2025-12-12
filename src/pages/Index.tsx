@@ -19,13 +19,15 @@ import {
   // Activity icons
   Building, Building2, Trees, Landmark, Image, Music, ShoppingBag, ShoppingCart,
   Eye, Clock, Waves, Map, Trophy, Dog, BookOpen, Moon, GraduationCap, Lock,
-  Gamepad2, Circle, Flower2, Telescope, Footprints, Ship, Theater, Laugh
+  Gamepad2, Circle, Flower2, Telescope, Footprints, Ship, Theater, Laugh,
+  // Additional icons
+  Sparkles, Calendar, PartyPopper, Smile, Drama
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 type TabType = 'spot' | 'see' | 'eat';
 
-// Icon mapping for dynamic rendering - using emoji for better visual
+// Icon mapping for dynamic rendering
 const iconMap: Record<string, any> = {
   // Food icons
   Pizza, Fish, Sandwich, IceCream, Salad, Coffee, Flame, Soup, Beef, Croissant,
@@ -38,7 +40,9 @@ const iconMap: Record<string, any> = {
   Building, Building2, Trees, Landmark, Image, Music, ShoppingBag, ShoppingCart,
   Eye, Clock, Waves, Map, Trophy, Dog, BookOpen, Moon, GraduationCap, Lock,
   Gamepad2, Circle, Flower: Flower2, Telescope, Footprints, Ship,
-  Drama: Theater, Laugh, Bridge: Landmark, Heart,
+  Drama, Theater, Laugh, Bridge: Landmark, Heart,
+  // Event & additional icons
+  Sparkles, Calendar, PartyPopper, Smile, MapPin,
   // Default activity
   Target: Circle,
 };
@@ -144,16 +148,32 @@ const Index = () => {
 
   // Filter places based on tab and filters
   const filteredPlaces = places.filter((place) => {
-    if (activeTab === 'eat' && !['restaurant', 'cafe', 'bar'].includes(place.type)) return false;
-    if (activeTab === 'see' && !['attraction', 'activity', 'museum', 'park', 'shopping', 'theater', 'other'].includes(place.type)) return false;
+    // Filter by mainCategory (with fallback to legacy type)
+    if (activeTab === 'eat') {
+      const isEat = place.mainCategory === 'eat' || ['restaurant', 'cafe', 'bar'].includes(place.type);
+      if (!isEat) return false;
+    }
+    if (activeTab === 'see') {
+      const isSee = place.mainCategory === 'see' || !['restaurant', 'cafe', 'bar'].includes(place.type);
+      if (!isSee) return false;
+    }
+    
+    // Filter by visited status
     if (showCompleted && !place.isVisited) return false;
     if (!showCompleted && place.isVisited) return false;
+    
+    // Filter by category (subtype matching)
     if (activeFilter) {
-      const matchesCuisine = place.cuisine?.toLowerCase().includes(activeFilter);
-      const matchesType = place.type?.toLowerCase().includes(activeFilter);
-      const matchesName = place.name?.toLowerCase().includes(activeFilter);
-      if (!matchesCuisine && !matchesType && !matchesName) return false;
+      const filterLower = activeFilter.toLowerCase();
+      const matchesSubtype = place.subtype?.toLowerCase() === filterLower;
+      const matchesCuisine = place.cuisine?.toLowerCase() === filterLower;
+      const matchesType = place.type?.toLowerCase() === filterLower;
+      // Also match if subtype contains the filter (for partial matches)
+      const subtypeContains = place.subtype?.toLowerCase().includes(filterLower);
+      if (!matchesSubtype && !matchesCuisine && !matchesType && !subtypeContains) return false;
     }
+    
+    // Filter by search query
     if (searchQuery && !place.name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
   });
