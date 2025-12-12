@@ -372,7 +372,7 @@ CRITICAL:
 
     try {
         const response = await getAI().models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-2.5-pro',
             contents: [{ role: 'user', parts: [{ text: prompt }] }]
         });
         
@@ -482,20 +482,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const tomorrowUTC = new Date(todayUTC);
         tomorrowUTC.setUTCDate(tomorrowUTC.getUTCDate() + 1);
         
-        console.log(`[Digest] Checking for existing digest since: ${todayUTC.toISOString()}`);
+        console.log(`[Digest] Checking for existing digest since: ${todayUTC.toISOString()} until ${tomorrowUTC.toISOString()}`);
         
-        const { data: existingDigest, error: checkError } = await db
+        const { data: existingDigests, error: checkError } = await db
             .from('daily_digests')
             .select('*')
             .eq('user_id', userId)
             .gte('created_at', todayUTC.toISOString())
             .lt('created_at', tomorrowUTC.toISOString())
             .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+            .limit(1);
+        
+        if (checkError) {
+            console.error(`[Digest] Error checking for existing digest:`, checkError);
+        }
+        
+        const existingDigest = existingDigests && existingDigests.length > 0 ? existingDigests[0] : null;
         
         if (existingDigest) {
-            console.log(`[Digest] ✅ User ${userId} already has a digest for today, returning existing one`);
+            console.log(`[Digest] ✅ User ${userId} already has a digest for today (ID: ${existingDigest.id}), returning existing one`);
             const allRecs = existingDigest.recommendations || [];
             const recommendations = allRecs.slice(0, 15);
             const next_batch = allRecs.slice(15, 21);
@@ -516,7 +521,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             });
         }
         
-        console.log(`[Digest] No existing digest found, generating new one...`);
+        console.log(`[Digest] ❌ No existing digest found (checked ${existingDigests?.length || 0} digests), generating new one...`);
         
         // Parallel: weather, research, user data, user preferences
         const [weather, research, userResult, placesResult, prefsResult] = await Promise.all([
@@ -533,6 +538,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         // Generate digest
         const digest = await generateDigest(userName, places, research, userPreferences);
+        
+        // DOUBLE-CHECK: Before saving, check one more time if digest was created (race condition protection)
+        const { data: doubleCheckDigests } = await db
+            .from('daily_digests')
+            .select('*')
+            .eq('user_id', userId)
+            .gte('created_at', todayUTC.toISOString())
+            .lt('created_at', tomorrowUTC.toISOString())
+            .order('created_at', { ascending: false })
+            .limit(1);
+        
+        if (doubleCheckDigests && doubleCheckDigests.length > 0) {
+            console.log(`[Digest] ⚠️ Race condition detected! Another digest was created while we were generating. Returning existing one.`);
+            const existingDigest = doubleCheckDigests[0];
+            const allRecs = existingDigest.recommendations || [];
+            const recommendations = allRecs.slice(0, 15);
+            const next_batch = allRecs.slice(15, 21);
+            
+            return res.status(200).json({
+                success: true,
+                hasDigest: true,
+                digest: {
+                    id: existingDigest.id,
+                    greeting: existingDigest.greeting,
+                    weather: existingDigest.weather,
+                    intro_text: existingDigest.intro_text,
+                    recommendations: recommendations,
+                    next_batch: next_batch,
+                    shown_ids: existingDigest.shown_ids,
+                    created_at: existingDigest.created_at
+                }
+            });
+        }
         
         // Save to DB
         // Store all recommendations (15 + 6) for retrieval
