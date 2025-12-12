@@ -333,13 +333,26 @@ async function searchGooglePlaces(placeName: string, location: string = 'New Yor
             subtype = 'Shopping';
         }
 
+        // Get description from Google's editorial summary, or generate one
+        let description = place.editorialSummary?.text || '';
+        
+        // If no Google description, generate one with AI
+        if (!description) {
+            description = await generatePlaceDescription(
+                place.displayName?.text || placeName,
+                subtype,
+                place.formattedAddress || location,
+                place.rating
+            );
+        }
+
         return {
             name: place.displayName?.text || placeName,
             type: legacyType,
             mainCategory,
             subtype,
             address: place.formattedAddress || location,
-            description: place.editorialSummary?.text || '',
+            description,
             sourceUrl: place.websiteUri || `https://www.google.com/maps/place/?q=place_id:${place.id}`,
             imageUrl,
             rating: place.rating || null,
@@ -352,9 +365,82 @@ async function searchGooglePlaces(placeName: string, location: string = 'New Yor
     }
 }
 
-// ============= GEMINI CATEGORIZATION FALLBACK =============
+// ============= GEMINI AI HELPERS =============
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+
+// Generate a short, engaging description for a place
+async function generatePlaceDescription(
+    placeName: string,
+    placeType: string,
+    address: string,
+    rating?: number | null
+): Promise<string> {
+    if (!GEMINI_API_KEY) {
+        return `A ${placeType.toLowerCase()} in ${address.split(',')[1]?.trim() || 'the area'}.`;
+    }
+    
+    try {
+        console.log(`[AI Description] Generating for: "${placeName}"`);
+        
+        const prompt = `Write a 1-2 sentence description for this place. Be concise, informative, and slightly enthusiastic.
+
+PLACE: ${placeName}
+TYPE: ${placeType}
+ADDRESS: ${address}
+${rating ? `RATING: ${rating}/5` : ''}
+
+Guidelines:
+- Focus on what makes this place worth visiting
+- Mention the neighborhood or area
+- Keep it under 30 words
+- Don't start with "This is" or the place name
+- Sound like a helpful local, not a brochure
+
+Example outputs:
+- "Cozy Italian spot in the West Village known for handmade pasta and a romantic candlelit vibe."
+- "Brooklyn's go-to for creative cocktails and late-night bites. Always buzzing on weekends."
+- "A hidden gem for authentic dim sum in Chinatown. Get there early to beat the lines."
+
+Return ONLY the description, no quotes or extra text.`;
+
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: { 
+                        temperature: 0.7, 
+                        maxOutputTokens: 100 
+                    },
+                }),
+            }
+        );
+
+        if (!response.ok) {
+            console.log(`[AI Description] API error: ${response.status}`);
+            return `A popular ${placeType.toLowerCase()} spot${rating ? ` rated ${rating}/5` : ''}.`;
+        }
+
+        const data = await response.json();
+        const description = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        
+        if (description) {
+            console.log(`[AI Description] Generated: "${description}"`);
+            // Clean up any quotes
+            return description.replace(/^["']|["']$/g, '');
+        }
+        
+        return `A popular ${placeType.toLowerCase()} spot${rating ? ` rated ${rating}/5` : ''}.`;
+    } catch (error) {
+        console.error('[AI Description] Error:', error);
+        return `A ${placeType.toLowerCase()} in ${address.split(',')[1]?.trim() || 'the area'}.`;
+    }
+}
+
+// ============= GEMINI CATEGORIZATION FALLBACK =============
 
 async function categorizePlaceWithAI(
     placeName: string, 
@@ -1328,7 +1414,7 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
                         main_category: mainCategory,
                         subtype: subtype,
                         address: placeData.address,
-                        description: placeData.description,
+                        description: placeData.description ? `[Saved from Instagram] ${placeData.description}` : '[Saved from Instagram]',
                         image_url: placeData.imageUrl,
                         source_url: placeData.sourceUrl,
                         coordinates: placeData.coordinates,
@@ -1523,7 +1609,9 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
                     subtype: subtype,
                     subtypes: [],
                     address: placeData.address,
-                    description: placeData.description || (author ? `Shared by @${author} on Instagram` : `Saved from Instagram`),
+                    description: placeData.description 
+                        ? `[Saved from Instagram${author ? ` via @${author}` : ''}] ${placeData.description}` 
+                        : `[Saved from Instagram${author ? ` via @${author}` : ''}]`,
                     image_url: placeData.imageUrl || thumbnail || null,
                     source_url: placeData.sourceUrl || realInstagramUrl || null,
                     coordinates: placeData.coordinates,
