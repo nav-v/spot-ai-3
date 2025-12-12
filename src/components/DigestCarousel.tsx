@@ -74,6 +74,9 @@ export function DigestCarousel({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const handleShowMore = async () => {
+    // Save the index where new cards will appear (where "Show More" card currently is)
+    const firstNewCardIndex = visibleRecs.length;
+    
     // First, use preloaded batch if available (instant)
     if (preloadedBatch.length > 0) {
       const newRecs = preloadedBatch.filter(rec => !shownIds.has(rec.id));
@@ -85,8 +88,18 @@ export function DigestCarousel({
           return next;
         });
         setPreloadedBatch([]); // Clear preloaded batch
+        
+        // Scroll to the first new card (which replaces "Show More" position)
         setTimeout(() => {
-          scrollRef.current?.scrollBy({ left: 200, behavior: 'smooth' });
+          if (scrollRef.current) {
+            // Find the first new card element and scroll it into view
+            const container = scrollRef.current;
+            const cards = container.querySelectorAll('[data-digest-card]');
+            const firstNewCard = cards[firstNewCardIndex];
+            if (firstNewCard) {
+              firstNewCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+            }
+          }
         }, 100);
         
         // Preload more in background (for next click)
@@ -115,8 +128,17 @@ export function DigestCarousel({
             newRecs.forEach(r => next.add(r.id));
             return next;
           });
+          
+          // Scroll to the first new card (which replaces "Show More" position)
           setTimeout(() => {
-            scrollRef.current?.scrollBy({ left: 200, behavior: 'smooth' });
+            if (scrollRef.current) {
+              const container = scrollRef.current;
+              const cards = container.querySelectorAll('[data-digest-card]');
+              const firstNewCard = cards[firstNewCardIndex];
+              if (firstNewCard) {
+                firstNewCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+              }
+            }
           }, 100);
         } else {
           setHasMore(false);
@@ -169,7 +191,7 @@ export function DigestCarousel({
             const isAdding = addingPlaces.has(place.id);
 
             return (
-              <div key={place.id || idx} className="min-w-[70%] sm:min-w-[260px] sm:w-[260px] bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all snap-center flex flex-col">
+              <div key={place.id || idx} data-digest-card className="min-w-[70%] sm:min-w-[260px] sm:w-[260px] bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all snap-center flex flex-col">
                 {/* Image Area */}
                 <div className="h-32 w-full bg-muted relative overflow-hidden group">
                   {place.imageUrl ? (
