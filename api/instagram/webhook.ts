@@ -1,21 +1,109 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import {
-    pickRandom,
-    NOT_LINKED_MESSAGES,
-    CANT_CHAT_MESSAGES,
-    SAVED_SUCCESS_MESSAGES,
-    SAVED_MULTIPLE_MESSAGES,
-    UNKNOWN_PLACE_MESSAGES,
-    LINKED_SUCCESS_MESSAGES,
-    INVALID_CODE_MESSAGES,
-    CODE_USED_MESSAGES,
-    CODE_EXPIRED_MESSAGES,
-    FETCH_FAILED_MESSAGES,
-    ENHANCE_SUCCESS_MESSAGES,
-    ENHANCE_UPDATE_FAILED_MESSAGES,
-    ENHANCE_NOT_FOUND_MESSAGES,
-} from './spotMessages';
+
+// ============= SPOT MESSAGE VARIATIONS =============
+// All messages written in Spot's voice: warm, funny, slightly dramatic
+
+function pickRandom<T>(arr: T[]): T {
+    return arr[Math.floor(Math.random() * arr.length)];
+}
+
+const NOT_LINKED_MESSAGES = [
+    `Hey! 👋 I'm Spot – basically that friend who always "knows a place" except I actually remember them all.\n\nIf you've got a Spot account, head to Settings → Link Instagram to connect us!\n\nNo account yet? Join the waitlist at https://spot-ai-3.vercel.app/ ✨`,
+    `Oh hey! 👋 I don't recognize you yet, but that's very fixable.\n\nI'm Spot – I help you save all those restaurants and spots you see on Instagram (and actually go to them someday).\n\nGot an account? Settings → Link Instagram\nNeed one? https://spot-ai-3.vercel.app/ ✨`,
+    `Hey there! I'm Spot – think of me as your personal restaurant memory bank 🧠✨\n\nRight now I don't know who you are though! If you have an account, go to Settings → Link Instagram.\n\nNo account? Get on the waitlist: https://spot-ai-3.vercel.app/`,
+    `Oh hi! 👋 I'm Spot. I save places so you don't have to screenshot them and never look at them again. (We've all been there.)\n\nTo connect: Settings → Link Instagram in the app.\nNew here? https://spot-ai-3.vercel.app/ ✨`,
+    `Hey! 👋 Spot here – the AI that makes sure "we should totally try this place" actually happens.\n\nI don't recognize you yet! Link up: Settings → Link Instagram\n\nOr join the waitlist: https://spot-ai-3.vercel.app/ ✨`,
+];
+
+const CANT_CHAT_MESSAGES = [
+    `I can't really chat here 😅 (Instagram DMs are not my strong suit)\n\nBut! If you want to talk, plan something, or get recommendations – I'm way more helpful at https://spot-ai-3.vercel.app/ ✨\n\nSend me a post or Reel though and I'll save it! 📍`,
+    `Ah, I wish I could chat here but Instagram keeps me limited 😅\n\nFor the full Spot experience (recommendations, planning, roasting your saved places) – head to https://spot-ai-3.vercel.app/\n\nBut if you send me a post, I'll save it for you! 📍`,
+    `DMs aren't really my thing 😅 (I'm more of an "in-app" conversationalist)\n\nCome chat with me properly at https://spot-ai-3.vercel.app/ – I'm way more fun there!\n\nBut send me a Reel or post and I'll add it to your list! 📍`,
+    `Ooh I'd love to chat but Instagram won't let me be my full self here 😅\n\nThe real magic happens at https://spot-ai-3.vercel.app/ – recommendations, planning, the whole thing!\n\nI CAN save posts though – just send one over! 📍`,
+    `I'd chat but Instagram has me on read-only mode basically 😅\n\nThe full Spot experience lives at https://spot-ai-3.vercel.app/ – come through!\n\nSend me a post though and I'll save it instantly 📍`,
+];
+
+const SAVED_SUCCESS_MESSAGES = [
+    (name: string) => `✅ Saved! "${name}" is officially on your list. Future you is gonna be so grateful.`,
+    (name: string) => `✅ Got it! "${name}" is saved. One day you'll actually go and it'll be worth it.`,
+    (name: string) => `✅ Done! "${name}" is on your list. The "I need to try this" energy is strong with this one.`,
+    (name: string) => `✅ Saved! "${name}" – added to the collection. Your taste is immaculate, as usual.`,
+    (name: string) => `✅ "${name}" is now on your list! Saved and ready for whenever you're feeling it.`,
+    (name: string) => `✅ Boom! "${name}" saved. Another one for the "we should go there" pile.`,
+    (name: string) => `✅ Got it! "${name}" is locked in. Present you is really looking out for future you.`,
+    (name: string) => `✅ Saved! "${name}" – your list is looking good. 📍`,
+    (name: string) => `✅ "${name}" saved! Your future self just high-fived you.`,
+    (name: string) => `✅ Saved! "${name}" is on the list. The collection grows. 📍`,
+];
+
+const SAVED_MULTIPLE_MESSAGES = [
+    (count: number) => `✅ Saved ${count} places from that post! Your list is really getting impressive.`,
+    (count: number) => `✅ Got ${count} places from that one! Someone's doing their research. 📍`,
+    (count: number) => `✅ ${count} places saved! You really know how to pick 'em.`,
+    (count: number) => `✅ Boom! ${count} spots added to your list. Efficient. I respect it.`,
+    (count: number) => `✅ Saved ${count} places! Future you has a lot of options now.`,
+];
+
+const UNKNOWN_PLACE_MESSAGES = [
+    (name: string) => `🤔 I couldn't quite figure out what place that is.\n\nSaved it as "${name}" for now – reply with the real name and I'll update it!\n\nOr edit it in the app whenever 📱`,
+    (name: string) => `Hmm, couldn't crack this one 🤔\n\nI've saved it as "${name}" – send me the actual name and I'll fix it!\n\nOr update it in the app 📱`,
+    (name: string) => `🤔 This one's tricky – couldn't find the place info.\n\nSaved as "${name}" for now. Reply with the name and I'll update it!\n\nOr fix it in the app whenever 📱`,
+    (name: string) => `I'm stumped on this one 🤔\n\nSaved it as "${name}" – tell me the real name and I'll sort it out!\n\nOr edit it in the app 📱`,
+    (name: string) => `This one's a mystery 🤔\n\nI've saved it as "${name}" – reply with the actual name and I'll fix it!\n\nOr update in the app 📱`,
+];
+
+const LINKED_SUCCESS_MESSAGES = [
+    `You're in! 🎉 We're officially connected.\n\nNow just send me any food post, Reel, or restaurant link and I'll save it to your Spot list!\n\nThis is gonna be beautiful ✨`,
+    `Let's go! 🎉 We're linked!\n\nSend me posts and Reels and I'll save them to your list. Easy.\n\nWelcome to the Spot life ✨`,
+    `We're connected! 🎉 The bond is sealed.\n\nNow just forward me posts and I'll add them to your list!\n\nThis is the start of something beautiful ✨`,
+    `Boom! 🎉 You're all set!\n\nSend me restaurant posts and Reels – I'll save them for you.\n\nLet's build that list ✨`,
+    `Nice! 🎉 We're officially linked.\n\nJust forward me any food post and I'll add it to your Spot list!\n\nThe saving begins ✨`,
+];
+
+const INVALID_CODE_MESSAGES = [
+    `Hmm, that code doesn't look right 🤔\n\nMake sure you're using the one from Settings → Link Instagram (format: SPOT-XXXX).\n\nThey expire after 30 mins!`,
+    `That code isn't working 🤔\n\nCheck Settings → Link Instagram for the right one (SPOT-XXXX format).\n\nCodes expire after 30 minutes!`,
+    `Oops, code not recognized 🤔\n\nGrab a fresh one from Settings → Link Instagram.\n\nThey're only valid for 30 mins!`,
+];
+
+const CODE_USED_MESSAGES = [
+    `That code's already been used! 🔄\n\nGenerate a new one in Settings → Link Instagram.`,
+    `This code was already claimed! 🔄\n\nGet a fresh one from Settings → Link Instagram.`,
+    `Already used that one! 🔄\n\nHead to Settings → Link Instagram for a new code.`,
+];
+
+const CODE_EXPIRED_MESSAGES = [
+    `That code expired ⏰\n\nGrab a fresh one from Settings → Link Instagram!`,
+    `Code timed out ⏰\n\nGet a new one from Settings → Link Instagram!`,
+    `This code has expired ⏰\n\nGenerate a new one in Settings → Link Instagram!`,
+];
+
+const FETCH_FAILED_MESSAGES = [
+    `😅 Couldn't grab that content – might be private or unavailable.\n\nTry a different post!`,
+    `Hmm, couldn't access that one 😅 It might be private.\n\nSend me another!`,
+    `That one didn't work 😅 Could be private or expired.\n\nTry a different post!`,
+    `Couldn't fetch that content 😅 Might be a private account.\n\nSend another one!`,
+    `😅 That post isn't accessible – maybe it's private?\n\nTry sending a different one!`,
+];
+
+const ENHANCE_SUCCESS_MESSAGES = [
+    (name: string, address: string) => `Found it! ✨ Updated to "${name}" at ${address}.\n\nCheck it out in the app!`,
+    (name: string, address: string) => `Got it! ✨ "${name}" is all set now. ${address}\n\nLooking good in the app!`,
+    (name: string, address: string) => `Nice! ✨ Updated to "${name}" – ${address}\n\nGo check your list!`,
+    (name: string, address: string) => `Boom! ✨ "${name}" locked in. ${address}\n\nYour list is looking great!`,
+];
+
+const ENHANCE_UPDATE_FAILED_MESSAGES = [
+    (name: string) => `Found "${name}" but something went wrong updating it 😅\n\nTry editing it directly in the app! 📱`,
+    (name: string) => `Got "${name}" but couldn't save the update 😅\n\nHead to the app to fix it! 📱`,
+];
+
+const ENHANCE_NOT_FOUND_MESSAGES = [
+    (query: string) => `Hmm, I couldn't find "${query}" 🤔\n\nTry being more specific (like "Lucali Brooklyn") or edit it directly in the app! 📱`,
+    (query: string) => `No luck finding "${query}" 🤔\n\nTry the full name + neighborhood, or edit in the app! 📱`,
+    (query: string) => `Couldn't find "${query}" 🤔\n\nBe more specific (name + area) or fix it in the app! 📱`,
+];
 
 // ============= LAZY INITIALIZATION =============
 
