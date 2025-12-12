@@ -2075,9 +2075,9 @@ ${researchResults.toolsUsed.includes('research_places') ? '- For PLACES: "🗽 M
 ⚠️ CRITICAL: Return 7-10 places. At least 4-5 should be from saved list if relevant!`;
 
                 // Call Gemini 2.5 Pro as the recommender
-                console.log('[Smart Research] Calling Gemini 2.5 Flash recommender...');
+                console.log('[Smart Research] Calling Gemini 2.5 Pro recommender...');
                 const recommenderResponse = await getAI().models.generateContent({
-                    model: 'gemini-2.5-flash',
+                    model: 'gemini-2.5-pro',
                     contents: [{ role: 'user', parts: [{ text: recommenderPrompt }] }]
                 });
 
