@@ -64,8 +64,8 @@ export function DigestCarousel({
 }: DigestCarouselProps) {
   // Start with first 15 recommendations
   const [visibleRecs, setVisibleRecs] = useState(digest.recommendations.slice(0, 15));
-  // Preloaded next batch (6 more)
-  const [nextBatch, setNextBatch] = useState<DigestRecommendation[]>(digest.next_batch || []);
+  // Track all shown IDs to avoid duplicates
+  const [shownIds, setShownIds] = useState<Set<string>>(new Set(digest.recommendations.slice(0, 15).map(r => r.id)));
   const [isLoading, setIsLoading] = useState(false);
   const [addingPlaces, setAddingPlaces] = useState<Set<string>>(new Set());
   const [hasMore, setHasMore] = useState(true);
@@ -74,33 +74,26 @@ export function DigestCarousel({
   const handleShowMore = async () => {
     setIsLoading(true);
     try {
-      if (nextBatch.length > 0) {
-        // Use preloaded batch (instant)
-        setVisibleRecs(prev => [...prev, ...nextBatch]);
-        setNextBatch([]);
-        // Scroll to show new cards
-        setTimeout(() => {
-          scrollRef.current?.scrollBy({ left: 200, behavior: 'smooth' });
-        }, 100);
-        // Preload more in background
-        onLoadMore().then(more => {
-          if (more.length > 0) {
-            setNextBatch(more);
-          } else {
-            setHasMore(false);
-          }
-        });
-      } else {
-        // No preloaded batch, load now
-        const more = await onLoadMore();
-        if (more.length > 0) {
-          setVisibleRecs(prev => [...prev, ...more]);
+      // Always fetch fresh recommendations, excluding already shown ones
+      const more = await onLoadMore();
+      if (more.length > 0) {
+        // Filter out any duplicates
+        const newRecs = more.filter(rec => !shownIds.has(rec.id));
+        if (newRecs.length > 0) {
+          setVisibleRecs(prev => [...prev, ...newRecs]);
+          setShownIds(prev => {
+            const next = new Set(prev);
+            newRecs.forEach(r => next.add(r.id));
+            return next;
+          });
           setTimeout(() => {
             scrollRef.current?.scrollBy({ left: 200, behavior: 'smooth' });
           }, 100);
         } else {
           setHasMore(false);
         }
+      } else {
+        setHasMore(false);
       }
     } finally {
       setIsLoading(false);
@@ -180,7 +173,7 @@ export function DigestCarousel({
                     </p>
                   )}
 
-                  <p className="text-xs text-muted-foreground line-clamp-3 flex-1 mb-2">
+                  <p className="text-xs text-muted-foreground flex-1 mb-2">
                     {place.description}
                   </p>
 
@@ -242,7 +235,7 @@ export function DigestCarousel({
                 disabled={isLoading}
                 className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 disabled:opacity-50"
               >
-                {isLoading ? 'Loading...' : nextBatch.length > 0 ? 'Show More' : 'Load More'}
+                {isLoading ? 'Loading...' : 'Show More'}
               </button>
             </div>
           )}

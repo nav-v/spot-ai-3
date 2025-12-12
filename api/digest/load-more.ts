@@ -136,10 +136,12 @@ IMPORTANT: Explain WHY each recommendation fits the user's taste in the descript
             const parsed = JSON.parse(jsonMatch[0]);
             const allSources = [...eventsRes.sources, ...foodRes.sources];
             
+            // Generate truly unique IDs with random suffix
+            const batchId = Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
             recommendations = await Promise.all(parsed.slice(0, 6).map(async (rec: any, i: number) => {
                 const placeData = await searchGooglePlaces(rec.name, rec.location || 'New York');
                 return {
-                    id: `more-${Date.now()}-${i}`,
+                    id: `more-${batchId}-${i}`,
                     ...rec,
                     imageUrl: placeData?.imageUrl,
                     website: placeData?.website,

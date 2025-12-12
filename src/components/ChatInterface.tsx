@@ -216,7 +216,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
 
   const initialMessage: ChatMessage = {
     role: 'assistant',
-    content: "Hey there! I'm Spot – your NYC insider who actually lives here (well, in the cloud, but close enough). I dig through the internet's best-kept secrets, find hidden gems, and save you from tourist traps. Best part? I'll remember every spot you love so you never forget that amazing taco place again. Ask me for recs, plan your weekend, or paste that Instagram link you saved at 2am. Consider me your personal agent of fun 🎉"
+    content: "Hey! I'm Spot – ask me to plan, find, or add food, places and events 🎉"
   };
 
   // Load messages for current user
@@ -533,26 +533,6 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
   // Handle loading more digest recommendations (adds to existing, doesn't replace)
   const handleDigestLoadMore = async (): Promise<DigestRecommendation[]> => {
     try {
-      // Check if digest has preloaded next_batch
-      if (digest?.next_batch && digest.next_batch.length > 0) {
-        const batch = digest.next_batch;
-        // Clear the next_batch and trigger background preload
-        const updatedDigest = { ...digest, next_batch: [] };
-        setDigest(updatedDigest);
-        
-        // Preload more in background
-        fetch('/api/digest/load-more', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: user?.id })
-        }).then(res => res.json()).then(data => {
-          if (data.recommendations?.length > 0) {
-            setDigest(prev => prev ? { ...prev, next_batch: data.recommendations } : prev);
-          }
-        }).catch(() => {});
-        
-        return batch;
-      }
       
       // No preloaded batch, fetch now
       const response = await fetch('/api/digest/load-more', {
@@ -778,8 +758,30 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
       {/* Messages */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-6 pb-24" style={{ paddingBottom: 'calc(6rem + env(safe-area-inset-bottom, 0px))' }}>
         
-        {/* Daily Digest (always shown if available - stays visible as chat continues) */}
-        {digest && !digestLoading && (
+        {/* Daily Digest or Loading State */}
+        {digestLoading ? (
+          <div className="space-y-4">
+            {/* Intro text shown while loading */}
+            <p className="text-sm text-foreground">
+              Hey! I'm Spot – ask me to plan, find, or add food, places and events
+              <span className="inline-block w-1.5 h-1.5 bg-orange-500 rounded-full ml-1.5 align-middle" style={{ animation: 'pulse-fast 0.4s ease-in-out infinite' }} />
+            </p>
+            
+            {/* Loading spinner */}
+            <div className="flex flex-col items-center py-12 space-y-3">
+              <div className="relative">
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Sparkles className="w-5 h-5 text-primary animate-pulse" />
+                </div>
+                <div className="absolute inset-0 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-medium text-foreground">Curating your daily digest...</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Finding events and food based on your taste</p>
+              </div>
+            </div>
+          </div>
+        ) : digest && (
           <DigestCarousel
             digest={digest}
             savedPlaceNames={savedPlaceNames}
@@ -787,22 +789,6 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
             onLoadMore={handleDigestLoadMore}
             onAskSpot={handleAskSpot}
           />
-        )}
-
-        {/* Digest Loading State */}
-        {digestLoading && (
-          <div className="flex flex-col items-center justify-center py-16 space-y-4">
-            <div className="relative">
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                <Sparkles className="w-6 h-6 text-primary animate-pulse" />
-              </div>
-              <div className="absolute inset-0 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-            </div>
-            <div className="text-center">
-              <p className="text-sm font-medium text-foreground">Curating your daily digest...</p>
-              <p className="text-xs text-muted-foreground mt-1">Finding events and food based on your taste</p>
-            </div>
-          </div>
         )}
 
         {/* Messages (hide first message if we have a digest) */}
