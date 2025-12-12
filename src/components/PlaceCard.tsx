@@ -58,6 +58,11 @@ export const PlaceCard = ({
           )}
         </div>
         <p className="text-sm text-muted-foreground truncate">{place.subtype || place.cuisine || place.type}</p>
+        {place.recommendedDishes && place.recommendedDishes.length > 0 && (
+          <p className="text-xs text-muted-foreground/70 truncate">
+            Try: {place.recommendedDishes.slice(0, 2).join(' · ')}
+          </p>
+        )}
         {place.isEvent && (place.startDate || place.endDate) && (
           <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
             <Calendar className="w-3 h-3" />

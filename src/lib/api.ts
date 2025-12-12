@@ -63,6 +63,8 @@ export interface Place {
     // Instagram integration
     needsEnhancement?: boolean;
     instagramPostUrl?: string;
+    // Dish recommendations
+    recommendedDishes?: string[];
 }
 
 // Helper to convert DB user to API user format
@@ -108,6 +110,8 @@ const dbPlaceToPlace = (dbPlace: any): Place => ({
     // Instagram integration
     needsEnhancement: dbPlace.needs_enhancement || false,
     instagramPostUrl: dbPlace.instagram_post_url,
+    // Dish recommendations
+    recommendedDishes: dbPlace.recommended_dishes || [],
 });
 
 // Auth API - uses Supabase for user lookup but simple password matching
@@ -270,6 +274,8 @@ export const placesApi = {
             // Instagram integration
             needs_enhancement: place.needsEnhancement || false,
             instagram_post_url: place.instagramPostUrl,
+            // Dish recommendations
+            recommended_dishes: place.recommendedDishes || [],
         };
 
         const { data, error } = await supabase
@@ -309,6 +315,8 @@ export const placesApi = {
         // Instagram integration
         if (updates.needsEnhancement !== undefined) dbUpdates.needs_enhancement = updates.needsEnhancement;
         if (updates.instagramPostUrl !== undefined) dbUpdates.instagram_post_url = updates.instagramPostUrl;
+        // Dish recommendations
+        if (updates.recommendedDishes !== undefined) dbUpdates.recommended_dishes = updates.recommendedDishes;
 
         const { data, error } = await supabase
             .from('places')

@@ -373,18 +373,18 @@ async function executeSmartResearch(
         // Base subreddits - one Gemini search each
         const baseFoodSubs = TOOL_SUBREDDITS.research_food;
         for (const sub of baseFoodSubs) {
-            addSearch(`${query} NYC site:reddit.com/r/${sub}`, `r/${sub}`);
+            addSearch(`${query} NYC r/${sub}`, `r/${sub}`);
         }
         
         // Location-specific subreddits - one Gemini search each
         for (const sub of locationSubs) {
-            addSearch(`${query} site:reddit.com/r/${sub}`, `r/${sub}`);
+            addSearch(`${query} r/${sub}`, `r/${sub}`);
         }
         
         // Food publications via Gemini search (articles/reviews, not lists - so search is better than scraping)
-        addSearch(`${query} site:ny.eater.com`, 'Eater NY');
-        addSearch(`${query} NYC site:nytimes.com/section/food`, 'NY Times Food');
-        addSearch(`${query} site:theinfatuation.com/new-york`, 'The Infatuation NYC');
+        addSearch(`${query} NYC Eater`, 'Eater NY');
+        addSearch(`${query} NYC NY Times food`, 'NY Times Food');
+        addSearch(`${query} NYC The Infatuation`, 'The Infatuation NYC');
     }
     
     // RESEARCH_PLACES: Subreddit searches + scrape TimeOut
@@ -399,12 +399,12 @@ async function executeSmartResearch(
         // Base subreddits - Gemini search
         const basePlacesSubs = TOOL_SUBREDDITS.research_places;
         for (const sub of basePlacesSubs) {
-            addSearch(`${query} NYC site:reddit.com/r/${sub}`, `r/${sub}`);
+            addSearch(`${query} NYC r/${sub}`, `r/${sub}`);
         }
         
         // Location-specific subreddits - Gemini search
         for (const sub of locationSubs) {
-            addSearch(`${query} site:reddit.com/r/${sub}`, `r/${sub}`);
+            addSearch(`${query} r/${sub}`, `r/${sub}`);
         }
         
         // Scrape TimeOut directly
@@ -437,11 +437,8 @@ async function executeSmartResearch(
         // Subreddit searches via Gemini (these can't be scraped)
         const baseEventsSubs = TOOL_SUBREDDITS.research_events;
         for (const sub of baseEventsSubs) {
-            addSearch(`${fullQuery} site:reddit.com/r/${sub}`, `r/${sub}`);
+            addSearch(`${fullQuery} r/${sub}`, `r/${sub}`);
         }
-        
-        // Generic Gemini search for events (no site restriction - catches everything)
-        addSearch(`${fullQuery} NYC concerts shows events tickets`, 'General Web');
         
         // Scrape all event sites directly
         promises.push(
@@ -1460,6 +1457,13 @@ RECOMMENDATION STYLE:
 3. **QUANTITY:** Always provide **up to 10 recommendations** (aim for 7-10) unless the user asks for a specific number.
 Example: "This works for a small group: takes reservations, not too loud, strong 'we'll be here for three hours without noticing' energy."
 
+HONESTY POLICY:
+- Include BOTH positives AND negatives found in reviews - do NOT sugarcoat
+- If a place has common complaints (slow service, small portions, cash only, loud, long waits), MENTION THEM
+- Use phrases like "heads up:", "fair warning:", "some reviewers note...", "one caveat:"
+- Example: "Amazing pasta, but heads up - it's cash only and the wait can hit 2 hours on weekends"
+- Users trust honest recommendations. Being real about downsides builds credibility.
+
 PLANNING / ITINERARIES (ANY PLAN, NOT JUST DATE NIGHT):
 - Use clear sections with headings (flexible: Activities/Things to do, Food/Drinks, Dessert/Late-night). Pick only the sections that make sense for the request.
 - For each section:
@@ -1603,7 +1607,7 @@ If user shares a link:
 Format - GROUP places into 2-4 logical sections. EACH SECTION MUST HAVE AN "intro" FIELD:
 {"action": "recommendPlaces", "sections": [
   {"title": "🥐 Flaky Classics", "intro": "These are the spots where they do one thing and do it perfectly - pure, buttery croissants with zero gimmicks. If you want to taste what all the fuss is about, start here.", "places": [
-    {"name": "Place Name", "type": "restaurant", "description": "Short reason why you picked it...", "location": "Neighborhood/City", "isEvent": false}
+    {"name": "Place Name", "type": "restaurant", "description": "Short reason why you picked it...", "location": "Neighborhood/City", "isEvent": false, "recommendedDishes": ["Dish 1", "Dish 2"]}
   ]},
   {"title": "✨ Creative & Over-the-Top", "intro": "For when a regular croissant just isn't dramatic enough. These bakeries go wild with flavors, fillings, and Instagram-worthy creations.", "places": [...]}
 ]}
@@ -1622,8 +1626,9 @@ SECTION RULES:
 Place fields:
 - name: For RESTAURANTS/BARS/CAFES: the venue name. For EVENTS/CONCERTS: the EVENT name (e.g. "iHeartRadio Jingle Ball", NOT "Madison Square Garden")
 - type: One of "restaurant", "bar", "cafe", "activity", "attraction", "event"
-- description: 1-2 sentences why you chose this for them
+- description: 1-2 sentences why you chose this + any caveats/warnings from reviews (e.g., "Amazing tacos, but cash only and expect a 30min wait")
 - location: For places: Neighborhood. For events: "Venue Name, Neighborhood" (e.g. "Madison Square Garden, Midtown")
+- recommendedDishes: (FOR RESTAURANTS/CAFES/BARS ONLY) Array of 2-3 specific dishes mentioned in reviews. Extract actual dish names like ["Spicy Vodka Rigatoni", "Tiramisu"]. Omit this field for non-food places or if no specific dishes are mentioned.
 - startDate: (REQUIRED for events) Date in "YYYY-MM-DD" format, or "Dec 13" if exact date unknown
 - DO NOT include sourceUrl - we attach verified URLs from research automatically.
 - DO NOT include sourceName or sourceQuote - these often get hallucinated
@@ -2045,7 +2050,7 @@ PRIORITIZE EVENTS over permanent places! Events are date-specific and more urgen
 OUTPUT FORMAT:
 {"action": "recommendPlaces", "sections": [
   {"title": "Section Title", "intro": "2-3 sentences explaining why these picks match the user...", "places": [
-    {"name": "PLACE or EVENT name", "type": "restaurant|bar|cafe|activity|attraction|event", "description": "Why this fits them + key details", "location": "Neighborhood OR Venue, Neighborhood", "startDate": "YYYY-MM-DD (for events only)", "isEvent": true/false}
+    {"name": "PLACE or EVENT name", "type": "restaurant|bar|cafe|activity|attraction|event", "description": "Why this fits them + key details", "location": "Neighborhood OR Venue, Neighborhood", "startDate": "YYYY-MM-DD (for events only)", "isEvent": true/false, "recommendedDishes": ["Dish 1", "Dish 2"]}
   ]}
 ]}
 
@@ -2070,9 +2075,9 @@ ${researchResults.toolsUsed.includes('research_places') ? '- For PLACES: "🗽 M
 ⚠️ CRITICAL: Return 7-10 places. At least 4-5 should be from saved list if relevant!`;
 
                 // Call Gemini 2.5 Pro as the recommender
-                console.log('[Smart Research] Calling Gemini 2.5 Pro recommender...');
+                console.log('[Smart Research] Calling Gemini 2.5 Flash recommender...');
                 const recommenderResponse = await getAI().models.generateContent({
-                    model: 'gemini-2.5-pro',
+                    model: 'gemini-2.5-flash',
                     contents: [{ role: 'user', parts: [{ text: recommenderPrompt }] }]
                 });
 

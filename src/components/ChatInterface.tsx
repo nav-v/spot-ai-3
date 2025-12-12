@@ -31,6 +31,8 @@ interface RecommendedPlace {
   endDate?: string;
   mainCategory?: 'eat' | 'see';
   subtype?: string;
+  // Dish recommendations
+  recommendedDishes?: string[];
 }
 
 interface ReservationData {
@@ -90,6 +92,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
   const [reasoningTrace, setReasoningTrace] = useState<string | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const pendingSearchRef = useRef<{ input: string; messages: ChatMessage[] } | null>(null);
   const { toast } = useToast();
   const [savedPlaceNames, setSavedPlaceNames] = useState<Set<string>>(new Set());
 
@@ -130,6 +133,27 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
     localStorage.setItem(storageKey, JSON.stringify(messages));
     scrollToBottom();
   }, [messages, user?.id]);
+
+  // Handle mobile tab-out: retry search when user returns
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && pendingSearchRef.current && !isTyping) {
+        toast({ title: 'Resuming search...', description: 'Picking up where you left off.' });
+        const pending = pendingSearchRef.current;
+        pendingSearchRef.current = null;
+        // Re-run the search with the saved input and messages
+        setMessages(pending.messages);
+        setInput(pending.input);
+        // Trigger send after state updates
+        setTimeout(() => {
+          const sendBtn = document.querySelector('[data-send-btn]') as HTMLButtonElement;
+          if (sendBtn) sendBtn.click();
+        }, 100);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isTyping, toast]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -378,16 +402,24 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
   const handleSend = async () => {
     if (!input.trim()) return;
 
-    const userMsg: ChatMessage = { role: 'user', content: input };
-    setMessages(prev => [...prev, userMsg]);
+    const userInput = input; // Capture before clearing
+    const userMsg: ChatMessage = { role: 'user', content: userInput };
+    const currentMessages = [...messages, userMsg];
+    setMessages(currentMessages);
     setInput('');
     setIsTyping(true);
 
+    // Store pending search in case user tabs out on mobile
+    pendingSearchRef.current = { input: userInput, messages: currentMessages };
+
     try {
       const history = messages.map(m => ({ role: m.role, content: m.content }));
-      history.push({ role: 'user', content: input });
+      history.push({ role: 'user', content: userInput });
 
       const res = await chatApi.send(history, user?.name, user?.preferences);
+      
+      // Clear pending search on success
+      pendingSearchRef.current = null;
 
       if (res && res.content) {
         // Handle both new sections format and legacy flat places array
@@ -446,6 +478,8 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
       }
     } catch (error) {
       console.error('Chat error:', error);
+      // Clear pending search on error
+      pendingSearchRef.current = null;
       toast({ title: 'Error', description: 'Something went wrong', variant: 'destructive' });
     } finally {
       setIsTyping(false);
@@ -619,7 +653,13 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                                   )}
                                   <div className="p-3">
                                     <h4 className="font-semibold text-sm text-foreground mb-1">{formattedLine}</h4>
-                                    <p className="text-xs text-muted-foreground mb-3">{matchedPlace.description}</p>
+                                    <p className="text-xs text-muted-foreground mb-1">{matchedPlace.description}</p>
+                                    {matchedPlace.recommendedDishes && matchedPlace.recommendedDishes.length > 0 && (
+                                      <p className="text-xs text-muted-foreground/80 mb-3">
+                                        <span className="font-medium">Try:</span> {matchedPlace.recommendedDishes.join(' · ')}
+                                      </p>
+                                    )}
+                                    {(!matchedPlace.recommendedDishes || matchedPlace.recommendedDishes.length === 0) && <div className="mb-2" />}
                                     <div className="flex gap-2">
                                       <a href={matchedPlace.website} target="_blank" rel="noopener noreferrer" className="flex-1 flex items-center justify-center gap-1.5 bg-secondary/50 hover:bg-secondary text-secondary-foreground text-[10px] py-2 rounded-lg transition-colors font-medium">
                                         <ExternalLink className="w-3 h-3" /> Website
@@ -717,7 +757,13 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                                       </div>
                                     )}
                                   </div>
-                                  <p className="text-xs text-muted-foreground mb-3">{matchedPlace.description}</p>
+                                  <p className="text-xs text-muted-foreground mb-1">{matchedPlace.description}</p>
+                                  {matchedPlace.recommendedDishes && matchedPlace.recommendedDishes.length > 0 && (
+                                    <p className="text-xs text-muted-foreground/80 mb-3">
+                                      <span className="font-medium">Try:</span> {matchedPlace.recommendedDishes.join(' · ')}
+                                    </p>
+                                  )}
+                                  {(!matchedPlace.recommendedDishes || matchedPlace.recommendedDishes.length === 0) && <div className="mb-2" />}
 
                                   <div className="flex gap-2">
                                     <a
@@ -847,10 +893,14 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                             </p>
                           )}
 
-                          <p className="text-xs text-muted-foreground mb-2 flex-1">
+                          <p className="text-xs text-muted-foreground mb-1 flex-1">
                             {place.description}
                           </p>
-
+                          {(place as any).recommendedDishes && (place as any).recommendedDishes.length > 0 && (
+                            <p className="text-xs text-muted-foreground/80 mb-2">
+                              <span className="font-medium">Try:</span> {(place as any).recommendedDishes.join(' · ')}
+                            </p>
+                          )}
 
                                 <div className="flex gap-2 mt-auto">
                                   <a
@@ -926,10 +976,14 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                             </p>
                           )}
 
-                          <p className="text-xs text-muted-foreground mb-2 flex-1">
+                          <p className="text-xs text-muted-foreground mb-1 flex-1">
                             {place.description}
                           </p>
-
+                          {(place as any).recommendedDishes && (place as any).recommendedDishes.length > 0 && (
+                            <p className="text-xs text-muted-foreground/80 mb-2">
+                              <span className="font-medium">Try:</span> {(place as any).recommendedDishes.join(' · ')}
+                            </p>
+                          )}
 
                           <div className="flex gap-2 mt-auto">
                             <a
@@ -1122,6 +1176,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
 
         {/* Right: Send Button */}
         <button
+          data-send-btn
           onClick={handleSend}
           disabled={!input.trim() || isTyping}
           className="bg-primary/90 text-primary-foreground w-12 h-12 rounded-full hover:bg-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg flex items-center justify-center flex-shrink-0 border-2 border-primary backdrop-blur-md"
