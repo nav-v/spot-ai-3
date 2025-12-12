@@ -654,8 +654,7 @@ async function getInstagramUrlFromAttachment(attachment: any): Promise<string | 
         return payload.permalink;
     }
     
-    // 1. Check if a direct Instagram URL is provided (NOT CDN URLs)
-    // CDN URLs look like: lookaside.fbsbx.com or scontent.cdninstagram.com
+    // 1. Check if a direct Instagram URL is provided
     if (payload?.url) {
         const urlLower = payload.url.toLowerCase();
         const isCdnUrl = urlLower.includes('lookaside') || 
@@ -666,8 +665,11 @@ async function getInstagramUrlFromAttachment(attachment: any): Promise<string | 
         if (payload.url.includes('instagram.com/') && !isCdnUrl) {
             console.log(`[Webhook] ✅ Using direct Instagram URL from payload.url: ${payload.url}`);
             return payload.url;
-        } else {
-            console.log(`[Webhook] payload.url is a CDN URL (not usable as permalink): ${payload.url.substring(0, 100)}...`);
+        } else if (isCdnUrl) {
+            // CDN URLs (lookaside.fbsbx.com) actually WORK as direct links to the content!
+            // They're not pretty permalinks, but they're functional video/image links
+            console.log(`[Webhook] 📹 payload.url is a CDN URL - storing as fallback: ${payload.url.substring(0, 80)}...`);
+            // We'll store this as a fallback and continue trying to get a proper permalink
         }
     }
     
@@ -734,7 +736,7 @@ async function getInstagramUrlFromAttachment(attachment: any): Promise<string | 
     
     // 4. Last resort: If we have a CDN URL, try to extract media ID from it
     // NOTE: This rarely works because asset_id is the same as reel_video_id (internal ID)
-    if (payload?.url && (payload.url.includes('lookaside') || payload.url.includes('cdninstagram'))) {
+    if (payload?.url && (payload.url.includes('lookaside') || payload.url.includes('cdninstagram') || payload.url.includes('fbsbx'))) {
         const assetMatch = payload.url.match(/asset_id=(\d+)/);
         if (assetMatch) {
             const assetId = assetMatch[1];
@@ -751,8 +753,13 @@ async function getInstagramUrlFromAttachment(attachment: any): Promise<string | 
                     return validUrl;
                 }
             }
-            console.log(`[Webhook] ⚠️ asset_id also couldn't be converted to valid URL`);
+            console.log(`[Webhook] ⚠️ asset_id couldn't be converted to Instagram permalink`);
         }
+        
+        // 🎉 CDN URLs actually WORK as direct video links!
+        // They're not pretty Instagram permalinks, but users can click them to view the content
+        console.log(`[Webhook] 📹 Using CDN URL as fallback (direct video link): ${payload.url.substring(0, 80)}...`);
+        return payload.url;
     }
     
     console.log(`[Webhook] ========== COULD NOT EXTRACT URL ==========`);
@@ -1360,16 +1367,17 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
     for (const { url, title: attachmentTitle } of urlsWithTitles) {
         console.log(`[Webhook] Processing URL: ${url}, attachment title: "${attachmentTitle?.substring(0, 50) || 'none'}..."`);
         
-        // Check if this is a placeholder URL (couldn't get valid Instagram URL)
+        // Check if this is a placeholder URL or CDN URL
         const isPlaceholderUrl = url.startsWith('instagram://attachment/');
+        const isCdnUrl = url.includes('lookaside') || url.includes('fbsbx') || url.includes('cdninstagram');
         
         // Try Instagram oEmbed API first (free, no API key needed)
         let title: string | null = null;
         let author: string | null = null;
         let thumbnail: string | null = null;
         
-        // Only try oEmbed for real Instagram URLs
-        if (url.includes('instagram.com') && !isPlaceholderUrl) {
+        // Only try oEmbed for real Instagram.com URLs (not CDN or placeholder)
+        if (url.includes('instagram.com') && !isPlaceholderUrl && !isCdnUrl) {
             try {
                 const oembedUrl = `https://api.instagram.com/oembed/?url=${encodeURIComponent(url)}`;
                 console.log(`[Webhook] Fetching oEmbed: ${oembedUrl}`);
@@ -1389,6 +1397,8 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
             }
         } else if (isPlaceholderUrl) {
             console.log(`[Webhook] Placeholder URL - will use attachment title directly`);
+        } else if (isCdnUrl) {
+            console.log(`[Webhook] 📹 CDN URL - direct video link, will use attachment title for place extraction`);
         }
         
         // Fallback to attachment title if oEmbed failed
