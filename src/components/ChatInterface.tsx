@@ -4,6 +4,7 @@ import { useToast } from '@/hooks/use-toast';
 import { PlaceDetailModal } from './PlaceDetailModal';
 import { DraggableScrollContainer } from './DraggableScrollContainer';
 import { FloatingSuggestions } from './FloatingSuggestions';
+import { DigestCarousel } from './DigestCarousel';
 import { chatApi, placesApi } from '@/lib/api';
 import { useAuth } from './AuthContext';
 import {
@@ -86,6 +87,42 @@ interface ChatInterfaceProps {
   onPlaceAdded?: () => void;
 }
 
+// Digest types
+interface DigestWeather {
+  temp: number;
+  feels_like: number;
+  conditions: string;
+  icon: string;
+  spot_quip: string;
+}
+
+interface DigestRecommendation {
+  id: string;
+  name: string;
+  type: string;
+  description: string;
+  location: string;
+  imageUrl?: string;
+  isEvent: boolean;
+  startDate?: string;
+  endDate?: string;
+  mainCategory: 'eat' | 'see';
+  subtype: string;
+  sources?: Array<{ domain: string; url: string }>;
+  isBumped?: boolean;
+  timeframe?: 'today' | 'tomorrow' | 'weekend' | 'week';
+}
+
+interface DigestData {
+  id: string;
+  greeting: string;
+  weather: DigestWeather;
+  intro_text: string;
+  recommendations: DigestRecommendation[];
+  shown_ids: string[];
+  created_at: string;
+}
+
 export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
   const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -97,12 +134,46 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
   const pendingSearchRef = useRef<{ input: string; messages: ChatMessage[] } | null>(null);
   const { toast } = useToast();
   const [savedPlaceNames, setSavedPlaceNames] = useState<Set<string>>(new Set());
+  
+  // Digest state
+  const [digest, setDigest] = useState<DigestData | null>(null);
+  const [digestLoading, setDigestLoading] = useState(true);
+  const [showDigest, setShowDigest] = useState(true);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     placesApi.getAll().then(places => {
       setSavedPlaceNames(new Set(places.map(p => p.name.toLowerCase())));
     });
   }, []);
+
+  // Fetch daily digest
+  useEffect(() => {
+    if (!user?.id) return;
+    
+    const fetchDigest = async () => {
+      try {
+        const response = await fetch(`/api/digest/${user.id}`);
+        const data = await response.json();
+        
+        if (data.hasDigest && data.digest) {
+          setDigest(data.digest);
+          setShowDigest(true);
+        } else {
+          setDigest(null);
+          setShowDigest(false);
+        }
+      } catch (error) {
+        console.error('Failed to fetch digest:', error);
+        setDigest(null);
+        setShowDigest(false);
+      } finally {
+        setDigestLoading(false);
+      }
+    };
+    
+    fetchDigest();
+  }, [user?.id]);
 
   // Typewriter effect states
   const [typingMessageIndex, setTypingMessageIndex] = useState<number | null>(null);
@@ -401,8 +472,66 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
     return () => clearInterval(interval);
   }, [isTyping]);
 
+  // Handle adding a digest recommendation to saved places
+  const handleDigestAddPlace = async (place: DigestRecommendation) => {
+    try {
+      await placesApi.create({
+        name: place.name,
+        address: place.location,
+        type: (place.type === 'event' ? 'activity' : place.type) || 'restaurant',
+        description: place.description,
+        imageUrl: place.imageUrl,
+        isEvent: place.isEvent,
+        startDate: place.startDate,
+        endDate: place.endDate,
+        mainCategory: place.mainCategory,
+        subtype: place.subtype,
+      });
+      
+      setSavedPlaceNames(prev => new Set(prev).add(place.name.toLowerCase()));
+      toast({ title: 'Added!', description: `${place.name} saved to your list.` });
+      onPlaceAdded?.();
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to add place.', variant: 'destructive' });
+    }
+  };
+
+  // Handle digest refresh
+  const handleDigestRefresh = async (excludedIds: string[], excludedNames: string[]): Promise<DigestRecommendation[]> => {
+    try {
+      const response = await fetch('/api/digest/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user?.id,
+          excludedIds,
+          excludedNames,
+          tasteHints: '' // Could be enhanced with user preferences
+        })
+      });
+      
+      const data = await response.json();
+      return data.recommendations || [];
+    } catch (error) {
+      console.error('Failed to refresh digest:', error);
+      toast({ title: 'Error', description: 'Failed to refresh recommendations.', variant: 'destructive' });
+      return [];
+    }
+  };
+
+  // Focus input and hide digest when user wants to ask Spot
+  const handleAskSpot = () => {
+    setShowDigest(false);
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 100);
+  };
+
   const handleSend = async () => {
     if (!input.trim()) return;
+
+    // Hide digest when user sends a message
+    setShowDigest(false);
 
     const userInput = input; // Capture before clearing
     const userMsg: ChatMessage = { role: 'user', content: userInput };
@@ -594,7 +723,31 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
     <div className="flex flex-col h-full bg-background relative">
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-6 pb-24" style={{ paddingBottom: 'calc(6rem + env(safe-area-inset-bottom, 0px))' }}>
-        {messages.map((msg, idx) => (
+        
+        {/* Daily Digest (shown instead of static greeting when available) */}
+        {showDigest && digest && !digestLoading && (
+          <DigestCarousel
+            digest={digest}
+            savedPlaceNames={savedPlaceNames}
+            onAddPlace={handleDigestAddPlace}
+            onRefresh={handleDigestRefresh}
+            onAskSpot={handleAskSpot}
+          />
+        )}
+
+        {/* Digest Loading State */}
+        {digestLoading && (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+          </div>
+        )}
+
+        {/* Messages (hide first message if digest is showing) */}
+        {messages.map((msg, idx) => {
+          // Hide the initial greeting message if we have a digest
+          if (idx === 0 && showDigest && digest) return null;
+          
+          return (
           <div
             key={idx}
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -1263,6 +1416,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
         {/* Middle: Input Field */}
         <div className="flex-1 h-12 bg-background/80 backdrop-blur-md rounded-full border border-border shadow-lg flex items-center px-1">
           <input
+            ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
