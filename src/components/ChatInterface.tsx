@@ -147,22 +147,54 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
     });
   }, []);
 
-  // Fetch daily digest (only from DB, no auto-generation)
+  // Fetch daily digest (cached in localStorage - only generates once per day)
   useEffect(() => {
     if (!user?.id) return;
     
     const fetchDigest = async () => {
+      const cacheKey = `spot-digest-${user.id}`;
+      const today = new Date().toDateString();
+      
+      // Check localStorage cache first
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const { digest: cachedDigest, date } = JSON.parse(cached);
+          if (date === today && cachedDigest) {
+            setDigest(cachedDigest);
+            setShowDigest(true);
+            setDigestLoading(false);
+            return; // Use cache, don't hit server
+          }
+        } catch {}
+      }
+      
       try {
+        // Check server for existing digest
         const response = await fetch(`/api/digest/${user.id}`);
         const data = await response.json();
         
         if (data.hasDigest && data.digest) {
           setDigest(data.digest);
           setShowDigest(true);
+          localStorage.setItem(cacheKey, JSON.stringify({ digest: data.digest, date: today }));
         } else {
-          // No digest exists - show static greeting
-          setDigest(null);
-          setShowDigest(false);
+          // First time today - generate on-demand
+          const genResponse = await fetch('/api/digest/generate-single', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: user.id })
+          });
+          const genData = await genResponse.json();
+          
+          if (genData.hasDigest && genData.digest) {
+            setDigest(genData.digest);
+            setShowDigest(true);
+            localStorage.setItem(cacheKey, JSON.stringify({ digest: genData.digest, date: today }));
+          } else {
+            setDigest(null);
+            setShowDigest(false);
+          }
         }
       } catch (error) {
         console.error('Failed to fetch digest:', error);
