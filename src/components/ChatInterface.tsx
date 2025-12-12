@@ -156,12 +156,15 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
       const cacheKey = `spot-digest-${user.id}`;
       const today = new Date().toDateString();
       
-      // Check localStorage cache first
+      console.log(`[Digest] Fetching for user ${user.id}, date: ${today}`);
+      
+      // Check localStorage cache first (won't work in incognito, but fast path for normal use)
       const cached = localStorage.getItem(cacheKey);
       if (cached) {
         try {
           const { digest: cachedDigest, date } = JSON.parse(cached);
           if (date === today && cachedDigest) {
+            console.log('[Digest] Using localStorage cache');
             setDigest(cachedDigest);
             setShowDigest(true);
             setDigestLoading(false);
@@ -172,15 +175,22 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
       
       try {
         // Check server for existing digest
+        console.log('[Digest] Checking server for existing digest...');
         const response = await fetch(`/api/digest/${user.id}`);
         const data = await response.json();
         
+        console.log('[Digest] Server response:', { hasDigest: data.hasDigest, hasData: !!data.digest });
+        
         if (data.hasDigest && data.digest) {
+          console.log('[Digest] ✅ Found existing digest on server');
           setDigest(data.digest);
           setShowDigest(true);
-          localStorage.setItem(cacheKey, JSON.stringify({ digest: data.digest, date: today }));
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify({ digest: data.digest, date: today }));
+          } catch {} // localStorage might fail in incognito
         } else {
           // First time today - generate on-demand
+          console.log('[Digest] ❌ No digest found, generating new one...');
           const genResponse = await fetch('/api/digest/generate-single', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -188,17 +198,21 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
           });
           const genData = await genResponse.json();
           
+          console.log('[Digest] Generate response:', { hasDigest: genData.hasDigest, success: genData.success });
+          
           if (genData.hasDigest && genData.digest) {
             setDigest(genData.digest);
             setShowDigest(true);
-            localStorage.setItem(cacheKey, JSON.stringify({ digest: genData.digest, date: today }));
+            try {
+              localStorage.setItem(cacheKey, JSON.stringify({ digest: genData.digest, date: today }));
+            } catch {} // localStorage might fail in incognito
           } else {
             setDigest(null);
             setShowDigest(false);
           }
         }
       } catch (error) {
-        console.error('Failed to fetch digest:', error);
+        console.error('[Digest] Failed to fetch:', error);
         setDigest(null);
         setShowDigest(false);
       } finally {
@@ -705,7 +719,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
   // Auto-scroll to bottom when NEW messages are added (not on initial load)
   useEffect(() => {
     if (messages.length > 1) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, displayedText, displayedTrace, reasoningTrace]);
 

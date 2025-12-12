@@ -476,20 +476,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
         const db = getSupabase();
         
-        // FIRST: Check if digest already exists for today (same logic as [userId].ts)
+        // FIRST: Check if digest already exists - look for ANY digest in the last 12 hours
+        // This is more reliable than date-based checks which can fail due to timezone issues
         const now = new Date();
-        const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
-        const tomorrowUTC = new Date(todayUTC);
-        tomorrowUTC.setUTCDate(tomorrowUTC.getUTCDate() + 1);
+        const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
         
-        console.log(`[Digest] Checking for existing digest since: ${todayUTC.toISOString()} until ${tomorrowUTC.toISOString()}`);
+        console.log(`[Digest] Checking for existing digest for user ${userId} since ${twelveHoursAgo.toISOString()}`);
         
         const { data: existingDigests, error: checkError } = await db
             .from('daily_digests')
             .select('*')
             .eq('user_id', userId)
-            .gte('created_at', todayUTC.toISOString())
-            .lt('created_at', tomorrowUTC.toISOString())
+            .gte('created_at', twelveHoursAgo.toISOString())
             .order('created_at', { ascending: false })
             .limit(1);
         
@@ -497,10 +495,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             console.error(`[Digest] Error checking for existing digest:`, checkError);
         }
         
+        console.log(`[Digest] Query returned ${existingDigests?.length || 0} digests`);
+        
         const existingDigest = existingDigests && existingDigests.length > 0 ? existingDigests[0] : null;
         
         if (existingDigest) {
-            console.log(`[Digest] ✅ User ${userId} already has a digest for today (ID: ${existingDigest.id}), returning existing one`);
+            console.log(`[Digest] ✅ User ${userId} already has a recent digest (ID: ${existingDigest.id}, created: ${existingDigest.created_at}), returning existing one`);
             const allRecs = existingDigest.recommendations || [];
             const recommendations = allRecs.slice(0, 15);
             const next_batch = allRecs.slice(15, 21);
@@ -521,7 +521,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             });
         }
         
-        console.log(`[Digest] ❌ No existing digest found (checked ${existingDigests?.length || 0} digests), generating new one...`);
+        console.log(`[Digest] ❌ No existing digest found in last 12 hours, generating new one...`);
+        
+        // For the date range used in double-check later, also use 12 hours
+        const todayUTC = twelveHoursAgo;
+        const tomorrowUTC = new Date(now.getTime() + 12 * 60 * 60 * 1000);
         
         // Parallel: weather, research, user data, user preferences
         const [weather, research, userResult, placesResult, prefsResult] = await Promise.all([

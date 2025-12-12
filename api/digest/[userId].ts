@@ -41,34 +41,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
         const db = getSupabase();
         
-        // Get today's date (start of day in UTC)
+        // Look for any digest in the last 12 hours (simpler, avoids timezone issues)
         const now = new Date();
-        const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+        const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
         
-        console.log(`[Digest Fetch] Looking for digests since: ${todayUTC.toISOString()}`);
+        console.log(`[Digest Fetch] User: ${userId}, looking for digests since ${twelveHoursAgo.toISOString()}`);
         
-        // Fetch the most recent digest for this user from today (UTC)
-        const { data: digest, error } = await db
+        // Fetch the most recent digest for this user - use limit(1) not single()
+        const { data: digests, error } = await db
             .from('daily_digests')
             .select('*')
             .eq('user_id', userId)
-            .gte('created_at', todayUTC.toISOString())
+            .gte('created_at', twelveHoursAgo.toISOString())
             .order('created_at', { ascending: false })
-            .limit(1)
-            .single();
+            .limit(1);
         
-        if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
-            console.error('[Digest Fetch] Error:', error);
+        if (error) {
+            console.error('[Digest Fetch] Database error:', error);
             return res.status(500).json({ error: 'Failed to fetch digest' });
         }
         
+        console.log(`[Digest Fetch] Query returned ${digests?.length || 0} digests`);
+        
+        const digest = digests && digests.length > 0 ? digests[0] : null;
+        
         if (!digest) {
-            console.log(`[Digest Fetch] No digest found for ${userId} today`);
-            return res.status(404).json({ 
-                error: 'No digest available',
-                hasDigest: false 
+            console.log(`[Digest Fetch] ❌ No digest found for ${userId} today`);
+            return res.status(200).json({ 
+                hasDigest: false,
+                message: 'No digest available for today'
             });
         }
+        
+        console.log(`[Digest Fetch] ✅ Found digest ID: ${digest.id}, created: ${digest.created_at}`);
         
         const allRecs = digest.recommendations || [];
         console.log(`[Digest Fetch] Found digest with ${allRecs.length} total recommendations`);
