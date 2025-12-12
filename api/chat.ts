@@ -1315,9 +1315,25 @@ async function findAndAddPlace(placeName: string, location: string = 'New York, 
     let place = await searchGooglePlaces(placeName, location);
 
     if (!place) {
+        // Determine default category based on context
+        const isEvent = extraData.isEvent || false;
+        const placeType = extraData.type || 'restaurant';
+        let defaultMainCategory: 'eat' | 'see' = 'eat';
+        let defaultSubtype = 'Restaurant';
+        
+        if (isEvent) {
+            defaultMainCategory = 'see';
+            defaultSubtype = 'Event';
+        } else if (['activity', 'attraction', 'museum', 'park', 'theater', 'shopping'].includes(placeType)) {
+            defaultMainCategory = 'see';
+            defaultSubtype = placeType.charAt(0).toUpperCase() + placeType.slice(1);
+        }
+        
         place = {
             name: placeName,
-            type: extraData.isEvent ? 'activity' : 'restaurant',
+            type: isEvent ? 'activity' : 'restaurant',
+            mainCategory: defaultMainCategory,
+            subtype: defaultSubtype,
             address: location,
             description: '',
             sourceUrl: `https://www.google.com/search?q=${encodeURIComponent(placeName + ' ' + location)}`,
@@ -1327,11 +1343,32 @@ async function findAndAddPlace(placeName: string, location: string = 'New York, 
         };
     }
 
+    // Determine final categories
+    let mainCategory = place.mainCategory || 'eat';
+    let subtype = place.subtype || 'Restaurant';
+    
+    // Override for events
+    if (extraData.isEvent) {
+        mainCategory = 'see';
+        subtype = extraData.eventType || 'Event';
+    }
+    
+    // Override if type suggests see category
+    if (extraData.type && ['activity', 'attraction', 'museum', 'park', 'theater', 'shopping', 'landmark', 'gallery'].includes(extraData.type.toLowerCase())) {
+        mainCategory = 'see';
+        if (!place.mainCategory) {
+            subtype = extraData.type.charAt(0).toUpperCase() + extraData.type.slice(1);
+        }
+    }
+
     const newPlace = {
         id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
         user_id: userId,
         name: place.name,
         type: place.type || 'restaurant',
+        main_category: mainCategory,
+        subtype: subtype,
+        subtypes: [],
         cuisine: extraData.cuisine || null,
         address: place.address || '',
         description: place.description || extraData.description || null,
