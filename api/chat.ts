@@ -1315,25 +1315,11 @@ async function findAndAddPlace(placeName: string, location: string = 'New York, 
     let place = await searchGooglePlaces(placeName, location);
 
     if (!place) {
-        // Determine default category based on context
-        const isEvent = extraData.isEvent || false;
-        const placeType = extraData.type || 'restaurant';
-        let defaultMainCategory: 'eat' | 'see' = 'eat';
-        let defaultSubtype = 'Restaurant';
-        
-        if (isEvent) {
-            defaultMainCategory = 'see';
-            defaultSubtype = 'Event';
-        } else if (['activity', 'attraction', 'museum', 'park', 'theater', 'shopping'].includes(placeType)) {
-            defaultMainCategory = 'see';
-            defaultSubtype = placeType.charAt(0).toUpperCase() + placeType.slice(1);
-        }
-        
         place = {
             name: placeName,
-            type: isEvent ? 'activity' : 'restaurant',
-            mainCategory: defaultMainCategory,
-            subtype: defaultSubtype,
+            type: extraData.isEvent ? 'activity' : 'restaurant',
+            mainCategory: extraData.isEvent ? 'see' : 'eat',
+            subtype: extraData.isEvent ? 'Event' : 'Restaurant',
             address: location,
             description: '',
             sourceUrl: `https://www.google.com/search?q=${encodeURIComponent(placeName + ' ' + location)}`,
@@ -1343,22 +1329,39 @@ async function findAndAddPlace(placeName: string, location: string = 'New York, 
         };
     }
 
-    // Determine final categories
-    let mainCategory = place.mainCategory || 'eat';
-    let subtype = place.subtype || 'Restaurant';
+    // Determine final categories - use Google Places data if available, otherwise derive from context
+    let mainCategory: 'eat' | 'see' = (place as any).mainCategory || 'eat';
+    let subtype = (place as any).subtype || 'Restaurant';
     
-    // Override for events
-    if (extraData.isEvent) {
+    // Override for events - always "see/Event"
+    const isEvent = extraData.isEvent || false;
+    if (isEvent) {
         mainCategory = 'see';
         subtype = extraData.eventType || 'Event';
     }
     
-    // Override if type suggests see category
-    if (extraData.type && ['activity', 'attraction', 'museum', 'park', 'theater', 'shopping', 'landmark', 'gallery'].includes(extraData.type.toLowerCase())) {
+    // Override if extraData.type suggests a see category
+    const seeTypes = ['activity', 'attraction', 'museum', 'park', 'theater', 'shopping', 'landmark', 'gallery', 'entertainment', 'show', 'concert', 'festival'];
+    if (extraData.type && seeTypes.includes(extraData.type.toLowerCase())) {
         mainCategory = 'see';
-        if (!place.mainCategory) {
-            subtype = extraData.type.charAt(0).toUpperCase() + extraData.type.slice(1);
+        // Capitalize the type for subtype if we don't have one from Google
+        if (!(place as any).mainCategory) {
+            const typeMap: Record<string, string> = {
+                'activity': 'Activity', 'attraction': 'Landmark', 'museum': 'Museum',
+                'park': 'Park', 'theater': 'Theater', 'shopping': 'Shopping',
+                'landmark': 'Landmark', 'gallery': 'Gallery', 'entertainment': 'Entertainment',
+                'show': 'Show', 'concert': 'Concert', 'festival': 'Festival'
+            };
+            subtype = typeMap[extraData.type.toLowerCase()] || 'Activity';
         }
+    }
+
+    // For events without dates, default to today (better than nothing)
+    let startDate = extraData.startDate || null;
+    let endDate = extraData.endDate || null;
+    if (isEvent && !startDate) {
+        startDate = new Date().toISOString().split('T')[0];
+        console.log(`[addPlace] Event "${placeName}" had no date - defaulting to today: ${startDate}`);
     }
 
     const newPlace = {
@@ -1380,9 +1383,9 @@ async function findAndAddPlace(placeName: string, location: string = 'New York, 
         notes: null,
         review: null,
         rating: place.rating || null,
-        start_date: extraData.startDate || null,
-        end_date: extraData.endDate || null,
-        is_event: extraData.isEvent || false,
+        start_date: startDate,
+        end_date: endDate,
+        is_event: isEvent,
         created_at: new Date().toISOString(),
     };
 
