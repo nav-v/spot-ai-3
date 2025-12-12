@@ -603,20 +603,13 @@ async function analyseSavedPlaces(
 ): Promise<TasteProfile> {
     console.log(`[Taste Analysis] Analyzing ${places.length} places for type: ${type}`);
     
-    // Filter places by main_category (with fallback to legacy type)
+    // Filter places by type
+    const foodTypes = ['restaurant', 'bar', 'cafe', 'food', 'drinks'];
+    const seeTypes = ['activity', 'attraction', 'museum', 'park', 'entertainment'];
+    
     const filtered = type === 'food'
-        ? places.filter(p => {
-            // Use main_category if available, otherwise fallback to legacy type matching
-            if (p.main_category) return p.main_category === 'eat';
-            const legacyEatTypes = ['restaurant', 'bar', 'cafe', 'food', 'drinks'];
-            return legacyEatTypes.includes((p.type || 'restaurant').toLowerCase());
-        })
-        : places.filter(p => {
-            // Use main_category if available, otherwise fallback to legacy type matching
-            if (p.main_category) return p.main_category === 'see';
-            const legacySeeTypes = ['activity', 'attraction', 'museum', 'park', 'entertainment'];
-            return legacySeeTypes.includes((p.type || '').toLowerCase()) || p.is_event;
-        });
+        ? places.filter(p => foodTypes.includes((p.type || 'restaurant').toLowerCase()))
+        : places.filter(p => seeTypes.includes((p.type || '').toLowerCase()) || p.is_event);
     
     if (filtered.length === 0) {
         console.log(`[Taste Analysis] No ${type} places found, returning empty profile`);

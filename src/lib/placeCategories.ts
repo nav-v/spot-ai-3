@@ -3,8 +3,9 @@
 
 export type MainCategory = 'eat' | 'see';
 
-// Eat subtypes - cuisine and food venue types
+// Eat subtypes - cuisine and food venue types (must match categories.ts ids)
 export const EAT_SUBTYPES = [
+  // Cuisines
   'Pizza',
   'Indian',
   'Chinese',
@@ -21,10 +22,11 @@ export const EAT_SUBTYPES = [
   'Greek',
   'Spanish',
   'Seafood',
-  'BBQ',
-  'Burgers',
   'Sushi',
   'Ramen',
+  'BBQ',
+  'Burgers',
+  // Venue types
   'Dessert',
   'Coffee',
   'Bakery',
@@ -38,29 +40,36 @@ export const EAT_SUBTYPES = [
   'Food Truck',
   'Vegetarian',
   'Vegan',
+  'Restaurant',
   'Other',
 ] as const;
 
-// See subtypes - places and activities
+// See subtypes - places and activities (must match categories.ts ids)
 export const SEE_SUBTYPES = [
+  // Cultural
   'Museum',
-  'Park',
-  'Historic Site',
-  'Theater',
   'Gallery',
+  'Theater',
+  'Historic Site',
   'Landmark',
-  'Shopping',
-  'Entertainment',
-  'Nightlife',
-  'Rooftop',
-  'Beach',
+  // Nature & Outdoors
+  'Park',
   'Garden',
+  'Beach',
   'Zoo',
   'Aquarium',
+  // Views & Lookouts
+  'Rooftop',
   'Observation Deck',
+  // Shopping & Markets
+  'Shopping',
+  'Market',
+  // Entertainment
+  'Entertainment',
+  'Nightlife',
+  // Tours & Activities
   'Walking Tour',
   'Neighborhood',
-  'Market',
   'Library',
   'Other',
 ] as const;
@@ -81,6 +90,7 @@ export const EVENT_SUBTYPES = [
   'Film',
   'Talk',
   'Party',
+  'Event',
   'Other',
 ] as const;
 
@@ -93,7 +103,7 @@ export function getSubtypesForCategory(mainCategory: MainCategory, isEvent?: boo
   if (mainCategory === 'eat') {
     return EAT_SUBTYPES;
   }
-  // For See category, combine SEE_SUBTYPES with EVENT_SUBTYPES if showing events
+  // For See category, show event subtypes if it's an event
   if (isEvent) {
     return EVENT_SUBTYPES;
   }
@@ -140,4 +150,3 @@ export function isValidSubtype(mainCategory: MainCategory, subtype: string, isEv
 export function getCategoryLabel(mainCategory: MainCategory): string {
   return mainCategory === 'eat' ? 'Eat' : 'See';
 }
-

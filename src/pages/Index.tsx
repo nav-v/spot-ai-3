@@ -76,19 +76,25 @@ const Index = () => {
 
   // Get categories that actually have matching places
   const getAvailableCategories = () => {
+    // Filter places by mainCategory (with fallback to legacy type)
     const tabPlaces = places.filter((place) => {
-      if (activeTab === 'eat') return ['restaurant', 'cafe', 'bar'].includes(place.type);
-      if (activeTab === 'see') return ['attraction', 'activity', 'museum', 'park', 'shopping', 'theater', 'other'].includes(place.type);
+      if (activeTab === 'eat') {
+        return place.mainCategory === 'eat' || ['restaurant', 'cafe', 'bar'].includes(place.type);
+      }
+      if (activeTab === 'todo') {
+        return place.mainCategory === 'see' || !['restaurant', 'cafe', 'bar'].includes(place.type);
+      }
       return true;
     });
 
     const allCategories = activeTab === 'eat' ? eatCategories : seeCategories;
 
+    // Match by subtype (primary), then fallback to cuisine/type/name
     return allCategories.filter((category) =>
       tabPlaces.some((place) =>
-        place.cuisine?.toLowerCase().includes(category.id) ||
-        place.type?.toLowerCase().includes(category.id) ||
-        place.name?.toLowerCase().includes(category.id)
+        place.subtype?.toLowerCase() === category.id.toLowerCase() ||
+        place.cuisine?.toLowerCase() === category.id.toLowerCase() ||
+        place.type?.toLowerCase() === category.id.toLowerCase()
       )
     );
   };
