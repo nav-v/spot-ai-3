@@ -149,35 +149,43 @@ function mediaIdToShortcode(instagramId: string | number): string {
     }
 }
 
-// ============= INSTAGRAM URL VALIDATION VIA OEMBED =============
+// ============= INSTAGRAM URL VALIDATION VIA FACEBOOK GRAPH OEMBED =============
 // The Instagram Graph API can only query media YOU own, not third-party content.
-// Instead, we generate a URL from the shortcode and validate it with oEmbed.
-// oEmbed works for any PUBLIC Instagram content.
+// BUT the Facebook Graph oEmbed API CAN validate any public Instagram URL!
+// Endpoint: https://graph.facebook.com/v21.0/instagram_oembed?url={url}&access_token={token}
 
 async function validateInstagramUrl(url: string): Promise<{ valid: boolean; permalink?: string; title?: string }> {
+    const PAGE_ACCESS_TOKEN = process.env.INSTAGRAM_PAGE_ACCESS_TOKEN || '';
+    
+    if (!PAGE_ACCESS_TOKEN) {
+        console.log(`[oEmbed] No access token, skipping validation for: ${url}`);
+        return { valid: true, permalink: url }; // Assume valid if we can't check
+    }
+    
     try {
-        const oembedUrl = `https://api.instagram.com/oembed/?url=${encodeURIComponent(url)}`;
-        console.log(`[oEmbed] Validating URL: ${url}`);
+        // Use Facebook Graph API oEmbed endpoint (requires access token)
+        const oembedUrl = `https://graph.facebook.com/v21.0/instagram_oembed?url=${encodeURIComponent(url)}&access_token=${PAGE_ACCESS_TOKEN}`;
+        console.log(`[oEmbed] Validating URL via Graph API: ${url}`);
         
         const response = await fetch(oembedUrl, {
             headers: { 'Accept': 'application/json' }
         });
         
-        if (!response.ok) {
-            console.log(`[oEmbed] Validation failed: HTTP ${response.status}`);
+        const data = await response.json();
+        console.log(`[oEmbed] Response status: ${response.status}, data: ${JSON.stringify(data).substring(0, 300)}`);
+        
+        if (data.error) {
+            console.log(`[oEmbed] API error: ${data.error.message}`);
             return { valid: false };
         }
         
-        const data = await response.json();
-        console.log(`[oEmbed] Response: ${JSON.stringify(data).substring(0, 200)}`);
-        
-        // oEmbed returns the canonical permalink
-        if (data.author_name || data.title) {
+        // oEmbed returns author_name for valid public content
+        if (data.author_name || data.html) {
             console.log(`[oEmbed] ✅ URL is valid! Author: ${data.author_name}`);
             return { 
                 valid: true, 
-                permalink: url,  // The URL we tested is valid
-                title: data.title 
+                permalink: url,
+                title: data.title || data.author_name
             };
         }
         
@@ -191,22 +199,30 @@ async function validateInstagramUrl(url: string): Promise<{ valid: boolean; perm
 // Try both /reel/ and /p/ formats and return the one that works
 async function findValidInstagramUrl(mediaId: string, preferReel: boolean): Promise<string | null> {
     const shortcode = mediaIdToShortcode(mediaId);
-    console.log(`[URL Finder] Media ID: ${mediaId} -> Shortcode: ${shortcode}`);
+    console.log(`[URL Finder] ========================================`);
+    console.log(`[URL Finder] Media ID: ${mediaId}`);
+    console.log(`[URL Finder] Media ID length: ${mediaId.length} chars`);
+    console.log(`[URL Finder] Shortcode: ${shortcode}`);
+    console.log(`[URL Finder] Shortcode length: ${shortcode.length} chars`);
+    console.log(`[URL Finder] Prefer reel: ${preferReel}`);
     
     // Try the preferred format first
     const formats = preferReel 
         ? [`https://www.instagram.com/reel/${shortcode}/`, `https://www.instagram.com/p/${shortcode}/`]
         : [`https://www.instagram.com/p/${shortcode}/`, `https://www.instagram.com/reel/${shortcode}/`];
     
+    console.log(`[URL Finder] Will try: ${formats.join(' then ')}`);
+    
     for (const url of formats) {
         const result = await validateInstagramUrl(url);
         if (result.valid) {
-            console.log(`[URL Finder] ✅ Found valid URL: ${url}`);
+            console.log(`[URL Finder] ✅ Valid URL found: ${url}`);
             return url;
         }
+        console.log(`[URL Finder] ❌ Invalid: ${url}`);
     }
     
-    console.log(`[URL Finder] ❌ Neither format worked for shortcode: ${shortcode}`);
+    console.log(`[URL Finder] ⚠️ Neither format validated, returning preferred anyway`);
     
     // Return the preferred format anyway (for embedding, even if oEmbed failed)
     // Some private accounts won't validate but URL might still work
