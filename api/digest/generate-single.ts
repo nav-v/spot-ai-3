@@ -188,6 +188,74 @@ async function researchForDigest(): Promise<{
     };
 }
 
+// ============= TASTE ANALYSIS =============
+
+interface TasteProfile {
+    cuisinePreferences: string[];
+    vibePreferences: string[];
+    priceRange: string;
+    neighborhoods: string[];
+    eventTypes: string[];
+}
+
+async function analyzeTasteProfile(places: any[]): Promise<TasteProfile> {
+    if (!places || places.length === 0) {
+        return {
+            cuisinePreferences: [],
+            vibePreferences: [],
+            priceRange: 'moderate',
+            neighborhoods: [],
+            eventTypes: []
+        };
+    }
+    
+    const placesSummary = places.slice(0, 30).map(p => {
+        const parts = [p.name];
+        if (p.cuisine) parts.push(`(${p.cuisine})`);
+        if (p.type) parts.push(`[${p.type}]`);
+        if (p.subtype) parts.push(`{${p.subtype}}`);
+        if (p.address) parts.push(`@${p.address.split(',')[0]}`);
+        return parts.join(' ');
+    }).join('\n');
+    
+    try {
+        const response = await getAI().models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: [{
+                role: 'user',
+                parts: [{ text: `Analyze this user's saved places and extract their taste profile:
+
+${placesSummary}
+
+Return JSON only:
+{
+    "cuisinePreferences": ["cuisine1", "cuisine2"],
+    "vibePreferences": ["cozy", "upscale", "casual", etc],
+    "priceRange": "budget|moderate|upscale|mixed",
+    "neighborhoods": ["neighborhood1", "neighborhood2"],
+    "eventTypes": ["concerts", "comedy", "art", etc]
+}` }]
+            }]
+        });
+        
+        const text = response.text || '{}';
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            return JSON.parse(jsonMatch[0]);
+        }
+    } catch (error) {
+        console.error('[Taste Analysis] Failed:', error);
+    }
+    
+    return {
+        cuisinePreferences: [],
+        vibePreferences: [],
+        priceRange: 'moderate',
+        neighborhoods: [],
+        eventTypes: []
+    };
+}
+
 // ============= DIGEST GENERATION =============
 
 function getTimeOfDay(): string {
@@ -229,14 +297,23 @@ async function generateDigest(
     
     const savedNames = new Set(userPlaces.map(p => p.name.toLowerCase()));
     
-    // Get user's taste for personalized descriptions
-    const tasteHint = userPlaces
-        .filter(p => p.cuisine || p.subtype)
-        .map(p => p.cuisine || p.subtype)
-        .slice(0, 5)
-        .join(', ') || 'varied tastes';
+    // Analyze taste profile using AI (same as generate.ts)
+    const tasteProfile = await analyzeTasteProfile(userPlaces);
+    const cuisineList = tasteProfile.cuisinePreferences.length > 0 
+        ? tasteProfile.cuisinePreferences.join(', ')
+        : 'varied cuisines';
+    const vibeList = tasteProfile.vibePreferences.length > 0
+        ? tasteProfile.vibePreferences.join(', ')
+        : '';
+    const tasteHint = `${cuisineList}${vibeList ? `, ${vibeList}` : ''}` || 'varied tastes';
     
-    const prompt = `You are Spot. Generate a daily digest for ${userName} who likes: ${tasteHint}.
+    const prompt = `You are Spot. Generate a daily digest for ${userName}.
+
+Taste Profile:
+- Cuisine preferences: ${tasteProfile.cuisinePreferences.join(', ') || 'varied'}
+- Vibe preferences: ${tasteProfile.vibePreferences.join(', ') || 'flexible'}
+- Favorite neighborhoods: ${tasteProfile.neighborhoods.join(', ') || 'all around NYC'}
+- Price range: ${tasteProfile.priceRange || 'moderate'}
 
 === EVENTS ===
 ${research.events.text.substring(0, 4000)}
@@ -255,14 +332,16 @@ Return JSON:
     "intro_text": "While you were [something fun], I found some gems...",
     "recommendations": [
         {"name": "Event Name", "type": "event", "description": "Perfect for you because [reference their taste]...", "location": "Venue, Neighborhood", "isEvent": true, "startDate": "2024-12-13", "mainCategory": "see", "subtype": "Concert", "sources": [{"domain": "theskint.com", "url": ""}]},
-        {"name": "Restaurant", "type": "restaurant", "description": "Since you love ${tasteHint}, you'll enjoy...", "location": "Neighborhood", "isEvent": false, "mainCategory": "eat", "subtype": "Italian", "recommendedDishes": ["Pasta"], "sources": []}
+        {"name": "Restaurant", "type": "restaurant", "description": "Since you love ${tasteProfile.cuisinePreferences[0] || 'varied cuisines'}, you'll enjoy...", "location": "Neighborhood", "isEvent": false, "mainCategory": "eat", "subtype": "Italian", "recommendedDishes": ["Pasta"], "sources": []}
     ]
 }
 
 CRITICAL:
-- PERSONALIZE descriptions: explain WHY this rec fits ${userName}'s taste (${tasteHint})
-- Example: "Since you love Italian, this spot's fresh pasta will be right up your alley"
-- Example: "Given your love for live music, this intimate jazz club is a must"
+- PERSONALIZE descriptions: explain WHY this rec fits ${userName}'s taste profile
+- Reference their actual cuisine preferences: ${tasteProfile.cuisinePreferences.join(', ') || 'varied tastes'}
+- Reference their vibe preferences: ${tasteProfile.vibePreferences.join(', ') || 'flexible'}
+- Example: "Since you love ${tasteProfile.cuisinePreferences[0] || 'Italian'} and ${tasteProfile.vibePreferences[0] || 'cozy'} spots, this intimate trattoria will be perfect"
+- Example: "Given your love for ${tasteProfile.eventTypes[0] || 'live music'} and ${tasteProfile.neighborhoods[0] || 'Williamsburg'}, this jazz club is a must"
 - Follow the 2:1 pattern (event, event, food, event, event, food...)
 - Events need real dates from research
 - Food needs recommendedDishes`;
