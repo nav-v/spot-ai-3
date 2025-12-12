@@ -25,7 +25,8 @@ const EVENT_SCRAPE_SITES = [
     'https://theskint.com/',
     'https://www.ohmyrockness.com/features.atom',  // RSS feed - cleaner structured data
     'https://edmtrain.com/new-york-city-ny',
-    'https://www.timeout.com/newyork/things-to-do/this-weekend'
+    'https://www.timeout.com/newyork/things-to-do/this-weekend',
+    'https://ny-event-radar.com'  // Art exhibitions, jazz, markets
 ];
 
 // Location-specific subreddits - AI picks from these based on query
@@ -1631,8 +1632,8 @@ Place fields:
 - recommendedDishes: (FOR RESTAURANTS/CAFES/BARS ONLY) Array of 2-3 specific dishes mentioned in reviews. Extract actual dish names like ["Spicy Vodka Rigatoni", "Tiramisu"]. Omit this field for non-food places or if no specific dishes are mentioned.
 - sources: Array of source domains that mentioned this place. Include ALL sources:
   * From Gemini citations: Look at [1], [2] etc. and include those source domains (reddit.com, eater.com, etc.)
-  * From scraped sections: If a place was mentioned under "=== THESKINT.COM ===" include "theskint.com", under "=== OHMYROCKNESS.COM ===" include "ohmyrockness.com", under "=== TIMEOUT.COM ===" include "timeout.com", under "=== EDMTRAIN.COM ===" include "edmtrain.com"
-  * Examples: ["reddit.com", "theskint.com"], ["timeout.com", "eater.com"], ["ohmyrockness.com"]
+  * From scraped sections: If a place was mentioned under "=== THESKINT.COM ===" include "theskint.com", under "=== OHMYROCKNESS.COM ===" include "ohmyrockness.com", under "=== TIMEOUT.COM ===" include "timeout.com", under "=== EDMTRAIN.COM ===" include "edmtrain.com", under "=== NY-EVENT-RADAR.COM ===" include "ny-event-radar.com"
+  * Examples: ["reddit.com", "theskint.com"], ["timeout.com", "eater.com"], ["ohmyrockness.com", "ny-event-radar.com"]
   * This helps users see exactly where each recommendation came from!
 - startDate: (REQUIRED for events) Date in "YYYY-MM-DD" format, or "Dec 13" if exact date unknown
 - DO NOT include sourceUrl - we attach verified URLs from research automatically.
