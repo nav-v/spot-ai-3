@@ -2,21 +2,13 @@ import { GoogleGenAI } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// ============= CONFIG (same as chat.ts) =============
+// ============= CONFIG =============
 
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY || '';
 const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY || '';
 
-// Same subreddits as chat.ts
 const EVENT_SUBREDDITS = ['nyc', 'AskNYC', 'NYCbitcheswithtaste', 'newyorkcity'];
 const FOOD_SUBREDDITS = ['nyc', 'AskNYC', 'FoodNYC', 'NYCbitcheswithtaste'];
-
-// Same event sites as chat.ts
-const EVENT_SCRAPE_SITES = [
-    'https://theskint.com/',
-    'https://www.ohmyrockness.com/features.atom',
-    'https://www.timeout.com/newyork/things-to-do/this-weekend',
-];
 
 // ============= LAZY INIT =============
 
@@ -59,7 +51,6 @@ async function fetchNYCWeather(): Promise<WeatherData> {
         const conditions = data.weather?.[0]?.description || 'clear';
         const icon = data.weather?.[0]?.icon || '01d';
         
-        // Simple weather quip
         let quip = `${temp}°F and ${conditions} - perfect for exploring!`;
         if (temp < 35) quip = `${temp}°F - bundle up, but the city awaits!`;
         else if (temp > 80) quip = `${temp}°F - find some AC or a rooftop!`;
@@ -68,6 +59,62 @@ async function fetchNYCWeather(): Promise<WeatherData> {
         return { temp, feels_like: temp, conditions, icon, spot_quip: quip };
     } catch {
         return { temp: 50, feels_like: 50, conditions: 'clear', icon: '01d', spot_quip: "Perfect day to explore!" };
+    }
+}
+
+// ============= GOOGLE PLACES (NEW API - same as chat.ts) =============
+
+async function searchGooglePlaces(placeName: string, location: string = 'New York, NY') {
+    if (!GOOGLE_PLACES_API_KEY) {
+        console.log('[Google Places] No API key configured');
+        return null;
+    }
+
+    try {
+        const searchUrl = `https://places.googleapis.com/v1/places:searchText`;
+        console.log(`[Google Places] Searching for: "${placeName}" in ${location}`);
+
+        const searchResponse = await fetch(searchUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+                'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.rating,places.websiteUri,places.types,places.photos,places.editorialSummary'
+            },
+            body: JSON.stringify({
+                textQuery: `${placeName} ${location}`,
+                maxResultCount: 1
+            })
+        });
+
+        const searchData = await searchResponse.json();
+
+        if (!searchData.places || searchData.places.length === 0) {
+            console.log(`[Google Places] No results found for "${placeName}"`);
+            return null;
+        }
+
+        const place = searchData.places[0];
+        console.log(`[Google Places] Found: ${place.displayName?.text}, rating: ${place.rating}`);
+
+        // Get photo URL if available
+        let imageUrl = '';
+        if (place.photos && place.photos.length > 0) {
+            const photoName = place.photos[0].name;
+            imageUrl = `https://places.googleapis.com/v1/${photoName}/media?maxHeightPx=400&key=${GOOGLE_PLACES_API_KEY}`;
+        }
+
+        return {
+            name: place.displayName?.text || placeName,
+            address: place.formattedAddress || location,
+            description: place.editorialSummary?.text || '',
+            website: place.websiteUri || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(placeName + ' ' + location)}`,
+            imageUrl,
+            rating: place.rating || null
+        };
+    } catch (error) {
+        console.error('[Google Places] API error:', error);
+        return null;
     }
 }
 
@@ -89,7 +136,12 @@ async function scrapeWithJina(url: string): Promise<string> {
     }
 }
 
-async function geminiSearchWithSources(query: string): Promise<{ text: string; sources: Array<{ domain: string; url: string }> }> {
+interface SearchResult {
+    text: string;
+    sources: Array<{ domain: string; url: string }>;
+}
+
+async function geminiSearchWithSources(query: string): Promise<SearchResult> {
     try {
         const response = await getAI().models.generateContent({
             model: 'gemini-2.5-flash',
@@ -114,109 +166,26 @@ async function geminiSearchWithSources(query: string): Promise<{ text: string; s
     }
 }
 
-// 3 separate time-based searches
-async function researchByTimeframe(): Promise<{
-    today: { text: string; sources: any[] };
-    tomorrow: { text: string; sources: any[] };
-    weekend: { text: string; sources: any[] };
-    food: { text: string; sources: any[] };
+async function researchForDigest(): Promise<{
+    events: SearchResult;
+    food: SearchResult;
     scraped: string;
 }> {
     const today = new Date();
     const dayName = today.toLocaleDateString('en-US', { weekday: 'long' });
-    const tomorrowName = new Date(today.getTime() + 86400000).toLocaleDateString('en-US', { weekday: 'long' });
     
-    // Run all searches in parallel
-    const [todayRes, tomorrowRes, weekendRes, foodRes, scrape1, scrape2] = await Promise.all([
-        // TODAY search
-        geminiSearchWithSources(`NYC events happening today ${dayName} r/nyc r/AskNYC`),
-        // TOMORROW search
-        geminiSearchWithSources(`NYC events happening tomorrow ${tomorrowName} r/nyc r/AskNYC`),
-        // WEEKEND search
-        geminiSearchWithSources(`NYC events this weekend Saturday Sunday r/nyc r/AskNYC`),
-        // FOOD search
-        geminiSearchWithSources(`best restaurants NYC must try hidden gems r/FoodNYC r/nyc`),
-        // Event site scrapes
+    const [eventsRes, foodRes, scrape1, scrape2] = await Promise.all([
+        geminiSearchWithSources(`NYC events happening ${dayName} this weekend concerts shows markets festivals r/nyc r/AskNYC`),
+        geminiSearchWithSources(`best restaurants NYC must try hidden gems highly rated r/FoodNYC r/nyc`),
         scrapeWithJina('https://theskint.com/'),
         scrapeWithJina('https://www.timeout.com/newyork/things-to-do/this-weekend'),
     ]);
     
     return {
-        today: todayRes,
-        tomorrow: tomorrowRes,
-        weekend: weekendRes,
+        events: eventsRes,
         food: foodRes,
         scraped: `=== THESKINT.COM ===\n${scrape1}\n\n=== TIMEOUT.COM ===\n${scrape2}`
     };
-}
-
-// ============= GOOGLE PLACES (for images, rating, website) =============
-
-interface PlaceDetails {
-    imageUrl?: string;
-    address?: string;
-    rating?: number;
-    website?: string;
-}
-
-async function searchGooglePlaces(name: string, location: string = 'New York'): Promise<PlaceDetails> {
-    if (!GOOGLE_PLACES_API_KEY) {
-        console.log('[Google Places] No API key configured');
-        return {};
-    }
-    
-    try {
-        const query = `${name} ${location} NYC`;
-        console.log(`[Google Places] Searching: ${query}`);
-        const searchUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${GOOGLE_PLACES_API_KEY}`;
-        const response = await fetch(searchUrl);
-        const data = await response.json();
-        
-        if (data.results?.[0]) {
-            const place = data.results[0];
-            let imageUrl;
-            
-            if (place.photos?.[0]?.photo_reference) {
-                imageUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${GOOGLE_PLACES_API_KEY}`;
-            }
-            
-            // Get place details for website
-            let website;
-            if (place.place_id) {
-                try {
-                    const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&fields=website&key=${GOOGLE_PLACES_API_KEY}`;
-                    const detailsRes = await fetch(detailsUrl);
-                    const detailsData = await detailsRes.json();
-                    website = detailsData.result?.website;
-                } catch {}
-            }
-            
-            console.log(`[Google Places] Found: ${place.name}, rating: ${place.rating}, hasImage: ${!!imageUrl}`);
-            
-            return { 
-                imageUrl, 
-                address: place.formatted_address,
-                rating: place.rating,
-                website
-            };
-        }
-        console.log(`[Google Places] No results for: ${name}`);
-    } catch (error) {
-        console.error(`[Google Places] Error:`, error);
-    }
-    
-    return {};
-}
-
-// ============= TASTE ANALYSIS =============
-
-async function quickTasteAnalysis(places: any[]): Promise<string> {
-    if (!places || places.length === 0) return 'varied tastes';
-    
-    const cuisines = places.filter(p => p.cuisine).map(p => p.cuisine).slice(0, 5);
-    const types = places.filter(p => p.subtype).map(p => p.subtype).slice(0, 5);
-    
-    return `Likes: ${[...cuisines, ...types].join(', ') || 'varied'}`;
 }
 
 // ============= DIGEST GENERATION =============
@@ -243,53 +212,54 @@ interface DigestRec {
     subtype: string;
     recommendedDishes?: string[];
     sources: Array<{ domain: string; url: string }>;
-    timeframe: 'today' | 'tomorrow' | 'weekend';
+    isFromSaved?: boolean;
 }
 
 async function generateDigest(
     userName: string,
     userPlaces: any[],
-    research: Awaited<ReturnType<typeof researchByTimeframe>>
+    research: Awaited<ReturnType<typeof researchForDigest>>
 ): Promise<{ intro_text: string; recommendations: DigestRec[] }> {
     
-    const tasteHint = await quickTasteAnalysis(userPlaces);
-    const savedNames = userPlaces.map(p => p.name.toLowerCase()).join(', ');
+    // Get old saved food spots to bump (sorted by oldest first)
+    const savedFood = userPlaces
+        .filter(p => ['restaurant', 'bar', 'cafe'].includes(p.type?.toLowerCase() || ''))
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+        .slice(0, 5);
     
-    const prompt = `You are Spot. Generate a daily digest for ${userName} who ${tasteHint}.
+    const savedNames = new Set(userPlaces.map(p => p.name.toLowerCase()));
+    
+    const prompt = `You are Spot. Generate a daily digest for ${userName}.
 
-=== TODAY'S EVENTS ===
-${research.today.text.substring(0, 2500)}
-
-=== TOMORROW'S EVENTS ===
-${research.tomorrow.text.substring(0, 2500)}
-
-=== WEEKEND EVENTS ===
-${research.weekend.text.substring(0, 2500)}
+=== EVENTS ===
+${research.events.text.substring(0, 4000)}
 ${research.scraped.substring(0, 3000)}
 
-=== FOOD SPOTS ===
-${research.food.text.substring(0, 2000)}
+=== FOOD ===
+${research.food.text.substring(0, 3000)}
 
-DO NOT RECOMMEND (already saved): ${savedNames.substring(0, 500)}
+DO NOT RECOMMEND (already saved): ${Array.from(savedNames).slice(0, 30).join(', ')}
 
-Generate 15 recommendations (10 events, 5 food):
-- 3-4 for TODAY (timeframe: "today")
-- 3-4 for TOMORROW (timeframe: "tomorrow") 
-- 3-4 for WEEKEND (timeframe: "weekend")
-- 5 food spots (timeframe: "today" since restaurants are always available)
+Generate exactly 15 recommendations in this EXACT pattern:
+EVENT, EVENT, FOOD, EVENT, EVENT, FOOD, EVENT, EVENT, FOOD, EVENT, EVENT, FOOD, EVENT, EVENT, FOOD
+
+So 10 events + 5 food items, alternating 2:1.
 
 Return JSON:
 {
-    "intro_text": "While you were [something fun], I found some gems for your week...",
+    "intro_text": "While you were [something fun], I found some gems...",
     "recommendations": [
-        {"id": "1", "name": "Place Name", "type": "event|restaurant|bar|cafe", "description": "Brief why it's great", "location": "Neighborhood", "isEvent": false, "startDate": "2024-12-13", "mainCategory": "eat", "subtype": "Italian", "recommendedDishes": ["Dish 1", "Dish 2"], "sources": [{"domain": "reddit.com", "url": ""}], "timeframe": "today"}
+        {"name": "Event Name", "type": "event", "description": "Why it's great", "location": "Venue, Neighborhood", "isEvent": true, "startDate": "2024-12-13", "mainCategory": "see", "subtype": "Concert", "sources": [{"domain": "theskint.com", "url": "https://theskint.com/"}]},
+        {"name": "Event Name 2", "type": "event", "description": "Why", "location": "Venue", "isEvent": true, "startDate": "2024-12-14", "mainCategory": "see", "subtype": "Market", "sources": []},
+        {"name": "Restaurant Name", "type": "restaurant", "description": "Why it's amazing", "location": "Neighborhood", "isEvent": false, "mainCategory": "eat", "subtype": "Italian", "recommendedDishes": ["Pasta", "Tiramisu"], "sources": [{"domain": "reddit.com", "url": ""}]}
     ]
 }
 
-IMPORTANT:
-- For restaurants/cafes/bars, include 2-3 recommendedDishes from reviews
-- Be specific about dates. Events need real dates from the research.
-- Use actual venue/restaurant names from the research`;
+CRITICAL:
+- Follow the 2:1 pattern exactly (event, event, food, event, event, food...)
+- Events need real dates from research
+- Food needs recommendedDishes
+- Include actual source URLs from citations`;
 
     try {
         const response = await getAI().models.generateContent({
@@ -300,30 +270,73 @@ IMPORTANT:
         const jsonMatch = (response.text || '{}').match(/\{[\s\S]*\}/);
         if (jsonMatch) {
             const parsed = JSON.parse(jsonMatch[0]);
+            const recs = parsed.recommendations || [];
             
             // Merge sources from research
-            const allSources = [...research.today.sources, ...research.tomorrow.sources, ...research.weekend.sources, ...research.food.sources];
+            const allSources = [...research.events.sources, ...research.food.sources];
             
-            // Enrich recommendations with Google Places data (images, ratings, websites)
-            console.log(`[Digest] Enriching ${(parsed.recommendations || []).length} recommendations with Google Places...`);
-            const enriched = await Promise.all((parsed.recommendations || []).slice(0, 15).map(async (rec: any, i: number) => {
-                // Try to get data from Google Places
+            // Insert 2 saved food items at food positions (positions 2, 5 - 0-indexed)
+            const savedToInsert = savedFood.slice(0, 2);
+            
+            // Enrich with Google Places data
+            console.log(`[Digest] Enriching ${recs.length} recommendations...`);
+            const enriched: DigestRec[] = [];
+            
+            let savedIdx = 0;
+            for (let i = 0; i < recs.length && enriched.length < 15; i++) {
+                const rec = recs[i];
+                
+                // At food positions (2, 5, 8, 11, 14), check if we should insert saved
+                const isFoodPosition = (i + 1) % 3 === 0;
+                if (isFoodPosition && savedIdx < savedToInsert.length) {
+                    // Insert saved food item
+                    const saved = savedToInsert[savedIdx];
+                    const placeData = await searchGooglePlaces(saved.name, saved.address || 'New York');
+                    enriched.push({
+                        id: `saved-${savedIdx}`,
+                        name: saved.name,
+                        type: saved.type || 'restaurant',
+                        description: saved.description || `One of your saved spots - haven't visited in a while?`,
+                        location: saved.address?.split(',')[0] || 'NYC',
+                        imageUrl: placeData?.imageUrl || saved.image_url,
+                        website: placeData?.website || saved.source_url,
+                        rating: placeData?.rating || saved.rating,
+                        isEvent: false,
+                        mainCategory: 'eat',
+                        subtype: saved.subtype || saved.cuisine || 'Restaurant',
+                        recommendedDishes: saved.recommended_dishes || [],
+                        sources: [],
+                        isFromSaved: true
+                    });
+                    savedIdx++;
+                }
+                
+                // Add the AI recommendation
                 const placeData = await searchGooglePlaces(rec.name, rec.location || 'New York');
                 
-                return {
-                    ...rec,
-                    id: rec.id || `digest-${i}`,
-                    imageUrl: placeData.imageUrl || rec.imageUrl,
-                    rating: placeData.rating || rec.rating,
-                    website: placeData.website || rec.website,
+                enriched.push({
+                    id: `digest-${i}`,
+                    name: rec.name,
+                    type: rec.type || 'event',
+                    description: rec.description,
+                    location: rec.location,
+                    imageUrl: placeData?.imageUrl,
+                    website: placeData?.website,
+                    rating: placeData?.rating,
+                    isEvent: rec.isEvent ?? rec.type === 'event',
+                    startDate: rec.startDate,
+                    mainCategory: rec.mainCategory || (rec.isEvent ? 'see' : 'eat'),
+                    subtype: rec.subtype || 'Event',
+                    recommendedDishes: rec.recommendedDishes,
                     sources: rec.sources?.length ? rec.sources : allSources.slice(0, 2)
-                };
-            }));
+                });
+            }
+            
             console.log(`[Digest] Enriched ${enriched.filter(r => r.imageUrl).length}/${enriched.length} with images`);
             
             return {
                 intro_text: parsed.intro_text || "Here's what's happening in NYC!",
-                recommendations: enriched
+                recommendations: enriched.slice(0, 15)
             };
         }
     } catch (error) {
@@ -356,9 +369,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Parallel: weather, research, user data
         const [weather, research, userResult, placesResult] = await Promise.all([
             fetchNYCWeather(),
-            researchByTimeframe(),
+            researchForDigest(),
             db.from('users').select('name').eq('id', userId).single(),
-            db.from('places').select('name, cuisine, subtype, is_event, start_date').eq('user_id', userId)
+            db.from('places').select('*').eq('user_id', userId).order('created_at', { ascending: true })
         ]);
         
         const userName = userResult.data?.name || 'there';

@@ -528,40 +528,35 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
     }
   };
 
-  // Handle digest refresh - generates new digest if none exists, or refreshes recommendations
+  // Handle digest refresh - REPLACES all recommendations with fresh ones
   const handleDigestRefresh = async (excludedIds: string[], excludedNames: string[]): Promise<DigestRecommendation[]> => {
     try {
-      // If no digest exists, generate a full one
-      if (!digest) {
-        const genResponse = await fetch('/api/digest/generate-single', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: user?.id })
-        });
-        
-        const genData = await genResponse.json();
-        if (genData.hasDigest && genData.digest) {
-          setDigest(genData.digest);
-          setShowDigest(true);
-          return genData.digest.recommendations || [];
-        }
-        return [];
-      }
-      
-      // Otherwise, just refresh recommendations
+      // Get fresh recommendations (replacing existing ones)
       const response = await fetch('/api/digest/refresh', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user?.id,
-          excludedIds,
-          excludedNames,
-          tasteHints: ''
+          excludedNames // Just send names to exclude
         })
       });
       
       const data = await response.json();
-      return data.recommendations || [];
+      const newRecs = data.recommendations || [];
+      
+      // Update digest state and cache with new recommendations
+      if (newRecs.length > 0 && digest) {
+        const updatedDigest = { ...digest, recommendations: newRecs };
+        setDigest(updatedDigest);
+        // Update localStorage cache
+        const cacheKey = `spot-digest-${user?.id}`;
+        localStorage.setItem(cacheKey, JSON.stringify({
+          digest: updatedDigest,
+          date: new Date().toDateString()
+        }));
+      }
+      
+      return newRecs;
     } catch (error) {
       console.error('Failed to refresh digest:', error);
       toast({ title: 'Error', description: 'Failed to refresh recommendations.', variant: 'destructive' });

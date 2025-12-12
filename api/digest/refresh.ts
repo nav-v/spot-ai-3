@@ -2,7 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// ============= LAZY INITIALIZATION =============
+const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY || '';
 
 let supabase: ReturnType<typeof createClient>;
 function getSupabase() {
@@ -22,175 +22,146 @@ function getAI() {
     return ai;
 }
 
-// ============= QUICK REFRESH =============
+// Same Google Places function as generate-single.ts
+async function searchGooglePlaces(placeName: string, location: string = 'New York, NY') {
+    if (!GOOGLE_PLACES_API_KEY) return null;
 
-// Fast search for new recommendations
-async function quickSearch(query: string): Promise<string> {
+    try {
+        const searchResponse = await fetch(`https://places.googleapis.com/v1/places:searchText`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+                'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.rating,places.websiteUri,places.photos,places.editorialSummary'
+            },
+            body: JSON.stringify({
+                textQuery: `${placeName} ${location}`,
+                maxResultCount: 1
+            })
+        });
+
+        const searchData = await searchResponse.json();
+        if (!searchData.places?.[0]) return null;
+
+        const place = searchData.places[0];
+        let imageUrl = '';
+        if (place.photos?.[0]?.name) {
+            imageUrl = `https://places.googleapis.com/v1/${place.photos[0].name}/media?maxHeightPx=400&key=${GOOGLE_PLACES_API_KEY}`;
+        }
+
+        return {
+            name: place.displayName?.text || placeName,
+            address: place.formattedAddress || location,
+            description: place.editorialSummary?.text || '',
+            website: place.websiteUri || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(placeName)}`,
+            imageUrl,
+            rating: place.rating || null
+        };
+    } catch {
+        return null;
+    }
+}
+
+async function geminiSearch(query: string): Promise<{ text: string; sources: any[] }> {
     try {
         const response = await getAI().models.generateContent({
             model: 'gemini-2.5-flash',
             contents: [{ role: 'user', parts: [{ text: query }] }],
-            config: {
-                tools: [{ googleSearch: {} }]
-            }
+            config: { tools: [{ googleSearch: {} }] }
         });
-        return response.text || '';
+        
+        const sources: any[] = [];
+        const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+        for (const chunk of chunks) {
+            if (chunk.web?.uri) {
+                try {
+                    sources.push({ domain: new URL(chunk.web.uri).hostname.replace('www.', ''), url: chunk.web.uri });
+                } catch {}
+            }
+        }
+        
+        return { text: response.text || '', sources };
     } catch {
-        return '';
+        return { text: '', sources: [] };
     }
 }
 
-interface RefreshRecommendation {
-    id: string;
-    name: string;
-    type: string;
-    description: string;
-    location: string;
-    isEvent: boolean;
-    startDate?: string;
-    endDate?: string;
-    mainCategory: 'eat' | 'see';
-    subtype: string;
-    sources: Array<{ domain: string; url: string }>;
-    timeframe?: 'today' | 'tomorrow' | 'weekend' | 'week';
-}
-
-async function generateQuickRefresh(
-    excludedNames: string[],
-    excludedIds: string[],
-    tasteHints: string
-): Promise<RefreshRecommendation[]> {
-    const today = new Date();
-    const dayOfWeek = today.toLocaleDateString('en-US', { weekday: 'long' });
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     
-    // Quick parallel searches
-    const [eventsResult, foodResult] = await Promise.all([
-        quickSearch(`NYC events happening ${dayOfWeek} this weekend concerts shows markets r/nyc`),
-        quickSearch(`best restaurants NYC hidden gems must try r/FoodNYC`)
-    ]);
+    if (req.method === 'OPTIONS') return res.status(200).end();
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
     
-    const prompt = `Generate 15 NEW recommendations for NYC (10 events, 5 food - 2:1 ratio).
+    const { userId, excludedNames = [] } = req.body || {};
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    
+    console.log(`[Refresh] Generating fresh recommendations, excluding ${excludedNames.length} names`);
+    const start = Date.now();
+    
+    try {
+        // Quick parallel research
+        const [eventsRes, foodRes] = await Promise.all([
+            geminiSearch(`NYC events this weekend concerts shows markets NOT ${excludedNames.slice(0, 10).join(' NOT ')} r/nyc`),
+            geminiSearch(`best restaurants NYC hidden gems NOT ${excludedNames.slice(0, 10).join(' NOT ')} r/FoodNYC`)
+        ]);
+        
+        const prompt = `Generate 15 NEW recommendations for NYC (2:1 pattern: event, event, food, repeat).
 
-TODAY: ${dayOfWeek}, ${today.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
-
-ALREADY SHOWN (DO NOT INCLUDE THESE):
-${excludedNames.slice(0, 30).join(', ')}
-
-USER PREFERENCES: ${tasteHints || 'varied tastes'}
-
-RESEARCH:
 === EVENTS ===
-${eventsResult.substring(0, 3000)}
+${eventsRes.text.substring(0, 3000)}
 
 === FOOD ===
-${foodResult.substring(0, 2000)}
+${foodRes.text.substring(0, 2000)}
 
-Return JSON array only - 10 events, 5 food spots (2:1 ratio):
+EXCLUDE (already shown): ${excludedNames.join(', ')}
+
+Return JSON array - 10 events, 5 food in 2:1 pattern:
 [
-    {
-        "id": "refresh-unique-id",
-        "name": "Event or Place Name",
-        "type": "event|restaurant|bar|cafe",
-        "description": "Brief description",
-        "location": "Venue, Neighborhood",
-        "isEvent": true,
-        "startDate": "YYYY-MM-DD",
-        "mainCategory": "see|eat",
-        "subtype": "Concert|Comedy|Italian|etc",
-        "sources": [{"domain": "reddit.com", "url": ""}],
-        "timeframe": "today|tomorrow|weekend|week"
-    }
+    {"name": "Event Name", "type": "event", "description": "Why great", "location": "Venue", "isEvent": true, "startDate": "2024-12-14", "mainCategory": "see", "subtype": "Concert", "sources": [{"domain": "reddit.com", "url": ""}]},
+    {"name": "Event 2", "type": "event", "description": "Why", "location": "Venue", "isEvent": true, "startDate": "2024-12-14", "mainCategory": "see", "subtype": "Market", "sources": []},
+    {"name": "Restaurant", "type": "restaurant", "description": "Amazing food", "location": "Neighborhood", "isEvent": false, "mainCategory": "eat", "subtype": "Italian", "recommendedDishes": ["Pasta"], "sources": []}
 ]
 
-CRITICAL: Do NOT include any place from the "ALREADY SHOWN" list!`;
+CRITICAL: Do NOT include any place from EXCLUDE list!`;
 
-    try {
         const response = await getAI().models.generateContent({
             model: 'gemini-2.5-flash',
             contents: [{ role: 'user', parts: [{ text: prompt }] }]
         });
         
-        const text = response.text || '[]';
-        const jsonMatch = text.match(/\[[\s\S]*\]/);
+        const jsonMatch = (response.text || '[]').match(/\[[\s\S]*\]/);
+        let recommendations: any[] = [];
         
         if (jsonMatch) {
-            return JSON.parse(jsonMatch[0]);
-        }
-    } catch (error) {
-        console.error('[Refresh] Generation failed:', error);
-    }
-    
-    return [];
-}
-
-// ============= MAIN HANDLER =============
-
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-    // CORS
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    
-    if (req.method === 'OPTIONS') {
-        return res.status(200).end();
-    }
-    
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method not allowed' });
-    }
-    
-    const { userId, excludedIds = [], excludedNames = [], tasteHints = '' } = req.body || {};
-    
-    if (!userId) {
-        return res.status(400).json({ error: 'userId is required' });
-    }
-    
-    console.log(`[Refresh] Quick refresh for user: ${userId}, excluding ${excludedIds.length} items`);
-    const startTime = Date.now();
-    
-    try {
-        const db = getSupabase();
-        
-        // Generate new recommendations quickly
-        const newRecs = await generateQuickRefresh(excludedNames, excludedIds, tasteHints);
-        
-        console.log(`[Refresh] Generated ${newRecs.length} new recommendations`);
-        
-        // Update the digest's shown_ids
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        
-        const { data: digest } = await db
-            .from('daily_digests')
-            .select('id, shown_ids')
-            .eq('user_id', userId)
-            .gte('created_at', today.toISOString())
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .single();
-        
-        if (digest) {
-            const newShownIds = [...new Set([...(digest.shown_ids || []), ...excludedIds, ...newRecs.map(r => r.id)])];
+            const parsed = JSON.parse(jsonMatch[0]);
+            const allSources = [...eventsRes.sources, ...foodRes.sources];
             
-            await db
-                .from('daily_digests')
-                .update({ shown_ids: newShownIds })
-                .eq('id', digest.id);
+            // Enrich with Google Places
+            recommendations = await Promise.all(parsed.slice(0, 15).map(async (rec: any, i: number) => {
+                const placeData = await searchGooglePlaces(rec.name, rec.location || 'New York');
+                return {
+                    id: `refresh-${i}-${Date.now()}`,
+                    ...rec,
+                    imageUrl: placeData?.imageUrl,
+                    website: placeData?.website,
+                    rating: placeData?.rating,
+                    sources: rec.sources?.length ? rec.sources : allSources.slice(0, 2)
+                };
+            }));
         }
         
-        const duration = Date.now() - startTime;
-        console.log(`[Refresh] Complete in ${duration}ms`);
+        console.log(`[Refresh] Done in ${Date.now() - start}ms with ${recommendations.length} recs`);
         
         return res.status(200).json({
             success: true,
-            recommendations: newRecs,
-            duration_ms: duration
+            recommendations
         });
         
     } catch (error: any) {
         console.error('[Refresh] Error:', error);
-        return res.status(500).json({ error: error.message });
+        return res.status(500).json({ error: error.message, recommendations: [] });
     }
 }
-
