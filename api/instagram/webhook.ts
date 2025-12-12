@@ -1,5 +1,21 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import {
+    pickRandom,
+    NOT_LINKED_MESSAGES,
+    CANT_CHAT_MESSAGES,
+    SAVED_SUCCESS_MESSAGES,
+    SAVED_MULTIPLE_MESSAGES,
+    UNKNOWN_PLACE_MESSAGES,
+    LINKED_SUCCESS_MESSAGES,
+    INVALID_CODE_MESSAGES,
+    CODE_USED_MESSAGES,
+    CODE_EXPIRED_MESSAGES,
+    FETCH_FAILED_MESSAGES,
+    ENHANCE_SUCCESS_MESSAGES,
+    ENHANCE_UPDATE_FAILED_MESSAGES,
+    ENHANCE_NOT_FOUND_MESSAGES,
+} from './spotMessages';
 
 // ============= LAZY INITIALIZATION =============
 
@@ -890,26 +906,17 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
         
         if (verifyError || !verification) {
             console.log(`[Webhook] Invalid verification code: ${code}, error: ${JSON.stringify(verifyError)}`);
-            await sendInstagramMessage(
-                senderId,
-                `Hmm, that code doesn't look right. 🤔\n\nMake sure you're using the code from the Spot app (format: SPOT-XXXX). Codes expire after 30 minutes!`
-            );
+            await sendInstagramMessage(senderId, pickRandom(INVALID_CODE_MESSAGES));
             return;
         }
         
         if (verification.used) {
-            await sendInstagramMessage(
-                senderId,
-                `That code has already been used! Generate a new one in the Spot app. 🔄`
-            );
+            await sendInstagramMessage(senderId, pickRandom(CODE_USED_MESSAGES));
             return;
         }
         
         if (new Date(verification.expires_at) < new Date()) {
-            await sendInstagramMessage(
-                senderId,
-                `That code has expired. ⏰\n\nGenerate a new one in the Spot app and try again!`
-            );
+            await sendInstagramMessage(senderId, pickRandom(CODE_EXPIRED_MESSAGES));
             return;
         }
         
@@ -951,10 +958,7 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
         
         console.log(`[Webhook] Successfully linked IG ${senderId} to Spot user ${verification.user_id}`);
         
-        await sendInstagramMessage(
-            senderId,
-            `You're all set! 🎉✨\n\nYour Instagram is now linked to Spot. Just send me any restaurant Reel, post, or link and I'll save it to your list!\n\nTry it now - send me a link! 📍`
-        );
+        await sendInstagramMessage(senderId, pickRandom(LINKED_SUCCESS_MESSAGES));
         return;
     }
     
@@ -974,10 +978,7 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
         console.log(`[Webhook] No linked Spot account for IG user ${senderId}`);
         
         // Not linked - send them to the app to link or join waitlist
-        await sendInstagramMessage(
-            senderId,
-            `Hey! 👋 If you have a Spot account, you can link it here: https://spot-ai-3.vercel.app/\n\nNo account yet? Join the waitlist at the same link! ✨`
-        );
+        await sendInstagramMessage(senderId, pickRandom(NOT_LINKED_MESSAGES));
         return;
     }
     
@@ -1072,35 +1073,23 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
                 
                 if (updateError) {
                     console.error('[Webhook] Failed to update place:', updateError);
-                    await sendInstagramMessage(
-                        senderId,
-                        `Found "${placeData.name}" but couldn't update the saved place. Try editing it directly in the app! 📱`
-                    );
+                    await sendInstagramMessage(senderId, pickRandom(ENHANCE_UPDATE_FAILED_MESSAGES)(placeData.name));
                 } else {
                     console.log(`[Webhook] Successfully enhanced place to "${placeData.name}"`);
-                    await sendInstagramMessage(
-                        senderId,
-                        `Found it! ✨ Updated to "${placeData.name}" at ${placeData.address}.\n\nCheck it out in the app!`
-                    );
+                    await sendInstagramMessage(senderId, pickRandom(ENHANCE_SUCCESS_MESSAGES)(placeData.name, placeData.address));
                 }
                 return;
             } else {
                 // Couldn't find place with that name
                 console.log(`[Webhook] Couldn't find place matching "${messageText}"`);
-                await sendInstagramMessage(
-                    senderId,
-                    `Hmm, I couldn't find "${messageText}" 🤔\n\nTry being more specific (like "Lucali Brooklyn") or edit it directly in the app! 📱`
-                );
+                await sendInstagramMessage(senderId, pickRandom(ENHANCE_NOT_FOUND_MESSAGES)(messageText.trim()));
                 return;
             }
         }
         
         // No recent unknown places or empty message - send "can't chat here"
         console.log('[Webhook] No recent unknown places or not an enhancement request');
-        await sendInstagramMessage(
-            senderId,
-            `I can't chat here unfortunately 😅\n\nHead to https://spot-ai-3.vercel.app/ to talk to me!\n\nBut if you send me a post or Reel, I'll save it to your list! 📍`
-        );
+        await sendInstagramMessage(senderId, pickRandom(CANT_CHAT_MESSAGES));
         return;
     }
     
@@ -1322,7 +1311,7 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
         }
     }
     
-    // Send acknowledgment DM
+    // Send acknowledgment DM with Spot personality
     const successCount = results.filter(r => r.success).length;
     const failCount = results.filter(r => !r.success).length;
     const needsEnhancementCount = results.filter(r => r.success && (r as any).needsEnhancement).length;
@@ -1332,29 +1321,34 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
     
     if (successCount === 0 && failCount > 0) {
         // Complete failure
-        responseMessage = `😅 Couldn't fetch that content - it might be private or unavailable. Try sending a different link!`;
+        responseMessage = pickRandom(FETCH_FAILED_MESSAGES);
     } else if (needsEnhancementCount > 0 && fullyIdentifiedCount === 0) {
         // All places need enhancement
         if (needsEnhancementCount === 1) {
             const place = results.find(r => (r as any).needsEnhancement);
-            responseMessage = `🤔 I couldn't find info about this place.\n\nI've saved it as "${place?.name}" for now.\n\nReply with the restaurant name and I'll try to find it, or edit it directly in the app! 📱`;
+            responseMessage = pickRandom(UNKNOWN_PLACE_MESSAGES)(place?.name || 'Unknown Place');
         } else {
-            responseMessage = `🤔 I couldn't identify ${needsEnhancementCount} places from that post.\n\nI've saved them with placeholder names - reply with the real names and I'll update them, or edit them in the app! 📱`;
+            responseMessage = `🤔 I couldn't identify ${needsEnhancementCount} places from that post.\n\nI've saved them with placeholder names – reply with the real names and I'll update them, or edit them in the app! 📱`;
         }
     } else if (needsEnhancementCount > 0) {
         // Mix of identified and unidentified
-        responseMessage = `✅ Saved ${fullyIdentifiedCount} place${fullyIdentifiedCount > 1 ? 's' : ''} to your list!\n\n🤔 ${needsEnhancementCount} place${needsEnhancementCount > 1 ? 's' : ''} couldn't be identified - reply with ${needsEnhancementCount > 1 ? 'their names' : 'the name'} and I'll try to find ${needsEnhancementCount > 1 ? 'them' : 'it'}!`;
+        const savedMsg = fullyIdentifiedCount === 1 
+            ? pickRandom(SAVED_SUCCESS_MESSAGES)(results.find(r => r.success && !r.needsEnhancement)?.name || 'Unknown')
+            : pickRandom(SAVED_MULTIPLE_MESSAGES)(fullyIdentifiedCount);
+        responseMessage = `${savedMsg}\n\n🤔 ${needsEnhancementCount} place${needsEnhancementCount > 1 ? 's' : ''} couldn't be identified – reply with ${needsEnhancementCount > 1 ? 'their names' : 'the name'} and I'll try to find ${needsEnhancementCount > 1 ? 'them' : 'it'}!`;
     } else if (successCount > 0 && failCount === 0) {
         // All successful
         if (successCount === 1) {
-            responseMessage = `✅ Saved! "${results[0].name}" is now on your Spot list.`;
+            responseMessage = pickRandom(SAVED_SUCCESS_MESSAGES)(results[0].name || 'Unknown');
         } else {
-            responseMessage = `✅ Saved ${successCount} places to your Spot list!`;
+            responseMessage = pickRandom(SAVED_MULTIPLE_MESSAGES)(successCount);
         }
     } else {
         // Partial success
-        responseMessage = `✅ Saved ${successCount} place${successCount > 1 ? 's' : ''}! ` +
-            `(${failCount} link${failCount > 1 ? 's' : ''} couldn't be fetched)`;
+        const savedMsg = fullyIdentifiedCount === 1 
+            ? pickRandom(SAVED_SUCCESS_MESSAGES)(results.find(r => r.success)?.name || 'Unknown')
+            : pickRandom(SAVED_MULTIPLE_MESSAGES)(successCount);
+        responseMessage = `${savedMsg}\n\n(${failCount} link${failCount > 1 ? 's' : ''} couldn't be fetched)`;
     }
     
     await sendInstagramMessage(senderId, responseMessage);
