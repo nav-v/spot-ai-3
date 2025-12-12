@@ -434,12 +434,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).end();
     }
     
-    // Verify cron secret (from cron-job.org)
+    // Verify cron secret (from cron-job.org) - optional if not set
     const authHeader = req.headers.authorization;
-    if (CRON_SECRET && authHeader !== `Bearer ${CRON_SECRET}`) {
-        console.log('[Digest] Unauthorized request');
+    const cronSecretParam = req.query.secret as string;
+    
+    // Allow if: no secret configured, OR secret matches via header, OR secret matches via query param
+    if (CRON_SECRET && 
+        authHeader !== `Bearer ${CRON_SECRET}` && 
+        cronSecretParam !== CRON_SECRET) {
+        console.log('[Digest] Unauthorized request - invalid or missing secret');
         return res.status(401).json({ error: 'Unauthorized' });
     }
+    
+    console.log('[Digest] ✅ Authorization passed');
     
     console.log('[Digest] Starting daily digest generation...');
     const startTime = Date.now();
