@@ -18,7 +18,7 @@ I'm basically that friend who always knows a place — except I actually remembe
 
 Before I start finding your perfect spots, let me get to know you a little...
 
-8 quick questions. Pick what vibes with you.`;
+5 quick questions. Pick what vibes with you.`;
 
   // Typewriter effect
   useEffect(() => {
