@@ -1318,8 +1318,6 @@ async function findAndAddPlace(placeName: string, location: string = 'New York, 
         place = {
             name: placeName,
             type: extraData.isEvent ? 'activity' : 'restaurant',
-            mainCategory: extraData.isEvent ? 'see' : 'eat',
-            subtype: extraData.isEvent ? 'Event' : 'Restaurant',
             address: location,
             description: '',
             sourceUrl: `https://www.google.com/search?q=${encodeURIComponent(placeName + ' ' + location)}`,
@@ -1329,43 +1327,19 @@ async function findAndAddPlace(placeName: string, location: string = 'New York, 
         };
     }
 
-    // === CATEGORIZATION LOGIC ===
+    // CATEGORIZATION LOGIC - determines Eat vs See tab
+    const isEvent = extraData.isEvent || false;
     let mainCategory: 'eat' | 'see' = (place as any).mainCategory || 'eat';
     let subtype = (place as any).subtype || 'Restaurant';
-    const isEvent = extraData.isEvent || false;
     
-    // Events → see/Event
-    if (isEvent) {
-        mainCategory = 'see';
-        subtype = extraData.eventType || 'Event';
-    }
+    if (isEvent) { mainCategory = 'see'; subtype = 'Event'; }
+    const seeTypes = ['activity','attraction','museum','park','theater','shopping','landmark','gallery','entertainment','show','concert','festival'];
+    if (extraData.type && seeTypes.includes(extraData.type.toLowerCase())) { mainCategory = 'see'; subtype = extraData.type.charAt(0).toUpperCase() + extraData.type.slice(1); }
     
-    // See types from extraData.type
-    const seeTypes = ['activity', 'attraction', 'museum', 'park', 'theater', 'shopping', 'landmark', 'gallery', 'entertainment', 'show', 'concert', 'festival'];
-    if (extraData.type && seeTypes.includes(extraData.type.toLowerCase())) {
-        mainCategory = 'see';
-        if (!(place as any).mainCategory) {
-            const typeMap: Record<string, string> = {
-                'activity': 'Activity', 'attraction': 'Landmark', 'museum': 'Museum',
-                'park': 'Park', 'theater': 'Theater', 'shopping': 'Shopping',
-                'landmark': 'Landmark', 'gallery': 'Gallery', 'entertainment': 'Entertainment',
-                'show': 'Show', 'concert': 'Concert', 'festival': 'Festival'
-            };
-            subtype = typeMap[extraData.type.toLowerCase()] || 'Activity';
-        }
-    }
-
-    // === EVENT DATES ===
     let startDate = extraData.startDate || null;
     let endDate = extraData.endDate || null;
-    if (isEvent) {
-        if (!startDate) {
-            startDate = new Date().toISOString().split('T')[0];
-        }
-        if (!endDate) {
-            endDate = startDate;
-        }
-    }
+    if (isEvent && !startDate) startDate = new Date().toISOString().split('T')[0];
+    if (isEvent && !endDate) endDate = startDate;
 
     const newPlace = {
         id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
