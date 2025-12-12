@@ -64,6 +64,8 @@ export function DigestCarousel({
 }: DigestCarouselProps) {
   // Start with first 15 recommendations
   const [visibleRecs, setVisibleRecs] = useState(digest.recommendations.slice(0, 15));
+  // Preloaded next batch (from the digest)
+  const [preloadedBatch, setPreloadedBatch] = useState<DigestRecommendation[]>(digest.next_batch || []);
   // Track all shown IDs to avoid duplicates
   const [shownIds, setShownIds] = useState<Set<string>>(new Set(digest.recommendations.slice(0, 15).map(r => r.id)));
   const [isLoading, setIsLoading] = useState(false);
@@ -72,12 +74,39 @@ export function DigestCarousel({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const handleShowMore = async () => {
+    // First, use preloaded batch if available (instant)
+    if (preloadedBatch.length > 0) {
+      const newRecs = preloadedBatch.filter(rec => !shownIds.has(rec.id));
+      if (newRecs.length > 0) {
+        setVisibleRecs(prev => [...prev, ...newRecs]);
+        setShownIds(prev => {
+          const next = new Set(prev);
+          newRecs.forEach(r => next.add(r.id));
+          return next;
+        });
+        setPreloadedBatch([]); // Clear preloaded batch
+        setTimeout(() => {
+          scrollRef.current?.scrollBy({ left: 200, behavior: 'smooth' });
+        }, 100);
+        
+        // Preload more in background (for next click)
+        onLoadMore().then(more => {
+          if (more.length > 0) {
+            setPreloadedBatch(more);
+          } else {
+            setHasMore(false);
+          }
+        }).catch(() => {});
+        
+        return; // Don't show loading since it was instant
+      }
+    }
+    
+    // No preloaded batch, fetch now
     setIsLoading(true);
     try {
-      // Always fetch fresh recommendations, excluding already shown ones
       const more = await onLoadMore();
       if (more.length > 0) {
-        // Filter out any duplicates
         const newRecs = more.filter(rec => !shownIds.has(rec.id));
         if (newRecs.length > 0) {
           setVisibleRecs(prev => [...prev, ...newRecs]);

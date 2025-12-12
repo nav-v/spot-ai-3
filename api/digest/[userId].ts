@@ -41,16 +41,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
         const db = getSupabase();
         
-        // Get today's date (start of day)
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        // Get today's date (start of day in UTC)
+        const now = new Date();
+        const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
         
-        // Fetch the most recent digest for this user from today
+        console.log(`[Digest Fetch] Looking for digests since: ${todayUTC.toISOString()}`);
+        
+        // Fetch the most recent digest for this user from today (UTC)
         const { data: digest, error } = await db
             .from('daily_digests')
             .select('*')
             .eq('user_id', userId)
-            .gte('created_at', today.toISOString())
+            .gte('created_at', todayUTC.toISOString())
             .order('created_at', { ascending: false })
             .limit(1)
             .single();
@@ -68,9 +70,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             });
         }
         
-        console.log(`[Digest Fetch] Found digest with ${digest.recommendations?.length || 0} recommendations`);
+        const allRecs = digest.recommendations || [];
+        console.log(`[Digest Fetch] Found digest with ${allRecs.length} total recommendations`);
         
-        // Return formatted digest
+        // Split into first 15 (shown) and next 6 (preloaded)
+        const recommendations = allRecs.slice(0, 15);
+        const next_batch = allRecs.slice(15, 21);
+        
+        console.log(`[Digest Fetch] Returning ${recommendations.length} recommendations + ${next_batch.length} preloaded`);
+        
+        // Return formatted digest with split recommendations
         return res.status(200).json({
             hasDigest: true,
             digest: {
@@ -78,7 +87,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 greeting: digest.greeting,
                 weather: digest.weather,
                 intro_text: digest.intro_text,
-                recommendations: digest.recommendations,
+                recommendations: recommendations, // First 15
+                next_batch: next_batch, // Preloaded 6
                 shown_ids: digest.shown_ids,
                 created_at: digest.created_at
             }
