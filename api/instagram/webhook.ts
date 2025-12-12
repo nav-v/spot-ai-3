@@ -617,15 +617,30 @@ async function getInstagramUrlFromAttachment(attachment: any): Promise<string | 
     const payload = attachment.payload as any;
     const attachmentType = attachment.type;
     
-    // Extensive debug logging
-    console.log(`[Webhook] ========== ATTACHMENT DEBUG ==========`);
+    // ========== COMPREHENSIVE DEBUG LOGGING ==========
+    // Log EVERYTHING to understand what Instagram sends us
+    console.log(`[Webhook] ╔══════════════════════════════════════════════════════════════╗`);
+    console.log(`[Webhook] ║               ATTACHMENT DEBUG                               ║`);
+    console.log(`[Webhook] ╚══════════════════════════════════════════════════════════════╝`);
     console.log(`[Webhook] Attachment type: "${attachmentType}"`);
     console.log(`[Webhook] Payload keys: ${payload ? Object.keys(payload).join(', ') : 'null'}`);
-    console.log(`[Webhook] Full payload: ${JSON.stringify(payload)?.substring(0, 1000)}`);
+    
+    // Log each key field explicitly
+    console.log(`[Webhook] --- Key Fields ---`);
+    console.log(`[Webhook] payload.url: "${payload?.url || 'NOT PROVIDED'}"`);
+    console.log(`[Webhook] payload.link: "${payload?.link || 'NOT PROVIDED'}"`);
+    console.log(`[Webhook] payload.title: "${payload?.title?.substring(0, 100) || 'NOT PROVIDED'}..."`);
+    console.log(`[Webhook] payload.reel_video_id: "${payload?.reel_video_id || 'NOT PROVIDED'}"`);
+    console.log(`[Webhook] payload.media_id: "${payload?.media_id || 'NOT PROVIDED'}"`);
+    console.log(`[Webhook] payload.id: "${payload?.id || 'NOT PROVIDED'}"`);
+    console.log(`[Webhook] payload.shortcode: "${payload?.shortcode || 'NOT PROVIDED'}"`);
+    console.log(`[Webhook] payload.permalink: "${payload?.permalink || 'NOT PROVIDED'}"`);
+    console.log(`[Webhook] Full payload JSON: ${JSON.stringify(payload)?.substring(0, 1500)}`);
+    console.log(`[Webhook] --- End Key Fields ---`);
     
     // Check if Instagram provides a shortcode directly
     if (payload?.shortcode) {
-        console.log(`[Webhook] Found shortcode directly in payload: ${payload.shortcode}`);
+        console.log(`[Webhook] ✅ Found shortcode directly in payload: ${payload.shortcode}`);
         const isReel = attachmentType?.includes('reel') || payload?.media_type === 'REEL';
         const url = isReel 
             ? `https://www.instagram.com/reel/${payload.shortcode}/`
@@ -633,19 +648,41 @@ async function getInstagramUrlFromAttachment(attachment: any): Promise<string | 
         return url;
     }
     
+    // Check for permalink field (the holy grail - if it exists)
+    if (payload?.permalink) {
+        console.log(`[Webhook] ✅ Found permalink directly in payload: ${payload.permalink}`);
+        return payload.permalink;
+    }
+    
     // 1. Check if a direct Instagram URL is provided (NOT CDN URLs)
     // CDN URLs look like: lookaside.fbsbx.com or scontent.cdninstagram.com
-    if (payload?.url && payload.url.includes('instagram.com/') && 
-        !payload.url.includes('lookaside') && !payload.url.includes('cdninstagram')) {
-        console.log(`[Webhook] Using direct Instagram URL from payload.url: ${payload.url}`);
-        return payload.url;
+    if (payload?.url) {
+        const urlLower = payload.url.toLowerCase();
+        const isCdnUrl = urlLower.includes('lookaside') || 
+                         urlLower.includes('cdninstagram') || 
+                         urlLower.includes('fbcdn') ||
+                         urlLower.includes('fbsbx');
+        
+        if (payload.url.includes('instagram.com/') && !isCdnUrl) {
+            console.log(`[Webhook] ✅ Using direct Instagram URL from payload.url: ${payload.url}`);
+            return payload.url;
+        } else {
+            console.log(`[Webhook] payload.url is a CDN URL (not usable as permalink): ${payload.url.substring(0, 100)}...`);
+        }
     }
     
     // Check for link field (some attachments have this)
-    if (payload?.link && payload.link.includes('instagram.com/') && 
-        !payload.link.includes('lookaside') && !payload.link.includes('cdninstagram')) {
-        console.log(`[Webhook] Using direct Instagram URL from payload.link: ${payload.link}`);
-        return payload.link;
+    if (payload?.link) {
+        const linkLower = payload.link.toLowerCase();
+        const isCdnLink = linkLower.includes('lookaside') || 
+                          linkLower.includes('cdninstagram') || 
+                          linkLower.includes('fbcdn') ||
+                          linkLower.includes('fbsbx');
+        
+        if (payload.link.includes('instagram.com/') && !isCdnLink) {
+            console.log(`[Webhook] ✅ Using direct Instagram URL from payload.link: ${payload.link}`);
+            return payload.link;
+        }
     }
     
     // 2. Try to get media ID and convert to URL (with oEmbed validation)
