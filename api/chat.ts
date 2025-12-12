@@ -11,9 +11,6 @@ const TOOL_SUBREDDITS = {
     research_events: ['nyc', 'AskNYC', 'NYCbitcheswithtaste', 'newyorkcity']
 };
 
-// Additional web sources for food research (for Gemini site: search)
-const FOOD_WEB_SOURCES = ['eater.com', 'nytimes.com/section/food'];
-
 // Food sites to scrape directly as backup
 const FOOD_SCRAPE_SITES = [
     'https://ny.eater.com/maps/best-new-restaurants-nyc',
