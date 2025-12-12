@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ExternalLink, Loader2 } from 'lucide-react';
+import { ExternalLink, Loader2, Play, Video } from 'lucide-react';
 
 interface InstagramEmbedProps {
   url: string;
@@ -15,12 +15,32 @@ declare global {
   }
 }
 
+// Detect if URL is a CDN video URL (lookaside.fbsbx.com, etc.)
+function isCdnVideoUrl(url: string): boolean {
+  const lowerUrl = url.toLowerCase();
+  return lowerUrl.includes('lookaside') || 
+         lowerUrl.includes('fbsbx') || 
+         lowerUrl.includes('cdninstagram') ||
+         lowerUrl.includes('fbcdn');
+}
+
 export const InstagramEmbed = ({ url }: InstagramEmbedProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  // Check if this is a CDN video URL
+  const isCdnUrl = isCdnVideoUrl(url);
 
   useEffect(() => {
+    // For CDN URLs, no script loading needed
+    if (isCdnUrl) {
+      setIsLoading(false);
+      return;
+    }
+
     // Clean URL - ensure it's a proper Instagram post/reel URL
     const cleanUrl = url.split('?')[0]; // Remove query params
 
@@ -52,16 +72,66 @@ export const InstagramEmbed = ({ url }: InstagramEmbedProps) => {
     const timer = setTimeout(loadScript, 100);
 
     return () => clearTimeout(timer);
-  }, [url]);
+  }, [url, isCdnUrl]);
 
   // Re-process embeds when URL changes
   useEffect(() => {
-    if (window.instgrm) {
+    if (window.instgrm && !isCdnUrl) {
       window.instgrm.Embeds.process();
     }
-  }, [url]);
+  }, [url, isCdnUrl]);
 
   const cleanUrl = url.split('?')[0];
+
+  // ========== CDN VIDEO PLAYER ==========
+  // For CDN URLs, show a native video player
+  if (isCdnUrl) {
+    const handlePlayClick = () => {
+      if (videoRef.current) {
+        if (isPlaying) {
+          videoRef.current.pause();
+        } else {
+          videoRef.current.play();
+        }
+        setIsPlaying(!isPlaying);
+      }
+    };
+
+    return (
+      <div className="relative rounded-xl overflow-hidden bg-black">
+        <video
+          ref={videoRef}
+          src={url}
+          className="w-full max-h-[400px] object-contain"
+          controls
+          playsInline
+          preload="metadata"
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
+          onError={() => setLoadError(true)}
+        >
+          Your browser does not support the video tag.
+        </video>
+        
+        {/* Instagram branding overlay */}
+        <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-1 bg-black/60 rounded-full">
+          <svg viewBox="0 0 24 24" className="w-4 h-4 text-white" fill="currentColor">
+            <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073z"/>
+          </svg>
+          <span className="text-xs text-white font-medium">From Instagram</span>
+        </div>
+
+        {loadError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-secondary/80">
+            <div className="text-center p-4">
+              <Video className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Video unavailable</p>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   if (loadError) {
     // Fallback to link button if embed fails
