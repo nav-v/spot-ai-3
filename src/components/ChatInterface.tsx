@@ -665,13 +665,19 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                                       <div className="flex items-center gap-1.5 mb-2">
                                         <span className="text-[10px] text-muted-foreground/60">via</span>
                                         {matchedPlace.sources.slice(0, 3).map((source, i) => (
-                                          <img 
+                                          <a 
                                             key={i}
-                                            src={`https://www.google.com/s2/favicons?domain=${source}&sz=16`}
-                                            alt={source}
+                                            href={`https://${source}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
                                             title={source}
-                                            className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
-                                          />
+                                          >
+                                            <img 
+                                              src={`https://www.google.com/s2/favicons?domain=${source}&sz=16`}
+                                              alt={source}
+                                              className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
+                                            />
+                                          </a>
                                         ))}
                                       </div>
                                     )}
@@ -783,13 +789,19 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                                     <div className="flex items-center gap-1.5 mb-2">
                                       <span className="text-[10px] text-muted-foreground/60">via</span>
                                       {(matchedPlace as any).sources.slice(0, 3).map((source: string, i: number) => (
-                                        <img 
+                                        <a 
                                           key={i}
-                                          src={`https://www.google.com/s2/favicons?domain=${source}&sz=16`}
-                                          alt={source}
+                                          href={`https://${source}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
                                           title={source}
-                                          className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
-                                        />
+                                        >
+                                          <img 
+                                            src={`https://www.google.com/s2/favicons?domain=${source}&sz=16`}
+                                            alt={source}
+                                            className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
+                                          />
+                                        </a>
                                       ))}
                                     </div>
                                   )}
@@ -935,13 +947,19 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                             <div className="flex items-center gap-1.5 mb-2">
                               <span className="text-[10px] text-muted-foreground/60">via</span>
                               {(place as any).sources.slice(0, 3).map((source: string, i: number) => (
-                                <img 
+                                <a 
                                   key={i}
-                                  src={`https://www.google.com/s2/favicons?domain=${source}&sz=16`}
-                                  alt={source}
+                                  href={`https://${source}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
                                   title={source}
-                                  className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
-                                />
+                                >
+                                  <img 
+                                    src={`https://www.google.com/s2/favicons?domain=${source}&sz=16`}
+                                    alt={source}
+                                    className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
+                                  />
+                                </a>
                               ))}
                             </div>
                           )}
@@ -1032,13 +1050,19 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                             <div className="flex items-center gap-1.5 mb-2">
                               <span className="text-[10px] text-muted-foreground/60">via</span>
                               {(place as any).sources.slice(0, 3).map((source: string, i: number) => (
-                                <img 
+                                <a 
                                   key={i}
-                                  src={`https://www.google.com/s2/favicons?domain=${source}&sz=16`}
-                                  alt={source}
+                                  href={`https://${source}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
                                   title={source}
-                                  className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
-                                />
+                                >
+                                  <img 
+                                    src={`https://www.google.com/s2/favicons?domain=${source}&sz=16`}
+                                    alt={source}
+                                    className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
+                                  />
+                                </a>
                               ))}
                             </div>
                           )}
