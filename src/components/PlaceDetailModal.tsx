@@ -18,6 +18,7 @@ interface PlaceDetailModalProps {
     onToggleFavorite: (id: string) => void;
     onToggleVisited: (id: string) => void;
     onUpdate?: () => void;
+    onEnhance?: (place: Place) => void;
 }
 
 export const PlaceDetailModal = ({
@@ -26,6 +27,7 @@ export const PlaceDetailModal = ({
     onToggleFavorite,
     onToggleVisited,
     onUpdate,
+    onEnhance,
 }: PlaceDetailModalProps) => {
     const [name, setName] = useState(place.name);
     // New category system
@@ -118,19 +120,19 @@ export const PlaceDetailModal = ({
                 : 'activity';
 
             const placeData = {
-                name: name || 'New Place',
+                    name: name || 'New Place',
                 type: legacyType as any,
                 mainCategory,
                 subtype: subtype || 'Other',
-                description,
-                rating,
-                notes,
-                review,
-                imageUrl: uploadedImage || undefined,
-                address: address || '',
-                isEvent,
-                startDate: isEvent ? startDate : undefined,
-                endDate: isEvent ? endDate : undefined,
+                    description,
+                    rating,
+                    notes,
+                    review,
+                    imageUrl: uploadedImage || undefined,
+                    address: address || '',
+                    isEvent,
+                    startDate: isEvent ? startDate : undefined,
+                    endDate: isEvent ? endDate : undefined,
             };
 
             if (place.id === 'new') {
@@ -240,7 +242,7 @@ export const PlaceDetailModal = ({
                                 {/* Subtype Combo-box (predefined + custom) */}
                                 <div className="relative flex-1">
                                     <div className="relative">
-                                        <input
+                                <input
                                             value={customSubtype || subtype}
                                             onChange={(e) => handleCustomSubtypeChange(e.target.value)}
                                             onFocus={() => setShowSubtypeDropdown(true)}
@@ -303,44 +305,44 @@ export const PlaceDetailModal = ({
 
                     {/* Event Details - Only show for See category */}
                     {mainCategory === 'see' && (
-                        <div className="mb-4">
-                            <div className="flex items-center gap-2 mb-2">
-                                <input
-                                    type="checkbox"
-                                    id="isEvent"
-                                    checked={isEvent}
-                                    onChange={(e) => setIsEvent(e.target.checked)}
-                                    className="rounded border-gray-300 text-primary focus:ring-primary w-4 h-4"
-                                />
-                                <label htmlFor="isEvent" className="text-sm font-medium text-foreground cursor-pointer select-none flex items-center gap-1.5">
-                                    <Calendar className="w-3.5 h-3.5" />
-                                    This is a temporary event
-                                </label>
-                            </div>
-
-                            {isEvent && (
-                                <div className="grid grid-cols-2 gap-3 pl-6 animate-in fade-in slide-in-from-top-2 duration-200">
-                                    <div>
-                                        <label className="text-xs text-muted-foreground block mb-1">Start Date</label>
-                                        <input
-                                            type="date"
-                                            value={startDate}
-                                            onChange={(e) => setStartDate(e.target.value)}
-                                            className="w-full text-sm bg-secondary/50 rounded-md px-2 py-1.5 outline-none focus:ring-1 focus:ring-primary text-foreground"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs text-muted-foreground block mb-1">End Date</label>
-                                        <input
-                                            type="date"
-                                            value={endDate}
-                                            onChange={(e) => setEndDate(e.target.value)}
-                                            className="w-full text-sm bg-secondary/50 rounded-md px-2 py-1.5 outline-none focus:ring-1 focus:ring-primary text-foreground"
-                                        />
-                                    </div>
-                                </div>
-                            )}
+                    <div className="mb-4">
+                        <div className="flex items-center gap-2 mb-2">
+                            <input
+                                type="checkbox"
+                                id="isEvent"
+                                checked={isEvent}
+                                onChange={(e) => setIsEvent(e.target.checked)}
+                                className="rounded border-gray-300 text-primary focus:ring-primary w-4 h-4"
+                            />
+                            <label htmlFor="isEvent" className="text-sm font-medium text-foreground cursor-pointer select-none flex items-center gap-1.5">
+                                <Calendar className="w-3.5 h-3.5" />
+                                This is a temporary event
+                            </label>
                         </div>
+
+                        {isEvent && (
+                            <div className="grid grid-cols-2 gap-3 pl-6 animate-in fade-in slide-in-from-top-2 duration-200">
+                                <div>
+                                    <label className="text-xs text-muted-foreground block mb-1">Start Date</label>
+                                    <input
+                                        type="date"
+                                        value={startDate}
+                                        onChange={(e) => setStartDate(e.target.value)}
+                                        className="w-full text-sm bg-secondary/50 rounded-md px-2 py-1.5 outline-none focus:ring-1 focus:ring-primary text-foreground"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs text-muted-foreground block mb-1">End Date</label>
+                                    <input
+                                        type="date"
+                                        value={endDate}
+                                        onChange={(e) => setEndDate(e.target.value)}
+                                        className="w-full text-sm bg-secondary/50 rounded-md px-2 py-1.5 outline-none focus:ring-1 focus:ring-primary text-foreground"
+                                    />
+                                </div>
+                            </div>
+                        )}
+                    </div>
                     )}
 
                     {/* Description */}
@@ -411,6 +413,33 @@ export const PlaceDetailModal = ({
                                 Original Instagram Post
                             </p>
                             <InstagramEmbed url={place.instagramPostUrl} />
+                            
+                            {/* Enhance Button - below video for places that need it */}
+                            {place.needsEnhancement && onEnhance && (
+                                <button
+                                    onClick={() => onEnhance(place)}
+                                    className="w-full mt-3 py-3 bg-gradient-to-r from-orange-500 to-pink-500 text-white rounded-xl font-medium flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg"
+                                >
+                                    <Sparkles className="w-5 h-5" />
+                                    Add Places from this Reel
+                                </button>
+                            )}
+                        </div>
+                    )}
+                    
+                    {/* Enhance button without Instagram post */}
+                    {place.needsEnhancement && !place.instagramPostUrl && onEnhance && (
+                        <div className="mb-6 p-4 bg-orange-50 dark:bg-orange-950/30 rounded-xl border border-orange-200 dark:border-orange-800">
+                            <p className="text-sm text-orange-700 dark:text-orange-300 mb-3">
+                                ✨ This place needs more info! Search for the real name to enhance it.
+                            </p>
+                            <button
+                                onClick={() => onEnhance(place)}
+                                className="w-full py-2.5 bg-orange-500 text-white rounded-lg font-medium flex items-center justify-center gap-2 hover:bg-orange-600 transition-colors"
+                            >
+                                <Sparkles className="w-4 h-4" />
+                                Enhance Place
+                            </button>
                         </div>
                     )}
 

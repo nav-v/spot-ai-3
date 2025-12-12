@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Place, placesApi } from '@/lib/api';
-import { X, Search, Loader2, MapPin, Star, Check, Sparkles } from 'lucide-react';
+import { X, Search, Loader2, MapPin, Star, Check, Sparkles, Plus, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -9,6 +9,8 @@ interface EnhanceModalProps {
   isOpen: boolean;
   onClose: () => void;
   onEnhanced: (updatedPlace: Place) => void;
+  // Optional: for multi-add (like from a "Top 10" reel)
+  onAddMultiple?: (places: SearchResult[]) => void;
 }
 
 interface SearchResult {
@@ -19,13 +21,14 @@ interface SearchResult {
   imageUrl?: string;
 }
 
-export const EnhanceModal = ({ place, isOpen, onClose, onEnhanced }: EnhanceModalProps) => {
+export const EnhanceModal = ({ place, isOpen, onClose, onEnhanced, onAddMultiple }: EnhanceModalProps) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [selectedResult, setSelectedResult] = useState<SearchResult | null>(null);
+  const [selectedResults, setSelectedResults] = useState<SearchResult[]>([]); // Multi-select!
   const [isEnhancing, setIsEnhancing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [addedPlaces, setAddedPlaces] = useState<string[]>([]); // Track what we've added
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -47,16 +50,50 @@ export const EnhanceModal = ({ place, isOpen, onClose, onEnhanced }: EnhanceModa
     }
   };
 
+  // Toggle selection of a result
+  const toggleSelection = (result: SearchResult) => {
+    const isSelected = selectedResults.some(r => r.name === result.name && r.address === result.address);
+    if (isSelected) {
+      setSelectedResults(selectedResults.filter(r => r.name !== result.name || r.address !== result.address));
+    } else {
+      setSelectedResults([...selectedResults, result]);
+    }
+  };
+
+  // Check if a result is selected
+  const isSelected = (result: SearchResult) => {
+    return selectedResults.some(r => r.name === result.name && r.address === result.address);
+  };
+
+  // Check if a result was already added
+  const isAdded = (result: SearchResult) => {
+    return addedPlaces.includes(`${result.name}|${result.address}`);
+  };
+
   const handleEnhance = async () => {
-    if (!selectedResult) return;
+    if (selectedResults.length === 0) return;
     
     setIsEnhancing(true);
     setError(null);
     
     try {
-      const updatedPlace = await placesApi.enhance(place.id, selectedResult.name);
-      onEnhanced(updatedPlace);
-      onClose();
+      // If only one selected, enhance the current place
+      if (selectedResults.length === 1) {
+        const updatedPlace = await placesApi.enhance(place.id, selectedResults[0].name);
+        onEnhanced(updatedPlace);
+        onClose();
+      } else {
+        // Multiple selected - enhance first one, add others as new places
+        const [first, ...rest] = selectedResults;
+        const updatedPlace = await placesApi.enhance(place.id, first.name);
+        onEnhanced(updatedPlace);
+        
+        // If onAddMultiple is provided, use it to add the rest
+        if (onAddMultiple && rest.length > 0) {
+          onAddMultiple(rest);
+        }
+        onClose();
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to enhance place. Please try again.');
     } finally {
@@ -64,10 +101,36 @@ export const EnhanceModal = ({ place, isOpen, onClose, onEnhanced }: EnhanceModa
     }
   };
 
+  // Add a single place without closing the modal
+  const handleAddOne = async (result: SearchResult) => {
+    if (isAdded(result)) return;
+    
+    try {
+      // Create a new place with this result
+      await placesApi.create({
+        name: result.name,
+        address: result.address,
+        type: 'restaurant',
+        mainCategory: 'eat',
+        subtype: result.type || 'Restaurant',
+        subtypes: [],
+        isVisited: false,
+        isFavorite: true,
+        imageUrl: result.imageUrl,
+        rating: result.rating,
+      });
+      
+      setAddedPlaces([...addedPlaces, `${result.name}|${result.address}`]);
+    } catch (err: any) {
+      setError(`Failed to add ${result.name}`);
+    }
+  };
+
   const handleClose = () => {
     setSearchQuery('');
     setSearchResults([]);
-    setSelectedResult(null);
+    setSelectedResults([]);
+    setAddedPlaces([]);
     setError(null);
     onClose();
   };
@@ -114,8 +177,13 @@ export const EnhanceModal = ({ place, isOpen, onClose, onEnhanced }: EnhanceModa
             <p className="text-sm text-muted-foreground mb-1">Currently saved as:</p>
             <p className="font-medium text-foreground">{place.name}</p>
             {place.notes && (
-              <p className="text-xs text-muted-foreground mt-1 italic">{place.notes}</p>
+              <p className="text-xs text-muted-foreground mt-1 italic">
+                Original caption: {place.notes.replace('Original caption: ', '').replace('Original mention: ', '')}
+              </p>
             )}
+            <p className="text-xs text-primary mt-2 font-medium">
+              💡 Tip: Search for each place and tap + to add multiple from a "Top 10" reel!
+            </p>
           </div>
 
           {/* Search input */}
@@ -158,16 +226,17 @@ export const EnhanceModal = ({ place, isOpen, onClose, onEnhanced }: EnhanceModa
             {searchResults.length > 0 && (
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground mb-2">
-                  Select the correct place:
+                  Tap a place to select, or tap + to add it immediately:
                 </p>
                 {searchResults.map((result, index) => (
-                  <button
+                  <div
                     key={index}
-                    onClick={() => setSelectedResult(result)}
                     className={cn(
-                      'w-full p-3 rounded-xl border text-left transition-all',
-                      selectedResult === result
+                      'p-3 rounded-xl border transition-all',
+                      isSelected(result)
                         ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
+                        : isAdded(result)
+                        ? 'border-green-500 bg-green-50 dark:bg-green-950/30'
                         : 'border-border hover:border-primary/50'
                     )}
                   >
@@ -183,11 +252,18 @@ export const EnhanceModal = ({ place, isOpen, onClose, onEnhanced }: EnhanceModa
                           <MapPin className="w-5 h-5 text-muted-foreground" />
                         </div>
                       )}
-                      <div className="flex-1 min-w-0">
+                      <button 
+                        onClick={() => toggleSelection(result)}
+                        className="flex-1 min-w-0 text-left"
+                        disabled={isAdded(result)}
+                      >
                         <div className="flex items-center gap-2">
                           <h4 className="font-medium text-foreground truncate">{result.name}</h4>
-                          {selectedResult === result && (
+                          {isSelected(result) && (
                             <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                          )}
+                          {isAdded(result) && (
+                            <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground truncate">{result.address}</p>
@@ -202,9 +278,25 @@ export const EnhanceModal = ({ place, isOpen, onClose, onEnhanced }: EnhanceModa
                             <span className="text-xs text-muted-foreground">{result.type}</span>
                           )}
                         </div>
-                      </div>
+                      </button>
+                      
+                      {/* Quick Add Button */}
+                      {!isAdded(result) && (
+                        <button
+                          onClick={() => handleAddOne(result)}
+                          className="flex-shrink-0 w-10 h-10 rounded-full bg-primary hover:bg-primary/90 flex items-center justify-center transition-colors"
+                          title="Add this place"
+                        >
+                          <Plus className="w-5 h-5 text-primary-foreground" />
+                        </button>
+                      )}
+                      {isAdded(result) && (
+                        <div className="flex-shrink-0 w-10 h-10 rounded-full bg-green-500 flex items-center justify-center">
+                          <Check className="w-5 h-5 text-white" />
+                        </div>
+                      )}
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -218,9 +310,16 @@ export const EnhanceModal = ({ place, isOpen, onClose, onEnhanced }: EnhanceModa
             )}
           </div>
 
-          {/* Footer */}
-          {selectedResult && (
-            <div className="p-4 border-t border-border bg-secondary/30">
+          {/* Footer - shows count of added places */}
+          <div className="p-4 border-t border-border bg-secondary/30">
+            {addedPlaces.length > 0 && (
+              <div className="flex items-center justify-center gap-2 text-sm text-green-600 dark:text-green-400 mb-3">
+                <CheckCircle2 className="w-4 h-4" />
+                {addedPlaces.length} place{addedPlaces.length > 1 ? 's' : ''} added!
+              </div>
+            )}
+            
+            {selectedResults.length > 0 ? (
               <button
                 onClick={handleEnhance}
                 disabled={isEnhancing}
@@ -229,17 +328,31 @@ export const EnhanceModal = ({ place, isOpen, onClose, onEnhanced }: EnhanceModa
                 {isEnhancing ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Enhancing...
+                    Saving...
                   </>
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4" />
-                    Use "{selectedResult.name}"
+                    {selectedResults.length === 1 
+                      ? `Use "${selectedResults[0].name}"`
+                      : `Save ${selectedResults.length} selected places`
+                    }
                   </>
                 )}
               </button>
-            </div>
-          )}
+            ) : addedPlaces.length > 0 ? (
+              <button
+                onClick={handleClose}
+                className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-medium"
+              >
+                Done
+              </button>
+            ) : (
+              <p className="text-xs text-center text-muted-foreground">
+                Search for places and tap + to add them
+              </p>
+            )}
+          </div>
         </motion.div>
       </motion.div>
     </AnimatePresence>
