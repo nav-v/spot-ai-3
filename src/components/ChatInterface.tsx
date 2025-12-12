@@ -118,6 +118,7 @@ interface DigestData {
   weather: DigestWeather;
   intro_text: string;
   recommendations: DigestRecommendation[];
+  next_batch?: DigestRecommendation[]; // Preloaded next 6
   shown_ids: string[];
   created_at: string;
 }
@@ -130,6 +131,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
   const [reasoningTrace, setReasoningTrace] = useState<string | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const pendingSearchRef = useRef<{ input: string; messages: ChatMessage[] } | null>(null);
   const { toast } = useToast();
   const [savedPlaceNames, setSavedPlaceNames] = useState<Set<string>>(new Set());
@@ -528,38 +530,41 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
     }
   };
 
-  // Handle digest refresh - REPLACES all recommendations with fresh ones
-  const handleDigestRefresh = async (excludedIds: string[], excludedNames: string[]): Promise<DigestRecommendation[]> => {
+  // Handle loading more digest recommendations (adds to existing, doesn't replace)
+  const handleDigestLoadMore = async (): Promise<DigestRecommendation[]> => {
     try {
-      // Get fresh recommendations (replacing existing ones)
-      const response = await fetch('/api/digest/refresh', {
+      // Check if digest has preloaded next_batch
+      if (digest?.next_batch && digest.next_batch.length > 0) {
+        const batch = digest.next_batch;
+        // Clear the next_batch and trigger background preload
+        const updatedDigest = { ...digest, next_batch: [] };
+        setDigest(updatedDigest);
+        
+        // Preload more in background
+        fetch('/api/digest/load-more', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user?.id })
+        }).then(res => res.json()).then(data => {
+          if (data.recommendations?.length > 0) {
+            setDigest(prev => prev ? { ...prev, next_batch: data.recommendations } : prev);
+          }
+        }).catch(() => {});
+        
+        return batch;
+      }
+      
+      // No preloaded batch, fetch now
+      const response = await fetch('/api/digest/load-more', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user?.id,
-          excludedNames // Just send names to exclude
-        })
+        body: JSON.stringify({ userId: user?.id })
       });
       
       const data = await response.json();
-      const newRecs = data.recommendations || [];
-      
-      // Update digest state and cache with new recommendations
-      if (newRecs.length > 0 && digest) {
-        const updatedDigest = { ...digest, recommendations: newRecs };
-        setDigest(updatedDigest);
-        // Update localStorage cache
-        const cacheKey = `spot-digest-${user?.id}`;
-        localStorage.setItem(cacheKey, JSON.stringify({
-          digest: updatedDigest,
-          date: new Date().toDateString()
-        }));
-      }
-      
-      return newRecs;
+      return data.recommendations || [];
     } catch (error) {
-      console.error('Failed to refresh digest:', error);
-      toast({ title: 'Error', description: 'Failed to refresh recommendations.', variant: 'destructive' });
+      console.error('Failed to load more:', error);
       return [];
     }
   };
@@ -710,9 +715,18 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
     setDisplayedTrace('');
   }, [reasoningTrace]);
 
-  // Auto-scroll to bottom when messages or typing updates
+  // Scroll to TOP when digest loads (initial view)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (digest && !digestLoading) {
+      scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'instant' });
+    }
+  }, [digest, digestLoading]);
+
+  // Auto-scroll to bottom when NEW messages are added (not on initial load)
+  useEffect(() => {
+    if (messages.length > 1) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages, displayedText, displayedTrace, reasoningTrace]);
 
   const handleAddRecommendation = async (place: RecommendedPlace) => {
@@ -762,7 +776,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
   return (
     <div className="flex flex-col h-full bg-background relative">
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-6 pb-24" style={{ paddingBottom: 'calc(6rem + env(safe-area-inset-bottom, 0px))' }}>
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-6 pb-24" style={{ paddingBottom: 'calc(6rem + env(safe-area-inset-bottom, 0px))' }}>
         
         {/* Daily Digest (always shown if available - stays visible as chat continues) */}
         {digest && !digestLoading && (
@@ -770,7 +784,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
             digest={digest}
             savedPlaceNames={savedPlaceNames}
             onAddPlace={handleDigestAddPlace}
-            onRefresh={handleDigestRefresh}
+            onLoadMore={handleDigestLoadMore}
             onAskSpot={handleAskSpot}
           />
         )}

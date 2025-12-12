@@ -219,7 +219,7 @@ async function generateDigest(
     userName: string,
     userPlaces: any[],
     research: Awaited<ReturnType<typeof researchForDigest>>
-): Promise<{ intro_text: string; recommendations: DigestRec[] }> {
+): Promise<{ intro_text: string; recommendations: DigestRec[]; next_batch: DigestRec[] }> {
     
     // Get old saved food spots to bump (sorted by oldest first)
     const savedFood = userPlaces
@@ -229,7 +229,14 @@ async function generateDigest(
     
     const savedNames = new Set(userPlaces.map(p => p.name.toLowerCase()));
     
-    const prompt = `You are Spot. Generate a daily digest for ${userName}.
+    // Get user's taste for personalized descriptions
+    const tasteHint = userPlaces
+        .filter(p => p.cuisine || p.subtype)
+        .map(p => p.cuisine || p.subtype)
+        .slice(0, 5)
+        .join(', ') || 'varied tastes';
+    
+    const prompt = `You are Spot. Generate a daily digest for ${userName} who likes: ${tasteHint}.
 
 === EVENTS ===
 ${research.events.text.substring(0, 4000)}
@@ -240,26 +247,25 @@ ${research.food.text.substring(0, 3000)}
 
 DO NOT RECOMMEND (already saved): ${Array.from(savedNames).slice(0, 30).join(', ')}
 
-Generate exactly 15 recommendations in this EXACT pattern:
-EVENT, EVENT, FOOD, EVENT, EVENT, FOOD, EVENT, EVENT, FOOD, EVENT, EVENT, FOOD, EVENT, EVENT, FOOD
-
-So 10 events + 5 food items, alternating 2:1.
+Generate exactly 21 recommendations in 2:1 pattern (EVENT, EVENT, FOOD, repeat 7 times).
+So 14 events + 7 food items.
 
 Return JSON:
 {
     "intro_text": "While you were [something fun], I found some gems...",
     "recommendations": [
-        {"name": "Event Name", "type": "event", "description": "Why it's great", "location": "Venue, Neighborhood", "isEvent": true, "startDate": "2024-12-13", "mainCategory": "see", "subtype": "Concert", "sources": [{"domain": "theskint.com", "url": "https://theskint.com/"}]},
-        {"name": "Event Name 2", "type": "event", "description": "Why", "location": "Venue", "isEvent": true, "startDate": "2024-12-14", "mainCategory": "see", "subtype": "Market", "sources": []},
-        {"name": "Restaurant Name", "type": "restaurant", "description": "Why it's amazing", "location": "Neighborhood", "isEvent": false, "mainCategory": "eat", "subtype": "Italian", "recommendedDishes": ["Pasta", "Tiramisu"], "sources": [{"domain": "reddit.com", "url": ""}]}
+        {"name": "Event Name", "type": "event", "description": "Perfect for you because [reference their taste]...", "location": "Venue, Neighborhood", "isEvent": true, "startDate": "2024-12-13", "mainCategory": "see", "subtype": "Concert", "sources": [{"domain": "theskint.com", "url": ""}]},
+        {"name": "Restaurant", "type": "restaurant", "description": "Since you love ${tasteHint}, you'll enjoy...", "location": "Neighborhood", "isEvent": false, "mainCategory": "eat", "subtype": "Italian", "recommendedDishes": ["Pasta"], "sources": []}
     ]
 }
 
 CRITICAL:
-- Follow the 2:1 pattern exactly (event, event, food, event, event, food...)
+- PERSONALIZE descriptions: explain WHY this rec fits ${userName}'s taste (${tasteHint})
+- Example: "Since you love Italian, this spot's fresh pasta will be right up your alley"
+- Example: "Given your love for live music, this intimate jazz club is a must"
+- Follow the 2:1 pattern (event, event, food, event, event, food...)
 - Events need real dates from research
-- Food needs recommendedDishes
-- Include actual source URLs from citations`;
+- Food needs recommendedDishes`;
 
     try {
         const response = await getAI().models.generateContent({
@@ -283,7 +289,7 @@ CRITICAL:
             const enriched: DigestRec[] = [];
             
             let savedIdx = 0;
-            for (let i = 0; i < recs.length && enriched.length < 15; i++) {
+            for (let i = 0; i < recs.length && enriched.length < 21; i++) {
                 const rec = recs[i];
                 
                 // At food positions (2, 5, 8, 11, 14), check if we should insert saved
@@ -336,14 +342,15 @@ CRITICAL:
             
             return {
                 intro_text: parsed.intro_text || "Here's what's happening in NYC!",
-                recommendations: enriched.slice(0, 15)
+                recommendations: enriched.slice(0, 15),
+                next_batch: enriched.slice(15, 21)
             };
         }
     } catch (error) {
         console.error('[Digest] Generation failed:', error);
     }
     
-    return { intro_text: "Here's what's happening in NYC!", recommendations: [] };
+    return { intro_text: "Here's what's happening in NYC!", recommendations: [], next_batch: [] };
 }
 
 // ============= MAIN HANDLER =============
@@ -381,16 +388,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const digest = await generateDigest(userName, places, research);
         
         // Save to DB
+        // Store all recommendations (15 + 6) for retrieval
+        const allRecs = [...digest.recommendations, ...digest.next_batch];
+        
         const { data: saved } = await db.from('daily_digests').insert({
             user_id: userId,
             weather,
             greeting: `Good ${getTimeOfDay()} ${userName}`,
             intro_text: digest.intro_text,
-            recommendations: digest.recommendations,
+            recommendations: allRecs, // Store all 21
             shown_ids: []
         }).select().single();
         
-        console.log(`[Digest] Done in ${Date.now() - start}ms with ${digest.recommendations.length} recs`);
+        console.log(`[Digest] Done in ${Date.now() - start}ms with ${digest.recommendations.length} + ${digest.next_batch.length} recs`);
         
         return res.status(200).json({
             success: true,
@@ -400,7 +410,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 greeting: `Good ${getTimeOfDay()} ${userName}`,
                 weather,
                 intro_text: digest.intro_text,
-                recommendations: digest.recommendations,
+                recommendations: digest.recommendations, // First 15
+                next_batch: digest.next_batch, // Preloaded 6
                 shown_ids: [],
                 created_at: new Date().toISOString()
             }
