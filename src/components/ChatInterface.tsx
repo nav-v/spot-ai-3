@@ -147,32 +147,52 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
     });
   }, []);
 
-  // Fetch daily digest
+  // Fetch daily digest (or generate on-demand if none exists)
   useEffect(() => {
     if (!user?.id) return;
     
-    const fetchDigest = async () => {
+    const fetchOrGenerateDigest = async () => {
       try {
+        // First, try to fetch existing digest
         const response = await fetch(`/api/digest/${user.id}`);
         const data = await response.json();
         
         if (data.hasDigest && data.digest) {
           setDigest(data.digest);
           setShowDigest(true);
+          setDigestLoading(false);
         } else {
-          setDigest(null);
-          setShowDigest(false);
+          // No digest exists - generate one on-demand
+          console.log('[Digest] No pre-generated digest, generating on-demand...');
+          setDigestLoading(true); // Keep loading state
+          
+          const genResponse = await fetch('/api/digest/generate-single', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: user.id })
+          });
+          
+          const genData = await genResponse.json();
+          
+          if (genData.hasDigest && genData.digest) {
+            setDigest(genData.digest);
+            setShowDigest(true);
+          } else {
+            // Generation failed - fall back to static greeting
+            setDigest(null);
+            setShowDigest(false);
+          }
+          setDigestLoading(false);
         }
       } catch (error) {
-        console.error('Failed to fetch digest:', error);
+        console.error('Failed to fetch/generate digest:', error);
         setDigest(null);
         setShowDigest(false);
-      } finally {
         setDigestLoading(false);
       }
     };
     
-    fetchDigest();
+    fetchOrGenerateDigest();
   }, [user?.id]);
 
   // Typewriter effect states
@@ -737,8 +757,17 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
 
         {/* Digest Loading State */}
         {digestLoading && (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+          <div className="flex flex-col items-center justify-center py-16 space-y-4">
+            <div className="relative">
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                <Sparkles className="w-6 h-6 text-primary animate-pulse" />
+              </div>
+              <div className="absolute inset-0 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-medium text-foreground">Curating your daily digest...</p>
+              <p className="text-xs text-muted-foreground mt-1">Finding events and food based on your taste</p>
+            </div>
           </div>
         )}
 
