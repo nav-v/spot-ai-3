@@ -149,6 +149,48 @@ function mediaIdToShortcode(instagramId: string | number): string {
     }
 }
 
+// ============= INSTAGRAM GRAPH API - GET PERMALINK =============
+// Fetch the actual Instagram post URL using the Graph API
+// This is more reliable than manual ID-to-shortcode conversion
+// Note: PAGE_ACCESS_TOKEN is defined later in the file
+
+async function getInstagramPermalink(mediaId: string): Promise<string | null> {
+    const PAGE_ACCESS_TOKEN = process.env.INSTAGRAM_PAGE_ACCESS_TOKEN || '';
+    if (!PAGE_ACCESS_TOKEN) {
+        console.log('[Permalink] No PAGE_ACCESS_TOKEN, falling back to shortcode conversion');
+        return null;
+    }
+    
+    try {
+        // Clean up the media ID (remove underscore suffix if present)
+        const cleanMediaId = mediaId.includes('_') ? mediaId.split('_')[0] : mediaId;
+        
+        console.log(`[Permalink] Fetching permalink for media ID: ${cleanMediaId}`);
+        
+        const url = `https://graph.instagram.com/${cleanMediaId}?fields=permalink,media_type&access_token=${PAGE_ACCESS_TOKEN}`;
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        console.log(`[Permalink] API response: ${JSON.stringify(data)}`);
+        
+        if (data.error) {
+            console.log(`[Permalink] API error: ${data.error.message}`);
+            return null;
+        }
+        
+        if (data.permalink) {
+            console.log(`[Permalink] Got permalink: ${data.permalink} (media_type: ${data.media_type})`);
+            return data.permalink;
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('[Permalink] Failed to fetch:', error);
+        return null;
+    }
+}
+
 // ============= GOOGLE PLACES API =============
 // Same as chat.ts - search and enrich place data
 const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY || '';
@@ -532,7 +574,8 @@ function extractPlaceNameFromCaptionRegex(caption: string): { placeName: string;
 }
 
 // Construct Instagram URL from attachment data
-function getInstagramUrlFromAttachment(attachment: any): string | null {
+// Now ASYNC to support Graph API permalink fetching
+async function getInstagramUrlFromAttachment(attachment: any): Promise<string | null> {
     const payload = attachment.payload as any;
     const attachmentType = attachment.type;
     
@@ -567,81 +610,64 @@ function getInstagramUrlFromAttachment(attachment: any): string | null {
         return payload.link;
     }
     
-    // 2. For Reels - check multiple possible field names
-    if (attachmentType === 'ig_reel' || attachmentType === 'reel') {
-        const mediaId = payload?.reel_video_id || payload?.id || payload?.media_id;
-        console.log(`[Webhook] Reel detected. reel_video_id=${payload?.reel_video_id}, id=${payload?.id}, media_id=${payload?.media_id}`);
-        if (mediaId) {
-            const shortcode = mediaIdToShortcode(String(mediaId));
-            const url = `https://www.instagram.com/reel/${shortcode}/`;
-            console.log(`[Webhook] Reel: Converted ID "${mediaId}" to shortcode "${shortcode}" -> ${url}`);
-            return url;
+    // 2. Try to get media ID and use Graph API for permalink (MOST RELIABLE)
+    const mediaId = payload?.reel_video_id || payload?.ig_post_media_id || payload?.media_id || payload?.id;
+    
+    if (mediaId) {
+        console.log(`[Webhook] Found media ID: ${mediaId}, trying Graph API for permalink...`);
+        
+        // Try Graph API first - this gives us the REAL permalink
+        const permalink = await getInstagramPermalink(String(mediaId));
+        if (permalink) {
+            console.log(`[Webhook] ✅ Got permalink from Graph API: ${permalink}`);
+            return permalink;
         }
-        console.log(`[Webhook] Reel attachment but no media ID found in any field`);
+        
+        // Fall back to manual shortcode conversion if Graph API fails
+        console.log(`[Webhook] Graph API failed, falling back to manual shortcode conversion`);
+        const isReel = attachmentType?.includes('reel') || 
+                       payload?.reel_video_id ||
+                       payload?.media_product_type === 'REELS';
+        
+        const shortcode = mediaIdToShortcode(String(mediaId));
+        const url = isReel 
+            ? `https://www.instagram.com/reel/${shortcode}/`
+            : `https://www.instagram.com/p/${shortcode}/`;
+        console.log(`[Webhook] Fallback shortcode conversion: ${url}`);
+        return url;
     }
     
-    // 3. For shares/posts - check multiple possible field names  
-    if (attachmentType === 'share' || attachmentType === 'media_share' || attachmentType === 'ig_post') {
-        // Instagram uses different field names in different contexts
-        const mediaId = payload?.ig_post_media_id || payload?.media_id || payload?.id;
-        console.log(`[Webhook] Share detected. ig_post_media_id=${payload?.ig_post_media_id}, media_id=${payload?.media_id}, id=${payload?.id}`);
-        if (mediaId) {
-            const shortcode = mediaIdToShortcode(String(mediaId));
-            const url = `https://www.instagram.com/p/${shortcode}/`;
-            console.log(`[Webhook] Post: Converted ID "${mediaId}" to shortcode "${shortcode}"`);
-            return url;
-        }
-        console.log(`[Webhook] Share attachment but no media ID found`);
-    }
-    
-    // 4. For stories
+    // 3. For stories
     if (attachmentType === 'ig_story' || attachmentType === 'story') {
         const storyId = payload?.story_id || payload?.id;
         if (storyId) {
-            // Stories don't have permanent URLs, but we can try
             console.log(`[Webhook] Story detected with ID: ${storyId} (stories are ephemeral)`);
             return null; // Stories aren't accessible via URL
         }
     }
     
-    // 5. Fallback: Try to find ANY media ID in the payload
-    const possibleIdFields = ['reel_video_id', 'ig_post_media_id', 'media_id', 'id', 'post_id'];
-    for (const field of possibleIdFields) {
-        if (payload?.[field]) {
-            const mediaId = String(payload[field]);
-            console.log(`[Webhook] Fallback: Found ID in field "${field}": ${mediaId}`);
-            
-            // Determine if it's a reel based on:
-            // 1. Attachment type contains 'reel'
-            // 2. Field name is 'reel_video_id'
-            // 3. media_product_type is 'REELS'
-            const isReel = attachmentType?.includes('reel') || 
-                           field === 'reel_video_id' ||
-                           payload?.media_product_type === 'REELS';
-            
-            const shortcode = mediaIdToShortcode(mediaId);
-            const url = isReel 
-                ? `https://www.instagram.com/reel/${shortcode}/`
-                : `https://www.instagram.com/p/${shortcode}/`;
-            console.log(`[Webhook] Fallback: Converted to ${url} (isReel: ${isReel})`);
-            return url;
-        }
-    }
-    
-    // 6. Last resort: If we have a CDN URL, try to extract media ID from it
+    // 4. Last resort: If we have a CDN URL, try to extract media ID from it
     if (payload?.url && (payload.url.includes('lookaside') || payload.url.includes('cdninstagram'))) {
         // CDN URLs sometimes contain asset_id parameter
         const assetMatch = payload.url.match(/asset_id=(\d+)/);
         if (assetMatch) {
             const assetId = assetMatch[1];
             console.log(`[Webhook] Extracted asset_id from CDN URL: ${assetId}`);
+            
+            // Try Graph API with this asset ID
+            const permalink = await getInstagramPermalink(assetId);
+            if (permalink) {
+                console.log(`[Webhook] ✅ Got permalink from Graph API (via asset_id): ${permalink}`);
+                return permalink;
+            }
+            
+            // Fall back to shortcode conversion
             const shortcode = mediaIdToShortcode(assetId);
-            // Assume reel if it's an ig_reel type, otherwise post
             const isReel = attachmentType === 'ig_reel';
             const url = isReel
                 ? `https://www.instagram.com/reel/${shortcode}/`
                 : `https://www.instagram.com/p/${shortcode}/`;
-            console.log(`[Webhook] CDN URL extracted: ${url}`);
+            console.log(`[Webhook] CDN URL fallback: ${url}`);
             return url;
         }
     }
@@ -1016,6 +1042,13 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
     const messageId = message.message?.mid;
     const messageText = message.message?.text || '';
     
+    // ============= IGNORE ECHO MESSAGES =============
+    // Echo messages are copies of messages WE sent - don't process them!
+    if ((message.message as any)?.is_echo) {
+        console.log(`[Webhook] Ignoring echo message (our own outgoing message)`);
+        return;
+    }
+    
     console.log(`[Webhook] Processing message from ${senderId}: "${messageText.substring(0, 100)}..."`);
     
     // ============= CHECK FOR VERIFICATION CODE =============
@@ -1131,7 +1164,7 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
     
     if (message.message?.attachments) {
         for (const attachment of message.message.attachments) {
-            const instagramUrl = getInstagramUrlFromAttachment(attachment);
+            const instagramUrl = await getInstagramUrlFromAttachment(attachment);
             if (instagramUrl) {
                 console.log(`[Webhook] Converted attachment to URL: ${instagramUrl}`);
                 const payload = attachment.payload as any;
