@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Sun, Cloud, CloudRain, Snowflake, RefreshCw, Plus, Check, MapPin, Loader2, ExternalLink } from 'lucide-react';
 import { DraggableScrollContainer } from './DraggableScrollContainer';
-import { RecommendationModal } from './RecommendationModal';
 
 interface WeatherData {
   temp: number;
@@ -69,9 +68,6 @@ export function DigestCarousel({
   const [shownIds, setShownIds] = useState<Set<string>>(new Set(digest.recommendations.slice(0, 15).map(r => r.id)));
   const [isLoading, setIsLoading] = useState(false);
   const [addingPlaces, setAddingPlaces] = useState<Set<string>>(new Set());
-  // Modal state
-  const [selectedPlace, setSelectedPlace] = useState<DigestRecommendation | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -119,20 +115,6 @@ export function DigestCarousel({
     }
   };
 
-  const handleCardClick = (place: DigestRecommendation) => {
-    setSelectedPlace(place);
-    setIsModalOpen(true);
-  };
-
-  const handleModalClose = () => {
-    setIsModalOpen(false);
-    setSelectedPlace(null);
-  };
-
-  const handleModalAdd = async (place: any) => {
-    await handleAddPlace(place as DigestRecommendation);
-  };
-
   return (
     <div className="space-y-3">
       {/* Header: Greeting + Weather */}
@@ -158,11 +140,7 @@ export function DigestCarousel({
             const isAdding = addingPlaces.has(place.id);
 
             return (
-              <div 
-                key={place.id || idx} 
-                className="min-w-[70%] sm:min-w-[260px] sm:w-[260px] bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all snap-center flex flex-col cursor-pointer"
-                onClick={() => handleCardClick(place)}
-              >
+              <div key={place.id || idx} className="min-w-[70%] sm:min-w-[260px] sm:w-[260px] bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all snap-center flex flex-col">
                 {/* Image Area */}
                 <div className="h-32 w-full bg-muted relative overflow-hidden group">
                   {place.imageUrl ? (
@@ -226,7 +204,6 @@ export function DigestCarousel({
                         href={place.website}
                         target="_blank"
                         rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
                         className="flex-1 flex items-center justify-center gap-1.5 bg-secondary/50 hover:bg-secondary text-secondary-foreground text-[11px] py-2 rounded-lg font-medium"
                       >
                         <ExternalLink className="w-3 h-3" />
@@ -234,7 +211,7 @@ export function DigestCarousel({
                       </a>
                     )}
                     <button
-                      onClick={(e) => { e.stopPropagation(); handleAddPlace(place); }}
+                      onClick={() => handleAddPlace(place)}
                       disabled={isSaved || isAdding}
                       className={`${place.website ? 'flex-1' : 'w-full'} flex items-center justify-center gap-1.5 text-[11px] py-2 rounded-lg font-medium ${
                         isSaved ? 'bg-secondary text-muted-foreground cursor-not-allowed' : 'bg-primary text-primary-foreground hover:bg-primary/90'
@@ -270,15 +247,6 @@ export function DigestCarousel({
         Ask me to plan, find, or add food, places and events
         <span className="inline-block w-1.5 h-1.5 bg-orange-500 rounded-full ml-1 align-middle" style={{ animation: 'pulse-fast 0.4s ease-in-out infinite' }} />
       </p>
-
-      {/* Expanded place modal */}
-      <RecommendationModal
-        place={selectedPlace}
-        isOpen={isModalOpen}
-        onClose={handleModalClose}
-        onAdd={handleModalAdd}
-        isSaved={selectedPlace ? savedPlaceNames.has(selectedPlace.name.toLowerCase()) : false}
-      />
     </div>
   );
 }

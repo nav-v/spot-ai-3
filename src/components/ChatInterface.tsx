@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, MapPin, Loader2, Sparkles, ExternalLink, Calendar, Plus, ArrowRight, Check } from 'lucide-react';
-import { RecommendationModal } from './RecommendationModal';
 import { useToast } from '@/hooks/use-toast';
 import { PlaceDetailModal } from './PlaceDetailModal';
 import { DraggableScrollContainer } from './DraggableScrollContainer';
@@ -142,10 +141,6 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
   const [digestLoading, setDigestLoading] = useState(true);
   const [showDigest, setShowDigest] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
-  
-  // Recommendation modal state
-  const [selectedRecommendation, setSelectedRecommendation] = useState<RecommendedPlace | null>(null);
-  const [isRecModalOpen, setIsRecModalOpen] = useState(false);
 
   useEffect(() => {
     placesApi.getAll().then(places => {
@@ -559,21 +554,6 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
     inputRef.current?.focus();
   };
 
-  // Recommendation modal handlers
-  const handleRecCardClick = (place: RecommendedPlace) => {
-    setSelectedRecommendation(place);
-    setIsRecModalOpen(true);
-  };
-
-  const handleRecModalClose = () => {
-    setIsRecModalOpen(false);
-    setSelectedRecommendation(null);
-  };
-
-  const handleRecModalAdd = async (place: any) => {
-    await handleAddRecommendation(place as RecommendedPlace);
-  };
-
   const handleSend = async () => {
     if (!input.trim()) return;
     // Digest stays visible - just scrolls up with the chat
@@ -811,10 +791,10 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
           />
         )}
 
-        {/* Messages (hide first message if we have a digest) */}
+        {/* Messages (hide first message if we have a digest or are loading it) */}
         {messages.map((msg, idx) => {
-          // Hide the initial greeting message if we have a digest
-          if (idx === 0 && digest) return null;
+          // Hide the initial greeting message if we have a digest or are loading one
+          if (idx === 0 && (digest || digestLoading)) return null;
           
           return (
           <div
@@ -866,10 +846,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                             return (
                               <div key={i} className="my-5">
                                 <p className="mb-2">{formattedLine}</p>
-                                <div 
-                                  className="max-w-sm bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow animate-in fade-in duration-300 cursor-pointer"
-                                  onClick={() => handleRecCardClick(matchedPlace)}
-                                >
+                                <div className="max-w-sm bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow animate-in fade-in duration-300">
                                   {matchedPlace.imageUrl && (
                                     <div className="h-32 w-full overflow-hidden relative group">
                                       <img src={matchedPlace.imageUrl} alt={matchedPlace.name} className="w-full h-full object-cover" />
@@ -912,11 +889,11 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                                     )}
                                     {!matchedPlace.sources?.length && !matchedPlace.recommendedDishes?.length && <div className="mb-2" />}
                                     <div className="flex gap-2">
-                                      <a href={matchedPlace.website} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="flex-1 flex items-center justify-center gap-1.5 bg-secondary/50 hover:bg-secondary text-secondary-foreground text-[10px] py-2 rounded-lg transition-colors font-medium">
+                                      <a href={matchedPlace.website} target="_blank" rel="noopener noreferrer" className="flex-1 flex items-center justify-center gap-1.5 bg-secondary/50 hover:bg-secondary text-secondary-foreground text-[10px] py-2 rounded-lg transition-colors font-medium">
                                         <ExternalLink className="w-3 h-3" /> Website
                                       </a>
                                       <button
-                                        onClick={(e) => { e.stopPropagation(); !savedPlaceNames.has(matchedPlace.name.toLowerCase()) && handleAddRecommendation(matchedPlace); }}
+                                        onClick={() => !savedPlaceNames.has(matchedPlace.name.toLowerCase()) && handleAddRecommendation(matchedPlace)}
                                         disabled={savedPlaceNames.has(matchedPlace.name.toLowerCase())}
                                         className={`flex-1 flex items-center justify-center gap-1.5 text-[10px] py-2 rounded-lg transition-colors font-medium shadow-sm ${savedPlaceNames.has(matchedPlace.name.toLowerCase())
                                           ? 'bg-secondary text-muted-foreground cursor-not-allowed'
@@ -989,10 +966,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                           return (
                             <div key={i} className="my-5">
                               <p className="mb-2">{formattedLine}</p>
-                              <div 
-                                className="max-w-sm bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer"
-                                onClick={() => handleRecCardClick(matchedPlace)}
-                              >
+                              <div className="max-w-sm bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
                                 {matchedPlace.imageUrl && (
                                   <div className="h-32 w-full overflow-hidden relative group">
                                     <img src={matchedPlace.imageUrl} alt={matchedPlace.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
@@ -1048,14 +1022,13 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                                       href={matchedPlace.website}
                                       target="_blank"
                                       rel="noopener noreferrer"
-                                      onClick={(e) => e.stopPropagation()}
                                       className="flex-1 flex items-center justify-center gap-1.5 bg-secondary/50 hover:bg-secondary text-secondary-foreground text-[10px] py-2 rounded-lg transition-colors font-medium"
                                     >
                                       <ExternalLink className="w-3 h-3" />
                                       Website
                                     </a>
                                     <button
-                                      onClick={(e) => { e.stopPropagation(); !savedPlaceNames.has(matchedPlace.name.toLowerCase()) && handleAddRecommendation(matchedPlace); }}
+                                      onClick={() => !savedPlaceNames.has(matchedPlace.name.toLowerCase()) && handleAddRecommendation(matchedPlace)}
                                       disabled={savedPlaceNames.has(matchedPlace.name.toLowerCase())}
                                       className={`flex-1 flex items-center justify-center gap-1.5 text-[10px] py-2 rounded-lg transition-colors font-medium shadow-sm ${savedPlaceNames.has(matchedPlace.name.toLowerCase())
                                         ? 'bg-secondary text-muted-foreground cursor-not-allowed'
@@ -1516,15 +1489,6 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
           />
         )
       }
-
-      {/* Recommendation expanded modal */}
-      <RecommendationModal
-        place={selectedRecommendation}
-        isOpen={isRecModalOpen}
-        onClose={handleRecModalClose}
-        onAdd={handleRecModalAdd}
-        isSaved={selectedRecommendation ? savedPlaceNames.has(selectedRecommendation.name.toLowerCase()) : false}
-      />
     </div >
   );
 }
