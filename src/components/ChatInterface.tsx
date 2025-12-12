@@ -20,11 +20,17 @@ import {
 
 interface RecommendedPlace {
   name: string;
-  type?: 'restaurant' | 'activity' | 'cafe' | 'bar' | 'attraction';
+  type?: 'restaurant' | 'activity' | 'cafe' | 'bar' | 'attraction' | 'event';
   description: string;
   website: string;
   location: string;
   imageUrl?: string;
+  // Event fields
+  isEvent?: boolean;
+  startDate?: string;
+  endDate?: string;
+  mainCategory?: 'eat' | 'see';
+  subtype?: string;
 }
 
 interface ReservationData {
@@ -506,14 +512,33 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
 
   const handleAddRecommendation = async (place: RecommendedPlace) => {
     try {
+      // Determine if this is an event based on multiple signals
+      const isEvent = place.isEvent || place.type === 'event' || Boolean(place.startDate);
+      
+      // Determine mainCategory: events go to 'see', restaurants go to 'eat'
+      const mainCategory = place.mainCategory || (isEvent ? 'see' : 
+        ['restaurant', 'cafe', 'bar'].includes(place.type || '') ? 'eat' : 'see');
+      
+      // Determine subtype
+      const subtype = place.subtype || (isEvent ? 'Event' : 
+        place.type === 'cafe' ? 'Coffee' : 
+        place.type === 'bar' ? 'Bar' : 
+        place.type === 'activity' ? 'Activity' :
+        place.type === 'attraction' ? 'Landmark' : 'Restaurant');
+      
       await placesApi.create({
         name: place.name,
-        // @ts-ignore - location is not in Place interface but useful for context if needed, or just map to address
         address: place.location,
-        type: place.type || 'restaurant', // Use provided type or fallback
+        type: (place.type === 'event' ? 'activity' : place.type) || 'restaurant',
         description: place.description,
         imageUrl: place.imageUrl,
-        sourceUrl: place.website
+        sourceUrl: place.website,
+        // Event and category fields
+        isEvent,
+        startDate: place.startDate,
+        endDate: place.endDate || place.startDate, // Default endDate to startDate if not provided
+        mainCategory,
+        subtype,
       });
       setSavedPlaceNames(prev => new Set(prev).add(place.name.toLowerCase()));
       toast({ title: 'Added!', description: `${place.name} has been added to your list.` });
