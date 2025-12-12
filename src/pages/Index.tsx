@@ -455,10 +455,6 @@ const Index = () => {
             onToggleFavorite={handleToggleFavorite}
             onToggleVisited={handleToggleVisited}
             onUpdate={fetchPlaces}
-            onEnhance={(place) => {
-              setDetailModalPlace(null); // Close detail modal
-              setEnhanceModalPlace(place); // Open enhance modal
-            }}
           />
         )}
 

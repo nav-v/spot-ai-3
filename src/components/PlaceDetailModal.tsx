@@ -1,7 +1,7 @@
 
 import { useState, useMemo } from 'react';
 import { Place, placesApi } from '@/lib/api';
-import { X, Star, CheckCircle, MapPin, Camera, Upload, Trash2, Sparkles, Calendar, ChevronDown } from 'lucide-react';
+import { X, Star, CheckCircle, MapPin, Camera, Upload, Trash2, Sparkles, Calendar, ChevronDown, Search, Loader2, Plus, Check, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { 
@@ -12,13 +12,20 @@ import {
 } from '@/lib/placeCategories';
 import { InstagramEmbed } from './InstagramEmbed';
 
+interface InlineSearchResult {
+    name: string;
+    address: string;
+    rating?: number;
+    type?: string;
+    imageUrl?: string;
+}
+
 interface PlaceDetailModalProps {
     place: Place;
     onClose: () => void;
     onToggleFavorite: (id: string) => void;
     onToggleVisited: (id: string) => void;
     onUpdate?: () => void;
-    onEnhance?: (place: Place) => void;
 }
 
 export const PlaceDetailModal = ({
@@ -27,7 +34,6 @@ export const PlaceDetailModal = ({
     onToggleFavorite,
     onToggleVisited,
     onUpdate,
-    onEnhance,
 }: PlaceDetailModalProps) => {
     const [name, setName] = useState(place.name);
     // New category system
@@ -44,6 +50,13 @@ export const PlaceDetailModal = ({
     const [isEvent, setIsEvent] = useState(place.isEvent || false);
     const [startDate, setStartDate] = useState(place.startDate || '');
     const [endDate, setEndDate] = useState(place.endDate || '');
+    
+    // Inline enhance state
+    const [inlineSearchQuery, setInlineSearchQuery] = useState('');
+    const [inlineSearchResults, setInlineSearchResults] = useState<InlineSearchResult[]>([]);
+    const [isInlineSearching, setIsInlineSearching] = useState(false);
+    const [addedPlaces, setAddedPlaces] = useState<string[]>([]);
+    const [inlineError, setInlineError] = useState<string | null>(null);
 
     // Filter out invalid images (logos, tiny images, etc.)
     const isValidImage = (url: string | null | undefined): boolean => {
@@ -58,6 +71,63 @@ export const PlaceDetailModal = ({
     const [isSaving, setIsSaving] = useState(false);
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
     const { toast } = useToast();
+
+    // Inline enhance functions
+    const handleInlineSearch = async () => {
+        if (!inlineSearchQuery.trim()) return;
+        
+        setIsInlineSearching(true);
+        setInlineError(null);
+        setInlineSearchResults([]);
+        
+        try {
+            const results = await placesApi.searchPlaces(inlineSearchQuery, 'New York, NY');
+            setInlineSearchResults(results);
+            if (results.length === 0) {
+                setInlineError('No places found. Try a different search.');
+            }
+        } catch (err) {
+            setInlineError('Search failed. Please try again.');
+        } finally {
+            setIsInlineSearching(false);
+        }
+    };
+
+    const handleAddPlace = async (result: InlineSearchResult) => {
+        const key = `${result.name}|${result.address}`;
+        if (addedPlaces.includes(key)) return;
+        
+        try {
+            await placesApi.create({
+                name: result.name,
+                address: result.address,
+                type: 'restaurant',
+                mainCategory: 'eat',
+                subtype: result.type || 'Restaurant',
+                subtypes: [],
+                isVisited: false,
+                isFavorite: true,
+                imageUrl: result.imageUrl,
+                rating: result.rating,
+            });
+            
+            setAddedPlaces([...addedPlaces, key]);
+            toast({
+                title: "Added!",
+                description: `${result.name} saved to your list`,
+            });
+        } catch (err: any) {
+            toast({
+                title: "Error",
+                description: `Failed to add ${result.name}`,
+                variant: "destructive",
+            });
+        }
+    };
+
+    const isPlaceAdded = (result: InlineSearchResult) => {
+        return addedPlaces.includes(`${result.name}|${result.address}`);
+    };
 
     // Get available subtypes based on main category and event status
     const availableSubtypes = useMemo(() => {
@@ -414,32 +484,177 @@ export const PlaceDetailModal = ({
                             </p>
                             <InstagramEmbed url={place.instagramPostUrl} />
                             
-                            {/* Enhance Button - below video for places that need it */}
-                            {place.needsEnhancement && onEnhance && (
-                                <button
-                                    onClick={() => onEnhance(place)}
-                                    className="w-full mt-3 py-3 bg-gradient-to-r from-orange-500 to-pink-500 text-white rounded-xl font-medium flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg"
-                                >
-                                    <Sparkles className="w-5 h-5" />
-                                    Add Places from this Reel
-                                </button>
+                            {/* Inline Add Places - below video */}
+                            {place.needsEnhancement && (
+                                <div className="mt-3 p-3 bg-gradient-to-r from-orange-50 to-pink-50 dark:from-orange-950/30 dark:to-pink-950/30 rounded-xl border border-orange-200/50 dark:border-orange-800/50">
+                                    <p className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
+                                        <Sparkles className="w-4 h-4 text-orange-500" />
+                                        Add places from this reel
+                                    </p>
+                                    
+                                    {/* Search input */}
+                                    <div className="flex gap-2 mb-2">
+                                        <div className="flex-1 relative">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                            <input
+                                                type="text"
+                                                value={inlineSearchQuery}
+                                                onChange={(e) => setInlineSearchQuery(e.target.value)}
+                                                onKeyDown={(e) => e.key === 'Enter' && handleInlineSearch()}
+                                                placeholder="Search for a place..."
+                                                className="w-full pl-9 pr-3 py-2 bg-white dark:bg-background rounded-lg text-sm border border-border focus:outline-none focus:ring-2 focus:ring-primary"
+                                            />
+                                        </div>
+                                        <button
+                                            onClick={handleInlineSearch}
+                                            disabled={isInlineSearching || !inlineSearchQuery.trim()}
+                                            className="px-3 py-2 bg-primary text-primary-foreground rounded-lg font-medium text-sm disabled:opacity-50"
+                                        >
+                                            {isInlineSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Go'}
+                                        </button>
+                                    </div>
+                                    
+                                    {/* Added count */}
+                                    {addedPlaces.length > 0 && (
+                                        <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400 mb-2">
+                                            <CheckCircle2 className="w-3.5 h-3.5" />
+                                            {addedPlaces.length} place{addedPlaces.length > 1 ? 's' : ''} added
+                                        </div>
+                                    )}
+                                    
+                                    {/* Error */}
+                                    {inlineError && (
+                                        <p className="text-xs text-red-500 mb-2">{inlineError}</p>
+                                    )}
+                                    
+                                    {/* Search results */}
+                                    {inlineSearchResults.length > 0 && (
+                                        <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                                            {inlineSearchResults.map((result, index) => (
+                                                <div
+                                                    key={index}
+                                                    className={cn(
+                                                        'flex items-center gap-2 p-2 rounded-lg transition-colors',
+                                                        isPlaceAdded(result) 
+                                                            ? 'bg-green-100 dark:bg-green-900/30' 
+                                                            : 'bg-white dark:bg-background hover:bg-secondary'
+                                                    )}
+                                                >
+                                                    {result.imageUrl ? (
+                                                        <img src={result.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
+                                                    ) : (
+                                                        <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center flex-shrink-0">
+                                                            <MapPin className="w-4 h-4 text-muted-foreground" />
+                                                        </div>
+                                                    )}
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-medium truncate">{result.name}</p>
+                                                        <p className="text-xs text-muted-foreground truncate">{result.address}</p>
+                                                    </div>
+                                                    {isPlaceAdded(result) ? (
+                                                        <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                                                            <Check className="w-4 h-4 text-white" />
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => handleAddPlace(result)}
+                                                            className="w-8 h-8 rounded-full bg-primary hover:bg-primary/90 flex items-center justify-center flex-shrink-0 transition-colors"
+                                                        >
+                                                            <Plus className="w-4 h-4 text-primary-foreground" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             )}
                         </div>
                     )}
                     
-                    {/* Enhance button without Instagram post */}
-                    {place.needsEnhancement && !place.instagramPostUrl && onEnhance && (
-                        <div className="mb-6 p-4 bg-orange-50 dark:bg-orange-950/30 rounded-xl border border-orange-200 dark:border-orange-800">
-                            <p className="text-sm text-orange-700 dark:text-orange-300 mb-3">
-                                ✨ This place needs more info! Search for the real name to enhance it.
+                    {/* Inline enhance without Instagram post */}
+                    {place.needsEnhancement && !place.instagramPostUrl && (
+                        <div className="mb-6 p-3 bg-gradient-to-r from-orange-50 to-pink-50 dark:from-orange-950/30 dark:to-pink-950/30 rounded-xl border border-orange-200/50 dark:border-orange-800/50">
+                            <p className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
+                                <Sparkles className="w-4 h-4 text-orange-500" />
+                                Search for this place
                             </p>
-                            <button
-                                onClick={() => onEnhance(place)}
-                                className="w-full py-2.5 bg-orange-500 text-white rounded-lg font-medium flex items-center justify-center gap-2 hover:bg-orange-600 transition-colors"
-                            >
-                                <Sparkles className="w-4 h-4" />
-                                Enhance Place
-                            </button>
+                            
+                            {/* Search input */}
+                            <div className="flex gap-2 mb-2">
+                                <div className="flex-1 relative">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                    <input
+                                        type="text"
+                                        value={inlineSearchQuery}
+                                        onChange={(e) => setInlineSearchQuery(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleInlineSearch()}
+                                        placeholder="Enter the real name..."
+                                        className="w-full pl-9 pr-3 py-2 bg-white dark:bg-background rounded-lg text-sm border border-border focus:outline-none focus:ring-2 focus:ring-primary"
+                                    />
+                                </div>
+                                <button
+                                    onClick={handleInlineSearch}
+                                    disabled={isInlineSearching || !inlineSearchQuery.trim()}
+                                    className="px-3 py-2 bg-primary text-primary-foreground rounded-lg font-medium text-sm disabled:opacity-50"
+                                >
+                                    {isInlineSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Go'}
+                                </button>
+                            </div>
+                            
+                            {/* Added count */}
+                            {addedPlaces.length > 0 && (
+                                <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400 mb-2">
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    {addedPlaces.length} place{addedPlaces.length > 1 ? 's' : ''} added
+                                </div>
+                            )}
+                            
+                            {/* Error */}
+                            {inlineError && (
+                                <p className="text-xs text-red-500 mb-2">{inlineError}</p>
+                            )}
+                            
+                            {/* Search results */}
+                            {inlineSearchResults.length > 0 && (
+                                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                                    {inlineSearchResults.map((result, index) => (
+                                        <div
+                                            key={index}
+                                            className={cn(
+                                                'flex items-center gap-2 p-2 rounded-lg transition-colors',
+                                                isPlaceAdded(result) 
+                                                    ? 'bg-green-100 dark:bg-green-900/30' 
+                                                    : 'bg-white dark:bg-background hover:bg-secondary'
+                                            )}
+                                        >
+                                            {result.imageUrl ? (
+                                                <img src={result.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
+                                            ) : (
+                                                <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center flex-shrink-0">
+                                                    <MapPin className="w-4 h-4 text-muted-foreground" />
+                                                </div>
+                                            )}
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-medium truncate">{result.name}</p>
+                                                <p className="text-xs text-muted-foreground truncate">{result.address}</p>
+                                            </div>
+                                            {isPlaceAdded(result) ? (
+                                                <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                                                    <Check className="w-4 h-4 text-white" />
+                                                </div>
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleAddPlace(result)}
+                                                    className="w-8 h-8 rounded-full bg-primary hover:bg-primary/90 flex items-center justify-center flex-shrink-0 transition-colors"
+                                                >
+                                                    <Plus className="w-4 h-4 text-primary-foreground" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
 
