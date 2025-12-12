@@ -391,7 +391,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Store all recommendations (15 + 6) for retrieval
         const allRecs = [...digest.recommendations, ...digest.next_batch];
         
-        const { data: saved } = await db.from('daily_digests').insert({
+        const { data: saved, error: insertError } = await db.from('daily_digests').insert({
             user_id: userId,
             weather,
             greeting: `Good ${getTimeOfDay()} ${userName}`,
@@ -399,6 +399,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             recommendations: allRecs, // Store all 21
             shown_ids: []
         }).select().single();
+        
+        if (insertError) {
+            console.error(`[Digest] ❌ Failed to save to database:`, insertError);
+            console.error(`[Digest] Error details:`, JSON.stringify(insertError, null, 2));
+            // Still return the digest even if DB save fails (user can still see it)
+        } else {
+            console.log(`[Digest] ✅ Saved to database with ID: ${saved?.id}`);
+        }
         
         console.log(`[Digest] Done in ${Date.now() - start}ms with ${digest.recommendations.length} + ${digest.next_batch.length} recs`);
         
