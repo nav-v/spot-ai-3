@@ -149,46 +149,68 @@ function mediaIdToShortcode(instagramId: string | number): string {
     }
 }
 
-// ============= INSTAGRAM GRAPH API - GET PERMALINK =============
-// Fetch the actual Instagram post URL using the Graph API
-// This is more reliable than manual ID-to-shortcode conversion
-// Note: PAGE_ACCESS_TOKEN is defined later in the file
+// ============= INSTAGRAM URL VALIDATION VIA OEMBED =============
+// The Instagram Graph API can only query media YOU own, not third-party content.
+// Instead, we generate a URL from the shortcode and validate it with oEmbed.
+// oEmbed works for any PUBLIC Instagram content.
 
-async function getInstagramPermalink(mediaId: string): Promise<string | null> {
-    const PAGE_ACCESS_TOKEN = process.env.INSTAGRAM_PAGE_ACCESS_TOKEN || '';
-    if (!PAGE_ACCESS_TOKEN) {
-        console.log('[Permalink] No PAGE_ACCESS_TOKEN, falling back to shortcode conversion');
-        return null;
+async function validateInstagramUrl(url: string): Promise<{ valid: boolean; permalink?: string; title?: string }> {
+    try {
+        const oembedUrl = `https://api.instagram.com/oembed/?url=${encodeURIComponent(url)}`;
+        console.log(`[oEmbed] Validating URL: ${url}`);
+        
+        const response = await fetch(oembedUrl, {
+            headers: { 'Accept': 'application/json' }
+        });
+        
+        if (!response.ok) {
+            console.log(`[oEmbed] Validation failed: HTTP ${response.status}`);
+            return { valid: false };
+        }
+        
+        const data = await response.json();
+        console.log(`[oEmbed] Response: ${JSON.stringify(data).substring(0, 200)}`);
+        
+        // oEmbed returns the canonical permalink
+        if (data.author_name || data.title) {
+            console.log(`[oEmbed] ✅ URL is valid! Author: ${data.author_name}`);
+            return { 
+                valid: true, 
+                permalink: url,  // The URL we tested is valid
+                title: data.title 
+            };
+        }
+        
+        return { valid: false };
+    } catch (error) {
+        console.error('[oEmbed] Validation error:', error);
+        return { valid: false };
+    }
+}
+
+// Try both /reel/ and /p/ formats and return the one that works
+async function findValidInstagramUrl(mediaId: string, preferReel: boolean): Promise<string | null> {
+    const shortcode = mediaIdToShortcode(mediaId);
+    console.log(`[URL Finder] Media ID: ${mediaId} -> Shortcode: ${shortcode}`);
+    
+    // Try the preferred format first
+    const formats = preferReel 
+        ? [`https://www.instagram.com/reel/${shortcode}/`, `https://www.instagram.com/p/${shortcode}/`]
+        : [`https://www.instagram.com/p/${shortcode}/`, `https://www.instagram.com/reel/${shortcode}/`];
+    
+    for (const url of formats) {
+        const result = await validateInstagramUrl(url);
+        if (result.valid) {
+            console.log(`[URL Finder] ✅ Found valid URL: ${url}`);
+            return url;
+        }
     }
     
-    try {
-        // Clean up the media ID (remove underscore suffix if present)
-        const cleanMediaId = mediaId.includes('_') ? mediaId.split('_')[0] : mediaId;
-        
-        console.log(`[Permalink] Fetching permalink for media ID: ${cleanMediaId}`);
-        
-        const url = `https://graph.instagram.com/${cleanMediaId}?fields=permalink,media_type&access_token=${PAGE_ACCESS_TOKEN}`;
-        
-        const response = await fetch(url);
-        const data = await response.json();
-        
-        console.log(`[Permalink] API response: ${JSON.stringify(data)}`);
-        
-        if (data.error) {
-            console.log(`[Permalink] API error: ${data.error.message}`);
-            return null;
-        }
-        
-        if (data.permalink) {
-            console.log(`[Permalink] Got permalink: ${data.permalink} (media_type: ${data.media_type})`);
-            return data.permalink;
-        }
-        
-        return null;
-    } catch (error) {
-        console.error('[Permalink] Failed to fetch:', error);
-        return null;
-    }
+    console.log(`[URL Finder] ❌ Neither format worked for shortcode: ${shortcode}`);
+    
+    // Return the preferred format anyway (for embedding, even if oEmbed failed)
+    // Some private accounts won't validate but URL might still work
+    return formats[0];
 }
 
 // ============= GOOGLE PLACES API =============
@@ -610,31 +632,33 @@ async function getInstagramUrlFromAttachment(attachment: any): Promise<string | 
         return payload.link;
     }
     
-    // 2. Try to get media ID and use Graph API for permalink (MOST RELIABLE)
+    // 2. Try to get media ID and convert to URL (with oEmbed validation)
     const mediaId = payload?.reel_video_id || payload?.ig_post_media_id || payload?.media_id || payload?.id;
     
     if (mediaId) {
-        console.log(`[Webhook] Found media ID: ${mediaId}, trying Graph API for permalink...`);
+        console.log(`[Webhook] Found media ID: ${mediaId}`);
         
-        // Try Graph API first - this gives us the REAL permalink
-        const permalink = await getInstagramPermalink(String(mediaId));
-        if (permalink) {
-            console.log(`[Webhook] ✅ Got permalink from Graph API: ${permalink}`);
-            return permalink;
+        // Determine if it's likely a reel based on attachment type or field source
+        const isLikelyReel = attachmentType?.includes('reel') || 
+                             Boolean(payload?.reel_video_id) ||
+                             payload?.media_product_type === 'REELS';
+        
+        console.log(`[Webhook] isLikelyReel: ${isLikelyReel}`);
+        
+        // Use our smart URL finder that validates with oEmbed
+        const validUrl = await findValidInstagramUrl(String(mediaId), isLikelyReel);
+        if (validUrl) {
+            console.log(`[Webhook] ✅ Got validated URL: ${validUrl}`);
+            return validUrl;
         }
         
-        // Fall back to manual shortcode conversion if Graph API fails
-        console.log(`[Webhook] Graph API failed, falling back to manual shortcode conversion`);
-        const isReel = attachmentType?.includes('reel') || 
-                       payload?.reel_video_id ||
-                       payload?.media_product_type === 'REELS';
-        
+        // If validation failed, still return the generated URL (it might work for embeds)
         const shortcode = mediaIdToShortcode(String(mediaId));
-        const url = isReel 
+        const fallbackUrl = isLikelyReel 
             ? `https://www.instagram.com/reel/${shortcode}/`
             : `https://www.instagram.com/p/${shortcode}/`;
-        console.log(`[Webhook] Fallback shortcode conversion: ${url}`);
-        return url;
+        console.log(`[Webhook] Using unvalidated fallback URL: ${fallbackUrl}`);
+        return fallbackUrl;
     }
     
     // 3. For stories
@@ -654,21 +678,14 @@ async function getInstagramUrlFromAttachment(attachment: any): Promise<string | 
             const assetId = assetMatch[1];
             console.log(`[Webhook] Extracted asset_id from CDN URL: ${assetId}`);
             
-            // Try Graph API with this asset ID
-            const permalink = await getInstagramPermalink(assetId);
-            if (permalink) {
-                console.log(`[Webhook] ✅ Got permalink from Graph API (via asset_id): ${permalink}`);
-                return permalink;
-            }
+            const isReel = attachmentType === 'ig_reel' || attachmentType?.includes('reel');
             
-            // Fall back to shortcode conversion
-            const shortcode = mediaIdToShortcode(assetId);
-            const isReel = attachmentType === 'ig_reel';
-            const url = isReel
-                ? `https://www.instagram.com/reel/${shortcode}/`
-                : `https://www.instagram.com/p/${shortcode}/`;
-            console.log(`[Webhook] CDN URL fallback: ${url}`);
-            return url;
+            // Use our smart URL finder with oEmbed validation
+            const validUrl = await findValidInstagramUrl(assetId, isReel);
+            if (validUrl) {
+                console.log(`[Webhook] ✅ Got validated URL from asset_id: ${validUrl}`);
+                return validUrl;
+            }
         }
     }
     
