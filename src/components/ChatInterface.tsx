@@ -147,52 +147,33 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
     });
   }, []);
 
-  // Fetch daily digest (or generate on-demand if none exists)
+  // Fetch daily digest (only from DB, no auto-generation)
   useEffect(() => {
     if (!user?.id) return;
     
-    const fetchOrGenerateDigest = async () => {
+    const fetchDigest = async () => {
       try {
-        // First, try to fetch existing digest
         const response = await fetch(`/api/digest/${user.id}`);
         const data = await response.json();
         
         if (data.hasDigest && data.digest) {
           setDigest(data.digest);
           setShowDigest(true);
-          setDigestLoading(false);
         } else {
-          // No digest exists - generate one on-demand
-          console.log('[Digest] No pre-generated digest, generating on-demand...');
-          setDigestLoading(true); // Keep loading state
-          
-          const genResponse = await fetch('/api/digest/generate-single', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: user.id })
-          });
-          
-          const genData = await genResponse.json();
-          
-          if (genData.hasDigest && genData.digest) {
-            setDigest(genData.digest);
-            setShowDigest(true);
-          } else {
-            // Generation failed - fall back to static greeting
-            setDigest(null);
-            setShowDigest(false);
-          }
-          setDigestLoading(false);
+          // No digest exists - show static greeting
+          setDigest(null);
+          setShowDigest(false);
         }
       } catch (error) {
-        console.error('Failed to fetch/generate digest:', error);
+        console.error('Failed to fetch digest:', error);
         setDigest(null);
         setShowDigest(false);
+      } finally {
         setDigestLoading(false);
       }
     };
     
-    fetchOrGenerateDigest();
+    fetchDigest();
   }, [user?.id]);
 
   // Typewriter effect states
@@ -516,9 +497,27 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
     }
   };
 
-  // Handle digest refresh
+  // Handle digest refresh - generates new digest if none exists, or refreshes recommendations
   const handleDigestRefresh = async (excludedIds: string[], excludedNames: string[]): Promise<DigestRecommendation[]> => {
     try {
+      // If no digest exists, generate a full one
+      if (!digest) {
+        const genResponse = await fetch('/api/digest/generate-single', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user?.id })
+        });
+        
+        const genData = await genResponse.json();
+        if (genData.hasDigest && genData.digest) {
+          setDigest(genData.digest);
+          setShowDigest(true);
+          return genData.digest.recommendations || [];
+        }
+        return [];
+      }
+      
+      // Otherwise, just refresh recommendations
       const response = await fetch('/api/digest/refresh', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -526,7 +525,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
           userId: user?.id,
           excludedIds,
           excludedNames,
-          tasteHints: '' // Could be enhanced with user preferences
+          tasteHints: ''
         })
       });
       
@@ -777,10 +776,10 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
           if (idx === 0 && showDigest && digest) return null;
           
           return (
-            <div
-              key={idx}
-              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
+          <div
+            key={idx}
+            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+          >
             {/* Message Content */}
             <div className={`max-w-[92%] ${msg.role === 'user'
               ? 'px-5 py-1.5 bg-primary text-primary-foreground rounded-[2rem] rounded-tr-sm shadow-sm'
