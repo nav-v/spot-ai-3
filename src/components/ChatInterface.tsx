@@ -777,10 +777,10 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
           if (idx === 0 && showDigest && digest) return null;
           
           return (
-          <div
-            key={idx}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
+            <div
+              key={idx}
+              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
             {/* Message Content */}
             <div className={`max-w-[92%] ${msg.role === 'user'
               ? 'px-5 py-1.5 bg-primary text-primary-foreground rounded-[2rem] rounded-tr-sm shadow-sm'
@@ -1390,7 +1390,8 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
               )}
             </div>
           </div>
-        ))}
+          );
+        })}
 
         {isTyping && (
           <div className="flex justify-start">
