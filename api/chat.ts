@@ -1962,10 +1962,10 @@ Assistant:`;
 Key Inferences:
 ${researchResults.tasteProfile.inferences.slice(0, 15).map((i, idx) => `${idx + 1}. ${i}`).join('\n')}
 
-Cuisine/Category Preferences: ${researchResults.tasteProfile.cuisinePreferences.join(', ') || 'Varied'}
-Price Range: ${researchResults.tasteProfile.priceRange}
-Vibe Preferences: ${researchResults.tasteProfile.vibePreferences.join(', ') || 'Flexible'}
-Neighborhood Preferences: ${researchResults.tasteProfile.locationPreferences.join(', ') || 'Open to exploring'}
+Cuisine/Category Preferences: ${(researchResults.tasteProfile.cuisinePreferences || []).join(', ') || 'Varied'}
+Price Range: ${researchResults.tasteProfile.priceRange || 'Varied'}
+Vibe Preferences: ${(researchResults.tasteProfile.vibePreferences || []).join(', ') || 'Flexible'}
+Neighborhood Preferences: ${(researchResults.tasteProfile.locationPreferences || []).join(', ') || 'Open to exploring'}
 
 ⚠️ Use these insights to PERSONALIZE recommendations, but don't over-emphasize them. 
    Balance user taste with highly-recommended/cross-corroborated places from research.
