@@ -77,6 +77,37 @@ export function DigestCarousel({
     // Save the index where new cards will appear (where "Show More" card currently is)
     const firstNewCardIndex = visibleRecs.length;
     
+    // Helper to scroll to first new card
+    const scrollToFirstNewCard = () => {
+      if (!scrollRef.current) return;
+      
+      // Use requestAnimationFrame for better timing, especially on mobile
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const container = scrollRef.current;
+          if (!container) return;
+          
+          const cards = container.querySelectorAll('[data-digest-card]');
+          const firstNewCard = cards[firstNewCardIndex] as HTMLElement;
+          
+          if (firstNewCard) {
+            // Get positions relative to viewport
+            const cardRect = firstNewCard.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            
+            // Calculate how much to scroll: card's left edge relative to container's left edge
+            // Add current scroll position to get absolute scroll position
+            const scrollPosition = container.scrollLeft + (cardRect.left - containerRect.left);
+            
+            container.scrollTo({ 
+              left: Math.max(0, scrollPosition), 
+              behavior: 'smooth' 
+            });
+          }
+        });
+      });
+    };
+    
     // First, use preloaded batch if available (instant)
     if (preloadedBatch.length > 0) {
       const newRecs = preloadedBatch.filter(rec => !shownIds.has(rec.id));
@@ -89,18 +120,7 @@ export function DigestCarousel({
         });
         setPreloadedBatch([]); // Clear preloaded batch
         
-        // Scroll to the first new card (which replaces "Show More" position)
-        setTimeout(() => {
-          if (scrollRef.current) {
-            // Find the first new card element and scroll it into view
-            const container = scrollRef.current;
-            const cards = container.querySelectorAll('[data-digest-card]');
-            const firstNewCard = cards[firstNewCardIndex];
-            if (firstNewCard) {
-              firstNewCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
-            }
-          }
-        }, 100);
+        scrollToFirstNewCard();
         
         // Preload more in background (for next click)
         onLoadMore().then(more => {
@@ -129,17 +149,7 @@ export function DigestCarousel({
             return next;
           });
           
-          // Scroll to the first new card (which replaces "Show More" position)
-          setTimeout(() => {
-            if (scrollRef.current) {
-              const container = scrollRef.current;
-              const cards = container.querySelectorAll('[data-digest-card]');
-              const firstNewCard = cards[firstNewCardIndex];
-              if (firstNewCard) {
-                firstNewCard.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
-              }
-            }
-          }, 100);
+          scrollToFirstNewCard();
         } else {
           setHasMore(false);
         }
