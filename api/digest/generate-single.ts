@@ -476,6 +476,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
         const db = getSupabase();
         
+        // FIRST: Check if digest already exists for today (same logic as [userId].ts)
+        const now = new Date();
+        const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0));
+        const tomorrowUTC = new Date(todayUTC);
+        tomorrowUTC.setUTCDate(tomorrowUTC.getUTCDate() + 1);
+        
+        console.log(`[Digest] Checking for existing digest since: ${todayUTC.toISOString()}`);
+        
+        const { data: existingDigest, error: checkError } = await db
+            .from('daily_digests')
+            .select('*')
+            .eq('user_id', userId)
+            .gte('created_at', todayUTC.toISOString())
+            .lt('created_at', tomorrowUTC.toISOString())
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        
+        if (existingDigest) {
+            console.log(`[Digest] ✅ User ${userId} already has a digest for today, returning existing one`);
+            const allRecs = existingDigest.recommendations || [];
+            const recommendations = allRecs.slice(0, 15);
+            const next_batch = allRecs.slice(15, 21);
+            
+            return res.status(200).json({
+                success: true,
+                hasDigest: true,
+                digest: {
+                    id: existingDigest.id,
+                    greeting: existingDigest.greeting,
+                    weather: existingDigest.weather,
+                    intro_text: existingDigest.intro_text,
+                    recommendations: recommendations,
+                    next_batch: next_batch,
+                    shown_ids: existingDigest.shown_ids,
+                    created_at: existingDigest.created_at
+                }
+            });
+        }
+        
+        console.log(`[Digest] No existing digest found, generating new one...`);
+        
         // Parallel: weather, research, user data, user preferences
         const [weather, research, userResult, placesResult, prefsResult] = await Promise.all([
             fetchNYCWeather(),
