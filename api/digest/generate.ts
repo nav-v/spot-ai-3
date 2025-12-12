@@ -469,12 +469,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         console.log(`[Digest] Found ${users?.length || 0} users`);
         
+        // Get today's start for checking existing digests
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
         let successCount = 0;
+        let skippedCount = 0;
         let errorCount = 0;
         
-        // Generate digest for each user
+        // Generate digest for each user (skip if already has one today)
         for (const user of users || []) {
             try {
+                // Check if user already has digest today
+                const { data: existingDigest } = await db
+                    .from('daily_digests')
+                    .select('id')
+                    .eq('user_id', user.id)
+                    .gte('created_at', today.toISOString())
+                    .limit(1)
+                    .single();
+                
+                if (existingDigest) {
+                    console.log(`[Digest] Skipping ${user.id} - already has digest today`);
+                    skippedCount++;
+                    continue;
+                }
+                
                 console.log(`[Digest] Generating for user: ${user.id} (${user.name || 'Unknown'})`);
                 
                 // Fetch user's saved places
@@ -518,11 +538,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
         
         const duration = Date.now() - startTime;
-        console.log(`[Digest] Complete! ${successCount} success, ${errorCount} errors in ${duration}ms`);
+        console.log(`[Digest] Complete! ${successCount} generated, ${skippedCount} skipped (already had), ${errorCount} errors in ${duration}ms`);
         
         return res.status(200).json({
             success: true,
-            users_processed: successCount,
+            generated: successCount,
+            skipped: skippedCount,
             errors: errorCount,
             duration_ms: duration
         });

@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { Sun, Cloud, CloudRain, Snowflake, RefreshCw, Plus, Check, Calendar, MapPin, Loader2, Sparkles } from 'lucide-react';
+import React, { useState } from 'react';
+import { Sun, Cloud, CloudRain, Snowflake, RefreshCw, Plus, Check, MapPin, Loader2 } from 'lucide-react';
 import { DraggableScrollContainer } from './DraggableScrollContainer';
 
 interface WeatherData {
@@ -23,7 +23,6 @@ interface DigestRecommendation {
   mainCategory: 'eat' | 'see';
   subtype: string;
   sources?: Array<{ domain: string; url: string }>;
-  isBumped?: boolean;
   timeframe?: 'today' | 'tomorrow' | 'weekend';
 }
 
@@ -62,7 +61,6 @@ export function DigestCarousel({
   const [recommendations, setRecommendations] = useState(digest.recommendations);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [addingPlaces, setAddingPlaces] = useState<Set<string>>(new Set());
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -72,7 +70,6 @@ export function DigestCarousel({
       const newRecs = await onRefresh(excludedIds, excludedNames);
       if (newRecs.length > 0) {
         setRecommendations(newRecs);
-        scrollRef.current?.scrollTo({ left: 0, behavior: 'smooth' });
       }
     } finally {
       setIsRefreshing(false);
@@ -95,8 +92,8 @@ export function DigestCarousel({
   };
 
   return (
-    <div className="space-y-5 pb-4">
-      {/* Compact Header: Greeting + Weather inline */}
+    <div className="space-y-4">
+      {/* Header: Greeting + Weather */}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-foreground">{digest.greeting}</h1>
         <div className="flex items-center gap-1.5 text-muted-foreground">
@@ -105,136 +102,120 @@ export function DigestCarousel({
         </div>
       </div>
 
-      {/* Spot's one-liner */}
+      {/* Intro */}
       <p className="text-sm text-muted-foreground">{digest.intro_text}</p>
 
-      {/* Simple Carousel */}
-      <DraggableScrollContainer
-        ref={scrollRef}
-        className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 snap-x snap-mandatory scrollbar-hide"
-      >
-        {recommendations.map((rec, idx) => {
-          const isSaved = savedPlaceNames.has(rec.name.toLowerCase());
-          const isAdding = addingPlaces.has(rec.id);
+      {/* Carousel - EXACT same structure as ChatInterface */}
+      <div className="relative w-screen -ml-4">
+        <DraggableScrollContainer
+          className="pb-3 flex gap-3 px-4 snap-x snap-mandatory scroll-smooth scrollbar-hide"
+        >
+          {recommendations.map((place, idx) => {
+            const isSaved = savedPlaceNames.has(place.name.toLowerCase());
+            const isAdding = addingPlaces.has(place.id);
 
-          return (
-            <div
-              key={rec.id || idx}
-              className="min-w-[70%] sm:min-w-[220px] sm:w-[220px] bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all snap-center flex flex-col"
-            >
-              {/* Image */}
-              <div className="h-32 w-full bg-muted relative overflow-hidden">
-                {rec.imageUrl ? (
-                  <img 
-                    src={rec.imageUrl} 
-                    alt={rec.name} 
-                    className="w-full h-full object-cover" 
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/10 to-primary/5">
-                    <MapPin className="w-8 h-8 text-primary/20" />
+            return (
+              <div key={place.id || idx} className="min-w-[65%] sm:min-w-[240px] sm:w-[240px] bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all snap-center flex flex-col">
+                {/* Image Area */}
+                <div className="h-36 w-full bg-muted relative overflow-hidden group">
+                  {place.imageUrl ? (
+                    <img src={place.imageUrl} alt={place.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-secondary/30">
+                      <MapPin className="w-8 h-8 text-muted-foreground/50" />
+                    </div>
+                  )}
+                  <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full font-medium">
+                    {place.location}
                   </div>
-                )}
-                
-                {/* Single location badge */}
-                <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-[10px] px-2 py-0.5 rounded-full">
-                  {rec.location}
+                </div>
+
+                {/* Content Area */}
+                <div className="p-3 flex flex-col flex-1">
+                  <h3 className="font-semibold text-sm leading-tight text-foreground mb-1">{place.name}</h3>
+
+                  {place.isEvent && place.startDate && (
+                    <p className="text-[10px] text-primary font-medium mb-1">
+                      📅 {new Date(place.startDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                    </p>
+                  )}
+
+                  {!place.isEvent && place.subtype && (
+                    <p className="text-[10px] text-muted-foreground mb-1">{place.subtype}</p>
+                  )}
+
+                  <p className="text-xs text-muted-foreground line-clamp-2 flex-1 mb-2">
+                    {place.description}
+                  </p>
+
+                  {/* Sources */}
+                  {place.sources && place.sources.length > 0 && (
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <span className="text-[10px] text-muted-foreground/60">via</span>
+                      {place.sources.slice(0, 3).map((source, i) => (
+                        <a
+                          key={i}
+                          href={source.url || `https://${source.domain}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={source.domain}
+                        >
+                          <img
+                            src={`https://www.google.com/s2/favicons?domain=${source.domain}&sz=16`}
+                            alt={source.domain}
+                            className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
+                          />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Add Button */}
+                  <button
+                    onClick={() => handleAddPlace(place)}
+                    disabled={isSaved || isAdding}
+                    className={`flex-1 flex items-center justify-center gap-1.5 text-[10px] py-2 rounded-lg transition-colors font-medium shadow-sm ${
+                      isSaved
+                        ? 'bg-secondary text-muted-foreground cursor-not-allowed'
+                        : 'bg-primary text-primary-foreground hover:bg-primary/90'
+                    }`}
+                  >
+                    {isAdding ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : isSaved ? (
+                      <><Check className="w-3 h-3" /> Saved</>
+                    ) : (
+                      <><Plus className="w-3 h-3" /> Add to List</>
+                    )}
+                  </button>
                 </div>
               </div>
+            );
+          })}
 
-              {/* Content */}
-              <div className="p-3 flex-1 flex flex-col">
-                <h3 className="font-medium text-sm text-foreground line-clamp-1 mb-0.5">
-                  {rec.name}
-                </h3>
-                
-                {/* Date for events OR subtype for food */}
-                <p className="text-[11px] text-muted-foreground mb-2">
-                  {rec.isEvent && rec.startDate ? (
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      {new Date(rec.startDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                    </span>
-                  ) : (
-                    rec.subtype
-                  )}
-                </p>
-                
-                <p className="text-xs text-muted-foreground line-clamp-2 flex-1 mb-2">
-                  {rec.description}
-                </p>
-
-                {/* Sources */}
-                {rec.sources && rec.sources.length > 0 && (
-                  <div className="flex items-center gap-1 mb-2">
-                    <span className="text-[9px] text-muted-foreground/50">via</span>
-                    {rec.sources.slice(0, 3).map((source, i) => (
-                      <a
-                        key={i}
-                        href={source.url || `https://${source.domain}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <img
-                          src={`https://www.google.com/s2/favicons?domain=${source.domain}&sz=16`}
-                          alt={source.domain}
-                          className="w-3 h-3 rounded-sm opacity-60 hover:opacity-100"
-                        />
-                      </a>
-                    ))}
-                  </div>
-                )}
-
-                {/* Add Button */}
-                <button
-                  onClick={() => handleAddPlace(rec)}
-                  disabled={isSaved || isAdding}
-                  className={`w-full flex items-center justify-center gap-1 text-[11px] py-1.5 rounded-lg font-medium transition-colors ${
-                    isSaved
-                      ? 'bg-secondary/50 text-muted-foreground cursor-not-allowed'
-                      : 'bg-primary text-primary-foreground hover:bg-primary/90'
-                  }`}
-                >
-                  {isAdding ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : isSaved ? (
-                    <><Check className="w-3 h-3" /> Saved</>
-                  ) : (
-                    <><Plus className="w-3 h-3" /> Add</>
-                  )}
-                </button>
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Refresh Card */}
-        <div className="min-w-[70%] sm:min-w-[220px] sm:w-[220px] bg-gradient-to-br from-primary/5 to-transparent border border-border/50 rounded-xl flex flex-col items-center justify-center p-5 snap-center">
-          <RefreshCw className={`w-8 h-8 text-primary/40 mb-2 ${isRefreshing ? 'animate-spin' : ''}`} />
-          <p className="text-xs text-muted-foreground text-center mb-3">More options?</p>
-          <button
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            className="px-4 py-1.5 bg-primary text-primary-foreground rounded-full text-xs font-medium hover:bg-primary/90 disabled:opacity-50"
-          >
-            {isRefreshing ? 'Loading...' : 'Refresh'}
-          </button>
-        </div>
-      </DraggableScrollContainer>
-
-      {/* Ask Spot CTA */}
-      <div className="text-center">
-        <button
-          onClick={onAskSpot}
-          className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground text-sm transition-colors"
-        >
-          <span className="relative flex h-1.5 w-1.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-primary"></span>
-          </span>
-          Not what you're looking for? Ask me anything
-        </button>
+          {/* Refresh Card */}
+          <div className="min-w-[65%] sm:min-w-[240px] sm:w-[240px] bg-secondary/20 border border-border rounded-xl flex flex-col items-center justify-center p-6 snap-center">
+            <RefreshCw className={`w-8 h-8 text-muted-foreground/40 mb-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+            <p className="text-xs text-muted-foreground text-center mb-3">Want more options?</p>
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-xs font-medium hover:bg-primary/90 disabled:opacity-50"
+            >
+              {isRefreshing ? 'Loading...' : 'Show More'}
+            </button>
+          </div>
+        </DraggableScrollContainer>
       </div>
+
+      {/* CTA - Left justified with orange dot at end */}
+      <p className="text-sm text-muted-foreground">
+        Ask me to plan, find, or add food, places and events
+        <span
+          className="inline-block w-2 h-2 bg-orange-500 rounded-full ml-1.5 align-middle"
+          style={{ animation: 'pulse-fast 0.4s ease-in-out infinite' }}
+        />
+      </p>
     </div>
   );
 }

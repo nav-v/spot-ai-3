@@ -3,7 +3,6 @@ import { Send, MapPin, Loader2, Sparkles, ExternalLink, Calendar, Plus, ArrowRig
 import { useToast } from '@/hooks/use-toast';
 import { PlaceDetailModal } from './PlaceDetailModal';
 import { DraggableScrollContainer } from './DraggableScrollContainer';
-import { FloatingSuggestions } from './FloatingSuggestions';
 import { DigestCarousel } from './DigestCarousel';
 import { chatApi, placesApi } from '@/lib/api';
 import { useAuth } from './AuthContext';
@@ -1438,15 +1437,6 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
         )}
         <div ref={messagesEndRef} />
       </div>
-
-      {/* Floating Suggestions - Positioned at bottom above input */}
-      {messages.length === 1 && messages[0].role === 'assistant' && (
-        <div className="absolute left-0 right-0 z-10 h-auto pointer-events-none" style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))' }}>
-          <FloatingSuggestions onSelect={(query) => {
-            setInput(query);
-          }} />
-        </div>
-      )}
 
       {/* Floating Input Area */}
       <div className="absolute left-4 right-4 sm:left-6 sm:right-6 z-20 flex items-center gap-2 sm:gap-3 h-12" style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
