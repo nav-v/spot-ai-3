@@ -1,9 +1,15 @@
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Place, placesApi } from '@/lib/api';
-import { X, Star, CheckCircle, MapPin, Camera, Upload, ExternalLink, Trash2, Sparkles, Calendar } from 'lucide-react';
+import { X, Star, CheckCircle, MapPin, Camera, Upload, Trash2, Sparkles, Calendar, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { 
+    EAT_SUBTYPES, 
+    SEE_SUBTYPES, 
+    EVENT_SUBTYPES,
+    type MainCategory 
+} from '@/lib/placeCategories';
 
 interface PlaceDetailModalProps {
     place: Place;
@@ -21,8 +27,12 @@ export const PlaceDetailModal = ({
     onUpdate,
 }: PlaceDetailModalProps) => {
     const [name, setName] = useState(place.name);
-    const [type, setType] = useState(place.type);
-    const [cuisine, setCuisine] = useState(place.cuisine || '');
+    // New category system
+    const [mainCategory, setMainCategory] = useState<MainCategory>(place.mainCategory || 'eat');
+    const [subtype, setSubtype] = useState(place.subtype || '');
+    const [customSubtype, setCustomSubtype] = useState('');
+    const [showSubtypeDropdown, setShowSubtypeDropdown] = useState(false);
+    
     const [description, setDescription] = useState(place.description || '');
     const [address, setAddress] = useState(place.address || '');
     const [rating, setRating] = useState<number>(place.rating || 0);
@@ -46,6 +56,47 @@ export const PlaceDetailModal = ({
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
     const { toast } = useToast();
 
+    // Get available subtypes based on main category and event status
+    const availableSubtypes = useMemo(() => {
+        if (mainCategory === 'eat') {
+            return EAT_SUBTYPES;
+        }
+        if (isEvent) {
+            return EVENT_SUBTYPES;
+        }
+        return SEE_SUBTYPES;
+    }, [mainCategory, isEvent]);
+
+    // Filter subtypes based on custom input
+    const filteredSubtypes = useMemo(() => {
+        if (!customSubtype) return availableSubtypes;
+        return availableSubtypes.filter(s => 
+            s.toLowerCase().includes(customSubtype.toLowerCase())
+        );
+    }, [availableSubtypes, customSubtype]);
+
+    const handleMainCategoryChange = (newCategory: MainCategory) => {
+        setMainCategory(newCategory);
+        // Reset subtype when category changes
+        setSubtype('');
+        setCustomSubtype('');
+        // If switching to Eat, turn off event mode
+        if (newCategory === 'eat') {
+            setIsEvent(false);
+        }
+    };
+
+    const handleSubtypeSelect = (selected: string) => {
+        setSubtype(selected);
+        setCustomSubtype('');
+        setShowSubtypeDropdown(false);
+    };
+
+    const handleCustomSubtypeChange = (value: string) => {
+        setCustomSubtype(value);
+        setSubtype(value); // Use custom value directly
+    };
+
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
@@ -60,37 +111,31 @@ export const PlaceDetailModal = ({
     const handleSave = async () => {
         setIsSaving(true);
         try {
+            // Determine legacy type for backwards compatibility
+            const legacyType = mainCategory === 'eat' 
+                ? (subtype === 'Coffee' ? 'cafe' : subtype === 'Bar' ? 'bar' : 'restaurant')
+                : 'activity';
+
+            const placeData = {
+                name: name || 'New Place',
+                type: legacyType as any,
+                mainCategory,
+                subtype: subtype || 'Other',
+                description,
+                rating,
+                notes,
+                review,
+                imageUrl: uploadedImage || undefined,
+                address: address || '',
+                isEvent,
+                startDate: isEvent ? startDate : undefined,
+                endDate: isEvent ? endDate : undefined,
+            };
+
             if (place.id === 'new') {
-                await placesApi.create({
-                    name: name || 'New Place',
-                    type: type as any,
-                    cuisine,
-                    description,
-                    rating,
-                    notes,
-                    review,
-                    imageUrl: uploadedImage || undefined,
-                    address: address || '',
-                    sourceUrl: '',
-                    isEvent,
-                    startDate: isEvent ? startDate : undefined,
-                    endDate: isEvent ? endDate : undefined,
-                });
+                await placesApi.create(placeData);
             } else {
-                await placesApi.update(place.id, {
-                    name,
-                    type: type as any,
-                    cuisine,
-                    description,
-                    rating,
-                    notes,
-                    review,
-                    imageUrl: uploadedImage || undefined,
-                    address: address,
-                    isEvent,
-                    startDate: isEvent ? startDate : undefined,
-                    endDate: isEvent ? endDate : undefined,
-                });
+                await placesApi.update(place.id, placeData);
             }
             toast({ title: 'Changes saved! ✨' });
             onUpdate?.();
@@ -176,30 +221,56 @@ export const PlaceDetailModal = ({
                                 className="text-xl font-semibold text-foreground bg-transparent border-b border-transparent hover:border-border focus:border-primary outline-none w-full transition-colors"
                                 placeholder="Place Name"
                             />
-                            <div className="flex gap-2">
+                            
+                            {/* Two-dropdown category system */}
+                            <div className="flex gap-2 items-center">
+                                {/* Main Category Dropdown (Eat/See) */}
                                 <select
-                                    value={type}
-                                    onChange={(e) => setType(e.target.value as any)}
-                                    className="text-sm text-muted-foreground bg-transparent border-b border-transparent hover:border-border focus:border-primary outline-none transition-colors cursor-pointer"
+                                    value={mainCategory}
+                                    onChange={(e) => handleMainCategoryChange(e.target.value as MainCategory)}
+                                    className="text-sm font-medium bg-primary/10 text-primary px-3 py-1.5 rounded-full outline-none cursor-pointer hover:bg-primary/20 transition-colors"
                                 >
-                                    <option value="restaurant">Restaurant</option>
-                                    <option value="cafe">Cafe</option>
-                                    <option value="bar">Bar</option>
-                                    <option value="activity">Activity</option>
-                                    <option value="attraction">Attraction</option>
-                                    <option value="museum">Museum</option>
-                                    <option value="park">Park</option>
-                                    <option value="shopping">Shopping</option>
-                                    <option value="theater">Theater</option>
-                                    <option value="other">Other</option>
+                                    <option value="eat">🍽️ Eat</option>
+                                    <option value="see">👀 See</option>
                                 </select>
+
                                 <span className="text-muted-foreground">•</span>
-                                <input
-                                    value={cuisine}
-                                    onChange={(e) => setCuisine(e.target.value)}
-                                    className="text-sm text-muted-foreground bg-transparent border-b border-transparent hover:border-border focus:border-primary outline-none transition-colors w-full"
-                                    placeholder="Filter (e.g. Italian)"
-                                />
+
+                                {/* Subtype Combo-box (predefined + custom) */}
+                                <div className="relative flex-1">
+                                    <div className="relative">
+                                        <input
+                                            value={customSubtype || subtype}
+                                            onChange={(e) => handleCustomSubtypeChange(e.target.value)}
+                                            onFocus={() => setShowSubtypeDropdown(true)}
+                                            onBlur={() => setTimeout(() => setShowSubtypeDropdown(false), 200)}
+                                            className="text-sm text-muted-foreground bg-transparent border-b border-transparent hover:border-border focus:border-primary outline-none transition-colors w-full pr-6"
+                                            placeholder={mainCategory === 'eat' ? 'Cuisine (e.g. Italian)' : 'Type (e.g. Museum)'}
+                                        />
+                                        <ChevronDown 
+                                            className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground cursor-pointer"
+                                            onClick={() => setShowSubtypeDropdown(!showSubtypeDropdown)}
+                                        />
+                                    </div>
+                                    
+                                    {/* Dropdown */}
+                                    {showSubtypeDropdown && filteredSubtypes.length > 0 && (
+                                        <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+                                            {filteredSubtypes.map((option) => (
+                                                <button
+                                                    key={option}
+                                                    onMouseDown={() => handleSubtypeSelect(option)}
+                                                    className={cn(
+                                                        "w-full text-left px-3 py-2 text-sm hover:bg-secondary transition-colors",
+                                                        subtype === option && "bg-primary/10 text-primary"
+                                                    )}
+                                                >
+                                                    {option}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                         <div className="flex gap-2 flex-shrink-0">
@@ -229,45 +300,47 @@ export const PlaceDetailModal = ({
                         placeholder="Address"
                     />
 
-                    {/* Event Details */}
-                    <div className="mb-4">
-                        <div className="flex items-center gap-2 mb-2">
-                            <input
-                                type="checkbox"
-                                id="isEvent"
-                                checked={isEvent}
-                                onChange={(e) => setIsEvent(e.target.checked)}
-                                className="rounded border-gray-300 text-primary focus:ring-primary w-4 h-4"
-                            />
-                            <label htmlFor="isEvent" className="text-sm font-medium text-foreground cursor-pointer select-none flex items-center gap-1.5">
-                                <Calendar className="w-3.5 h-3.5" />
-                                This is a temporary event
-                            </label>
-                        </div>
-
-                        {isEvent && (
-                            <div className="grid grid-cols-2 gap-3 pl-6 animate-in fade-in slide-in-from-top-2 duration-200">
-                                <div>
-                                    <label className="text-xs text-muted-foreground block mb-1">Start Date</label>
-                                    <input
-                                        type="date"
-                                        value={startDate}
-                                        onChange={(e) => setStartDate(e.target.value)}
-                                        className="w-full text-sm bg-secondary/50 rounded-md px-2 py-1.5 outline-none focus:ring-1 focus:ring-primary text-foreground"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs text-muted-foreground block mb-1">End Date</label>
-                                    <input
-                                        type="date"
-                                        value={endDate}
-                                        onChange={(e) => setEndDate(e.target.value)}
-                                        className="w-full text-sm bg-secondary/50 rounded-md px-2 py-1.5 outline-none focus:ring-1 focus:ring-primary text-foreground"
-                                    />
-                                </div>
+                    {/* Event Details - Only show for See category */}
+                    {mainCategory === 'see' && (
+                        <div className="mb-4">
+                            <div className="flex items-center gap-2 mb-2">
+                                <input
+                                    type="checkbox"
+                                    id="isEvent"
+                                    checked={isEvent}
+                                    onChange={(e) => setIsEvent(e.target.checked)}
+                                    className="rounded border-gray-300 text-primary focus:ring-primary w-4 h-4"
+                                />
+                                <label htmlFor="isEvent" className="text-sm font-medium text-foreground cursor-pointer select-none flex items-center gap-1.5">
+                                    <Calendar className="w-3.5 h-3.5" />
+                                    This is a temporary event
+                                </label>
                             </div>
-                        )}
-                    </div>
+
+                            {isEvent && (
+                                <div className="grid grid-cols-2 gap-3 pl-6 animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <div>
+                                        <label className="text-xs text-muted-foreground block mb-1">Start Date</label>
+                                        <input
+                                            type="date"
+                                            value={startDate}
+                                            onChange={(e) => setStartDate(e.target.value)}
+                                            className="w-full text-sm bg-secondary/50 rounded-md px-2 py-1.5 outline-none focus:ring-1 focus:ring-primary text-foreground"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-muted-foreground block mb-1">End Date</label>
+                                        <input
+                                            type="date"
+                                            value={endDate}
+                                            onChange={(e) => setEndDate(e.target.value)}
+                                            className="w-full text-sm bg-secondary/50 rounded-md px-2 py-1.5 outline-none focus:ring-1 focus:ring-primary text-foreground"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* Description */}
                     <div className="mb-4 p-3 bg-secondary/50 rounded-lg">
@@ -327,7 +400,7 @@ export const PlaceDetailModal = ({
                         />
                     </div>
 
-                    {/* Photo Upload - Moved Here */}
+                    {/* Photo Upload */}
                     <div className="mb-6">
                         <p className="text-sm font-medium text-foreground mb-2">Photos</p>
                         <label className="flex items-center justify-center w-full p-4 border-2 border-dashed border-border rounded-lg cursor-pointer hover:bg-secondary/50 transition-colors group">
@@ -367,7 +440,6 @@ export const PlaceDetailModal = ({
                         {place.isVisited ? 'Visited ✓' : 'Mark as Visited'}
                     </button>
 
-                    {/* Delete Button */}
                     {/* Delete Button - Only show for existing places */}
                     {place.id !== 'new' && (
                         <button
@@ -388,4 +460,3 @@ export const PlaceDetailModal = ({
         </div>
     );
 };
-

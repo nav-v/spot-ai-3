@@ -73,23 +73,78 @@ async function searchGooglePlaces(placeName: string, location: string = 'New Yor
             imageUrl = `https://places.googleapis.com/v1/${photoName}/media?maxHeightPx=400&key=${GOOGLE_PLACES_API_KEY}`;
         }
 
-        // Determine type
-        let type = 'restaurant';
+        // Determine main_category and subtype from Google Places types
         const types = place.types || [];
-        if (types.some((t: string) => t.includes('bar'))) type = 'bar';
-        else if (types.some((t: string) => t.includes('cafe'))) type = 'cafe';
-        else if (types.some((t: string) => t.includes('museum') || t.includes('art_gallery'))) type = 'attraction';
-        else if (types.some((t: string) => t.includes('park'))) type = 'attraction';
+        let mainCategory: 'eat' | 'see' = 'eat';
+        let subtype = 'Restaurant';
+        let legacyType = 'restaurant';
+
+        // Check for Eat types
+        if (types.some((t: string) => t.includes('restaurant') || t.includes('food'))) {
+            mainCategory = 'eat';
+            legacyType = 'restaurant';
+            if (types.includes('italian_restaurant')) subtype = 'Italian';
+            else if (types.includes('chinese_restaurant')) subtype = 'Chinese';
+            else if (types.includes('japanese_restaurant')) subtype = 'Japanese';
+            else if (types.includes('indian_restaurant')) subtype = 'Indian';
+            else if (types.includes('mexican_restaurant')) subtype = 'Mexican';
+            else if (types.includes('pizza_restaurant')) subtype = 'Pizza';
+            else if (types.includes('seafood_restaurant')) subtype = 'Seafood';
+            else if (types.includes('american_restaurant')) subtype = 'American';
+            else if (types.includes('thai_restaurant')) subtype = 'Thai';
+            else if (types.includes('vietnamese_restaurant')) subtype = 'Vietnamese';
+            else if (types.includes('korean_restaurant')) subtype = 'Korean';
+            else subtype = 'Restaurant';
+        } else if (types.some((t: string) => t.includes('bar') || t.includes('night_club'))) {
+            mainCategory = 'eat';
+            legacyType = 'bar';
+            subtype = 'Bar';
+        } else if (types.some((t: string) => t.includes('cafe') || t.includes('coffee'))) {
+            mainCategory = 'eat';
+            legacyType = 'cafe';
+            subtype = 'Coffee';
+        } else if (types.some((t: string) => t.includes('bakery'))) {
+            mainCategory = 'eat';
+            legacyType = 'restaurant';
+            subtype = 'Bakery';
+        } else if (types.some((t: string) => t.includes('museum'))) {
+            mainCategory = 'see';
+            legacyType = 'attraction';
+            subtype = 'Museum';
+        } else if (types.some((t: string) => t.includes('art_gallery'))) {
+            mainCategory = 'see';
+            legacyType = 'attraction';
+            subtype = 'Gallery';
+        } else if (types.some((t: string) => t.includes('park'))) {
+            mainCategory = 'see';
+            legacyType = 'attraction';
+            subtype = 'Park';
+        } else if (types.some((t: string) => t.includes('theater') || t.includes('movie_theater'))) {
+            mainCategory = 'see';
+            legacyType = 'attraction';
+            subtype = 'Theater';
+        } else if (types.some((t: string) => t.includes('tourist_attraction') || t.includes('landmark'))) {
+            mainCategory = 'see';
+            legacyType = 'attraction';
+            subtype = 'Landmark';
+        } else if (types.some((t: string) => t.includes('shopping') || t.includes('store'))) {
+            mainCategory = 'see';
+            legacyType = 'activity';
+            subtype = 'Shopping';
+        }
 
         return {
             name: place.displayName?.text || placeName,
-            type,
+            type: legacyType,
+            mainCategory,
+            subtype,
             address: place.formattedAddress || location,
             description: place.editorialSummary?.text || '',
             sourceUrl: place.websiteUri || `https://www.google.com/maps/place/?q=place_id:${place.id}`,
             imageUrl,
             rating: place.rating || null,
-            coordinates: place.location ? { lat: place.location.latitude, lng: place.location.longitude } : null
+            coordinates: place.location ? { lat: place.location.latitude, lng: place.location.longitude } : null,
+            googleTypes: types
         };
     } catch (error) {
         console.error('[Google Places] API error:', error);
@@ -97,9 +152,85 @@ async function searchGooglePlaces(placeName: string, location: string = 'New Yor
     }
 }
 
+// ============= GEMINI CATEGORIZATION FALLBACK =============
+
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+
+async function categorizePlaceWithAI(
+    placeName: string, 
+    description: string, 
+    googleTypes: string[]
+): Promise<{ mainCategory: 'eat' | 'see'; subtype: string }> {
+    if (!GEMINI_API_KEY) {
+        console.log('[AI Categorize] No API key, using defaults');
+        return { mainCategory: 'eat', subtype: 'Restaurant' };
+    }
+
+    try {
+        console.log(`[AI Categorize] Categorizing: "${placeName}"`);
+        
+        const prompt = `You are a place categorization expert. Categorize this place into one of two main categories and a specific subtype.
+
+PLACE: "${placeName}"
+DESCRIPTION: "${description || 'No description'}"
+GOOGLE TYPES: ${googleTypes.length > 0 ? googleTypes.join(', ') : 'None'}
+
+CATEGORIES:
+1. "eat" - Restaurants, cafes, bars, bakeries, food trucks, any place primarily for eating/drinking
+2. "see" - Museums, parks, attractions, landmarks, theaters, galleries, activities, events
+
+Respond with ONLY valid JSON: {"mainCategory": "eat" or "see", "subtype": "specific subtype"}`;
+
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: { temperature: 0.1, maxOutputTokens: 100 }
+                })
+            }
+        );
+
+        if (!response.ok) {
+            return { mainCategory: 'eat', subtype: 'Restaurant' };
+        }
+
+        const data = await response.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        
+        if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            console.log(`[AI Categorize] Result: ${parsed.mainCategory}/${parsed.subtype}`);
+            return {
+                mainCategory: parsed.mainCategory === 'see' ? 'see' : 'eat',
+                subtype: parsed.subtype || 'Other'
+            };
+        }
+        
+        return { mainCategory: 'eat', subtype: 'Restaurant' };
+    } catch (error) {
+        console.error('[AI Categorize] Error:', error);
+        return { mainCategory: 'eat', subtype: 'Restaurant' };
+    }
+}
+
+function isAmbiguousType(googleTypes: string[]): boolean {
+    if (!googleTypes || googleTypes.length === 0) return true;
+    const ambiguousTypes = ['point_of_interest', 'establishment', 'premise', 'street_address', 'route', 'locality'];
+    const hasSpecificType = googleTypes.some(t => 
+        !ambiguousTypes.includes(t) && 
+        (t.includes('restaurant') || t.includes('cafe') || t.includes('bar') || 
+         t.includes('museum') || t.includes('park') || t.includes('theater') ||
+         t.includes('gallery') || t.includes('attraction'))
+    );
+    return !hasSpecificType;
+}
+
 // Use Gemini AI to extract ALL place names from Instagram caption
 // Same approach as chat.ts - returns array of places
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
 interface ExtractedPlace {
     name: string;
@@ -836,6 +967,9 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
                 user_id: spotUserId,
                 name: placeName,
                 type: 'restaurant',
+                main_category: 'eat',
+                subtype: 'Restaurant',
+                subtypes: [],
                 address: 'Location TBD',
                 description: author ? `Shared by @${author} on Instagram` : `Saved from Instagram`,
                 image_url: thumbnail || null,
@@ -873,11 +1007,31 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
             if (placeData) {
                 // Use enriched data from Google Places
                 console.log(`[Webhook] Found on Google Places: "${placeData.name}" at ${placeData.address}`);
+                const isEvent = extracted.isEvent || false;
+                
+                // Check if types are ambiguous and need AI categorization
+                let mainCategory: 'eat' | 'see' = isEvent ? 'see' : (placeData.mainCategory || 'eat');
+                let subtype = isEvent ? 'Event' : (placeData.subtype || 'Restaurant');
+                
+                if (!isEvent && placeData.googleTypes && isAmbiguousType(placeData.googleTypes)) {
+                    console.log(`[Webhook] Ambiguous type for "${placeData.name}", using Gemini categorization`);
+                    const aiCategory = await categorizePlaceWithAI(
+                        placeData.name, 
+                        placeData.description || '', 
+                        placeData.googleTypes || []
+                    );
+                    mainCategory = aiCategory.mainCategory;
+                    subtype = aiCategory.subtype;
+                }
+                
                 newPlace = {
                     id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
                     user_id: spotUserId,
                     name: placeData.name,
-                    type: extracted.isEvent ? 'activity' : placeData.type,
+                    type: isEvent ? 'activity' : placeData.type,
+                    main_category: mainCategory,
+                    subtype: subtype,
+                    subtypes: [],
                     address: placeData.address,
                     description: placeData.description || (author ? `Shared by @${author} on Instagram` : `Saved from Instagram`),
                     image_url: placeData.imageUrl || thumbnail || null,
@@ -886,23 +1040,29 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
                     rating: placeData.rating,
                     is_visited: false,
                     is_favorite: true,
+                    is_event: isEvent,
                     notes: `Saved from Instagram DM${author ? ` (via @${author})` : ''}`,
                     created_at: new Date().toISOString(),
                 };
             } else {
                 // Google Places didn't find it, use extracted name
                 console.log(`[Webhook] Not found on Google Places, using extracted name: "${extracted.name}"`);
+                const isEvent = extracted.isEvent || false;
                 newPlace = {
                     id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
                     user_id: spotUserId,
                     name: extracted.name,
-                    type: extracted.isEvent ? 'activity' : 'restaurant',
+                    type: isEvent ? 'activity' : 'restaurant',
+                    main_category: isEvent ? 'see' : 'eat',
+                    subtype: isEvent ? 'Event' : 'Restaurant',
+                    subtypes: [],
                     address: extracted.location,
                     description: author ? `Shared by @${author} on Instagram` : `Saved from Instagram`,
                     image_url: thumbnail || null,
                     source_url: url,
                     is_visited: false,
                     is_favorite: true,
+                    is_event: isEvent,
                     notes: `Saved from Instagram DM`,
                     created_at: new Date().toISOString(),
                 };

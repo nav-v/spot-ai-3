@@ -24,14 +24,22 @@ export const PlacesList = ({
   onDelete,
 }: PlacesListProps) => {
   const filteredPlaces = places.filter((place) => {
-    // Filter by tab
+    // Filter by tab using new main_category system
     if (activeTab === 'completed' && !place.isVisited) return false;
-    if (activeTab === 'todo' && place.isVisited) return false;
-    if (activeTab === 'eat' && !['restaurant', 'cafe', 'bar'].includes(place.type)) return false;
-    if (activeTab === 'todo' && ['restaurant', 'cafe', 'bar'].includes(place.type)) return false;
+    if (activeTab === 'eat' && place.mainCategory !== 'eat') return false;
+    if (activeTab === 'todo' && place.mainCategory !== 'see') return false;
+    // For non-completed tabs, exclude visited items
+    if (activeTab !== 'completed' && place.isVisited) return false;
 
-    // Filter by type
-    if (activeFilter !== 'all' && place.type !== activeFilter) return false;
+    // Filter by subtype (or legacy type for backwards compatibility)
+    if (activeFilter !== 'all') {
+      // Check if filter matches subtype or legacy type
+      const matchesSubtype = place.subtype?.toLowerCase() === activeFilter.toLowerCase();
+      const matchesType = place.type === activeFilter;
+      // Special filter for events
+      const matchesEvent = activeFilter === 'event' && place.isEvent;
+      if (!matchesSubtype && !matchesType && !matchesEvent) return false;
+    }
 
     return true;
   });

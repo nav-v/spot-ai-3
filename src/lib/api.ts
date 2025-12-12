@@ -38,13 +38,19 @@ export interface User {
 export interface Place {
     id: string;
     name: string;
+    // Legacy type field - kept for backwards compatibility
     type: 'restaurant' | 'activity' | 'cafe' | 'bar' | 'attraction';
+    // New category system
+    mainCategory: 'eat' | 'see';
+    subtype: string;
+    subtypes?: string[];
+    // Legacy cuisine field - now migrated to subtype
     cuisine?: string;
     address: string;
     description?: string;
     imageUrl?: string;
     sourceUrl?: string;
-    coordinates?: { lat: number; lng: number };
+    coordinates?: { lat: number; lng: number } | null;
     isVisited: boolean;
     isFavorite: boolean;
     notes?: string;
@@ -75,6 +81,12 @@ const dbPlaceToPlace = (dbPlace: any): Place => ({
     id: dbPlace.id,
     name: dbPlace.name,
     type: dbPlace.type,
+    // New category fields with fallback for unmigrated data
+    mainCategory: dbPlace.main_category || (
+        ['restaurant', 'cafe', 'bar'].includes(dbPlace.type) ? 'eat' : 'see'
+    ),
+    subtype: dbPlace.subtype || dbPlace.cuisine || dbPlace.type || 'Other',
+    subtypes: dbPlace.subtypes || [],
     cuisine: dbPlace.cuisine,
     address: dbPlace.address,
     description: dbPlace.description,
@@ -219,11 +231,22 @@ export const placesApi = {
         const userId = getCurrentUserId();
         if (!userId) throw new Error('Not authenticated');
 
+        // Determine mainCategory with fallback logic
+        const mainCategory = place.mainCategory || (
+            ['restaurant', 'cafe', 'bar'].includes(place.type || '') ? 'eat' : 'see'
+        );
+        // Determine subtype with fallback logic
+        const subtype = place.subtype || place.cuisine || 
+            (place.type === 'cafe' ? 'Coffee' : place.type === 'bar' ? 'Bar' : 'Restaurant');
+
         const dbPlace = {
             id: Date.now().toString(),
             user_id: userId,
             name: place.name,
             type: place.type || 'restaurant',
+            main_category: mainCategory,
+            subtype: subtype,
+            subtypes: place.subtypes || [],
             cuisine: place.cuisine,
             address: place.address || '',
             description: place.description,
@@ -257,6 +280,9 @@ export const placesApi = {
         const dbUpdates: any = {};
         if (updates.name !== undefined) dbUpdates.name = updates.name;
         if (updates.type !== undefined) dbUpdates.type = updates.type;
+        if (updates.mainCategory !== undefined) dbUpdates.main_category = updates.mainCategory;
+        if (updates.subtype !== undefined) dbUpdates.subtype = updates.subtype;
+        if (updates.subtypes !== undefined) dbUpdates.subtypes = updates.subtypes;
         if (updates.cuisine !== undefined) dbUpdates.cuisine = updates.cuisine;
         if (updates.address !== undefined) dbUpdates.address = updates.address;
         if (updates.description !== undefined) dbUpdates.description = updates.description;
