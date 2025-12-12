@@ -33,6 +33,8 @@ interface RecommendedPlace {
   subtype?: string;
   // Dish recommendations
   recommendedDishes?: string[];
+  // Source attribution
+  sources?: string[];
 }
 
 interface ReservationData {
@@ -655,11 +657,25 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                                     <h4 className="font-semibold text-sm text-foreground mb-1">{formattedLine}</h4>
                                     <p className="text-xs text-muted-foreground mb-1">{matchedPlace.description}</p>
                                     {matchedPlace.recommendedDishes && matchedPlace.recommendedDishes.length > 0 && (
-                                      <p className="text-xs text-muted-foreground/80 mb-3">
+                                      <p className="text-xs text-muted-foreground/80 mb-1">
                                         <span className="font-medium">Try:</span> {matchedPlace.recommendedDishes.join(' · ')}
                                       </p>
                                     )}
-                                    {(!matchedPlace.recommendedDishes || matchedPlace.recommendedDishes.length === 0) && <div className="mb-2" />}
+                                    {matchedPlace.sources && matchedPlace.sources.length > 0 && (
+                                      <div className="flex items-center gap-1.5 mb-2">
+                                        <span className="text-[10px] text-muted-foreground/60">via</span>
+                                        {matchedPlace.sources.slice(0, 3).map((source, i) => (
+                                          <img 
+                                            key={i}
+                                            src={`https://www.google.com/s2/favicons?domain=${source}&sz=16`}
+                                            alt={source}
+                                            title={source}
+                                            className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
+                                          />
+                                        ))}
+                                      </div>
+                                    )}
+                                    {!matchedPlace.sources?.length && !matchedPlace.recommendedDishes?.length && <div className="mb-2" />}
                                     <div className="flex gap-2">
                                       <a href={matchedPlace.website} target="_blank" rel="noopener noreferrer" className="flex-1 flex items-center justify-center gap-1.5 bg-secondary/50 hover:bg-secondary text-secondary-foreground text-[10px] py-2 rounded-lg transition-colors font-medium">
                                         <ExternalLink className="w-3 h-3" /> Website
@@ -759,11 +775,25 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                                   </div>
                                   <p className="text-xs text-muted-foreground mb-1">{matchedPlace.description}</p>
                                   {matchedPlace.recommendedDishes && matchedPlace.recommendedDishes.length > 0 && (
-                                    <p className="text-xs text-muted-foreground/80 mb-3">
+                                    <p className="text-xs text-muted-foreground/80 mb-1">
                                       <span className="font-medium">Try:</span> {matchedPlace.recommendedDishes.join(' · ')}
                                     </p>
                                   )}
-                                  {(!matchedPlace.recommendedDishes || matchedPlace.recommendedDishes.length === 0) && <div className="mb-2" />}
+                                  {(matchedPlace as any).sources && (matchedPlace as any).sources.length > 0 && (
+                                    <div className="flex items-center gap-1.5 mb-2">
+                                      <span className="text-[10px] text-muted-foreground/60">via</span>
+                                      {(matchedPlace as any).sources.slice(0, 3).map((source: string, i: number) => (
+                                        <img 
+                                          key={i}
+                                          src={`https://www.google.com/s2/favicons?domain=${source}&sz=16`}
+                                          alt={source}
+                                          title={source}
+                                          className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
+                                        />
+                                      ))}
+                                    </div>
+                                  )}
+                                  {!(matchedPlace as any).sources?.length && !matchedPlace.recommendedDishes?.length && <div className="mb-2" />}
 
                                   <div className="flex gap-2">
                                     <a
@@ -897,9 +927,23 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                             {place.description}
                           </p>
                           {(place as any).recommendedDishes && (place as any).recommendedDishes.length > 0 && (
-                            <p className="text-xs text-muted-foreground/80 mb-2">
+                            <p className="text-xs text-muted-foreground/80 mb-1">
                               <span className="font-medium">Try:</span> {(place as any).recommendedDishes.join(' · ')}
                             </p>
+                          )}
+                          {(place as any).sources && (place as any).sources.length > 0 && (
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <span className="text-[10px] text-muted-foreground/60">via</span>
+                              {(place as any).sources.slice(0, 3).map((source: string, i: number) => (
+                                <img 
+                                  key={i}
+                                  src={`https://www.google.com/s2/favicons?domain=${source}&sz=16`}
+                                  alt={source}
+                                  title={source}
+                                  className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
+                                />
+                              ))}
+                            </div>
                           )}
 
                                 <div className="flex gap-2 mt-auto">
@@ -980,9 +1024,23 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                             {place.description}
                           </p>
                           {(place as any).recommendedDishes && (place as any).recommendedDishes.length > 0 && (
-                            <p className="text-xs text-muted-foreground/80 mb-2">
+                            <p className="text-xs text-muted-foreground/80 mb-1">
                               <span className="font-medium">Try:</span> {(place as any).recommendedDishes.join(' · ')}
                             </p>
+                          )}
+                          {(place as any).sources && (place as any).sources.length > 0 && (
+                            <div className="flex items-center gap-1.5 mb-2">
+                              <span className="text-[10px] text-muted-foreground/60">via</span>
+                              {(place as any).sources.slice(0, 3).map((source: string, i: number) => (
+                                <img 
+                                  key={i}
+                                  src={`https://www.google.com/s2/favicons?domain=${source}&sz=16`}
+                                  alt={source}
+                                  title={source}
+                                  className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
+                                />
+                              ))}
+                            </div>
                           )}
 
                           <div className="flex gap-2 mt-auto">
