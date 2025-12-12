@@ -1609,15 +1609,16 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
             continue;
         }
         
-        // Step 2: Process EACH extracted place (like chat.ts)
+        // Step 2: Process extracted places - save found ones, collect unfound ones
         console.log(`[Webhook] Processing ${extractedPlaces.length} extracted places...`);
+        
+        const unfoundPlaces: string[] = [];
+        let savedAtLeastOne = false;
         
         for (const extracted of extractedPlaces) {
             // Search Google Places with the extracted name
             console.log(`[Webhook] Searching Google Places for: "${extracted.name}" in ${extracted.location}`);
             const placeData = await searchGooglePlaces(extracted.name, extracted.location);
-            
-            let newPlace: any;
             
             if (placeData) {
                 // Use enriched data from Google Places
@@ -1642,7 +1643,7 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
                 // Only store real Instagram URLs, not placeholder ones
                 const realInstagramUrl = isPlaceholderUrl ? null : url;
                 
-                newPlace = {
+                const newPlace = {
                     id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
                     user_id: spotUserId,
                     name: placeData.name,
@@ -1667,42 +1668,68 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
                     instagram_post_url: realInstagramUrl,
                     needs_enhancement: false,
                 };
+                
+                console.log(`[Webhook] Creating place: "${newPlace.name}" at "${newPlace.address}"`);
+                
+                const { data: savedPlace, error: placeError } = await getSupabase()
+                    .from('places')
+                    .insert(newPlace)
+                    .select()
+                    .single();
+                
+                if (placeError) {
+                    console.error('[Webhook] Failed to create place:', placeError);
+                    results.push({ url, success: false, name: extracted.name, error: 'Failed to save place' });
+                } else {
+                    console.log(`[Webhook] Successfully saved place: ${savedPlace.name}`);
+                    results.push({ url, success: true, name: savedPlace.name, needsEnhancement: false });
+                    savedAtLeastOne = true;
+                }
             } else {
-                // Google Places didn't find it - save as unknown and ask for details
-                console.log(`[Webhook] Not found on Google Places, generating placeholder name...`);
-                const isEvent = extracted.isEvent || false;
-                
-                // Generate a descriptive placeholder name
-                const placeholder = await generatePlaceholderName(title || extracted.name);
-                console.log(`[Webhook] Generated placeholder: "${placeholder.name}" (${placeholder.category}/${placeholder.subtype})`);
-                
-                // Only store real Instagram URLs, not placeholder ones
-                const realInstagramUrlForPlaceholder = isPlaceholderUrl ? null : url;
-                
-                newPlace = {
-                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-                    user_id: spotUserId,
-                    name: placeholder.name,
-                    type: isEvent ? 'activity' : 'restaurant',
-                    main_category: isEvent ? 'see' : placeholder.category,
-                    subtype: isEvent ? 'Event' : placeholder.subtype,
-                    subtypes: [],
-                    address: extracted.location || 'Location TBD',
-                    description: `Originally mentioned as "${extracted.name}". ${author ? `Shared by @${author} on Instagram.` : 'Saved from Instagram.'} Reply with the real name to update!`,
-                    image_url: thumbnail || null,
-                    source_url: realInstagramUrlForPlaceholder || null,
-                    is_visited: false,
-                    is_favorite: true,
-                    is_event: isEvent,
-                    notes: `Original mention: ${extracted.name}`,
-                    // Instagram integration - needs enhancement!
-                    instagram_post_url: realInstagramUrlForPlaceholder,
-                    needs_enhancement: true,
-                    created_at: new Date().toISOString(),
-                };
+                // Google Places didn't find it - add to unfound list (we'll create ONE placeholder later)
+                console.log(`[Webhook] Not found on Google Places: "${extracted.name}"`);
+                unfoundPlaces.push(extracted.name);
             }
+        }
+        
+        // Step 3: Create ONE placeholder entry for ALL unfound places (not one per unfound)
+        if (unfoundPlaces.length > 0) {
+            console.log(`[Webhook] Creating ONE placeholder for ${unfoundPlaces.length} unfound place(s): ${unfoundPlaces.join(', ')}`);
             
-            console.log(`[Webhook] Creating place: "${newPlace.name}" at "${newPlace.address}"`);
+            // Generate a descriptive placeholder name based on the caption
+            const placeholder = await generatePlaceholderName(title);
+            console.log(`[Webhook] Generated placeholder: "${placeholder.name}" (${placeholder.category}/${placeholder.subtype})`);
+            
+            // Only store real Instagram URLs, not placeholder ones
+            const realInstagramUrl = isPlaceholderUrl ? null : url;
+            
+            // List all mentioned places in the description
+            const mentionedList = unfoundPlaces.length > 1 
+                ? `Mentioned: ${unfoundPlaces.join(', ')}.` 
+                : `Originally mentioned as "${unfoundPlaces[0]}".`;
+            
+            const newPlace = {
+                id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+                user_id: spotUserId,
+                name: placeholder.name,
+                type: 'restaurant',
+                main_category: placeholder.category,
+                subtype: placeholder.subtype,
+                subtypes: [],
+                address: 'Location TBD',
+                description: `${mentionedList} ${author ? `Shared by @${author} on Instagram.` : 'Saved from Instagram.'} Use the enhance button to add places from this post!`,
+                image_url: thumbnail || null,
+                source_url: realInstagramUrl || null,
+                is_visited: false,
+                is_favorite: true,
+                notes: `Unfound places: ${unfoundPlaces.join(', ')}`,
+                // Instagram integration - needs enhancement!
+                instagram_post_url: realInstagramUrl,
+                needs_enhancement: true,
+                created_at: new Date().toISOString(),
+            };
+            
+            console.log(`[Webhook] Creating placeholder: "${newPlace.name}"`);
             
             const { data: savedPlace, error: placeError } = await getSupabase()
                 .from('places')
@@ -1711,16 +1738,11 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
                 .single();
             
             if (placeError) {
-                console.error('[Webhook] Failed to create place:', placeError);
-                results.push({ url, success: false, name: extracted.name, error: 'Failed to save place' });
+                console.error('[Webhook] Failed to create placeholder:', placeError);
+                results.push({ url, success: false, error: 'Failed to save placeholder' });
             } else {
-                console.log(`[Webhook] Successfully saved place: ${savedPlace.name} (needs_enhancement: ${savedPlace.needs_enhancement})`);
-                results.push({ 
-                    url, 
-                    success: true, 
-                    name: savedPlace.name,
-                    needsEnhancement: savedPlace.needs_enhancement || false
-                });
+                console.log(`[Webhook] Successfully saved placeholder: ${savedPlace.name} (needs_enhancement: true)`);
+                results.push({ url, success: true, name: savedPlace.name, needsEnhancement: true });
             }
         }
     }
