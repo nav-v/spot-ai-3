@@ -649,10 +649,15 @@ async function getInstagramUrlFromAttachment(attachment: any): Promise<string | 
     }
     
     // 2. Try to get media ID and convert to URL (with oEmbed validation)
+    // NOTE: Instagram's webhook provides "reel_video_id" which is an INTERNAL asset ID,
+    // NOT the public media ID used for shortcodes. We can try to convert it, but
+    // it often fails because it's a different ID format. We ONLY return URLs that
+    // we can actually validate with oEmbed.
     const mediaId = payload?.reel_video_id || payload?.ig_post_media_id || payload?.media_id || payload?.id;
     
     if (mediaId) {
         console.log(`[Webhook] Found media ID: ${mediaId}`);
+        console.log(`[Webhook] ⚠️ Note: reel_video_id is often an internal asset ID, not the public media ID`);
         
         // Determine if it's likely a reel based on attachment type or field source
         const isLikelyReel = attachmentType?.includes('reel') || 
@@ -663,18 +668,22 @@ async function getInstagramUrlFromAttachment(attachment: any): Promise<string | 
         
         // Use our smart URL finder that validates with oEmbed
         const validUrl = await findValidInstagramUrl(String(mediaId), isLikelyReel);
+        
+        // Only return URLs that we successfully validated
+        // If oEmbed couldn't validate, the shortcode conversion was likely wrong
+        // In that case, return null rather than a broken URL
         if (validUrl) {
-            console.log(`[Webhook] ✅ Got validated URL: ${validUrl}`);
-            return validUrl;
+            // Check if this URL was actually validated or just returned as fallback
+            const validation = await validateInstagramUrl(validUrl);
+            if (validation.valid) {
+                console.log(`[Webhook] ✅ URL validated successfully: ${validUrl}`);
+                return validUrl;
+            }
         }
         
-        // If validation failed, still return the generated URL (it might work for embeds)
-        const shortcode = mediaIdToShortcode(String(mediaId));
-        const fallbackUrl = isLikelyReel 
-            ? `https://www.instagram.com/reel/${shortcode}/`
-            : `https://www.instagram.com/p/${shortcode}/`;
-        console.log(`[Webhook] Using unvalidated fallback URL: ${fallbackUrl}`);
-        return fallbackUrl;
+        console.log(`[Webhook] ⚠️ Could not create valid Instagram URL from media ID`);
+        console.log(`[Webhook] The reel_video_id (${mediaId}) is likely an internal asset ID`);
+        // Don't return a broken URL - return null so we don't store garbage
     }
     
     // 3. For stories
@@ -687,21 +696,25 @@ async function getInstagramUrlFromAttachment(attachment: any): Promise<string | 
     }
     
     // 4. Last resort: If we have a CDN URL, try to extract media ID from it
+    // NOTE: This rarely works because asset_id is the same as reel_video_id (internal ID)
     if (payload?.url && (payload.url.includes('lookaside') || payload.url.includes('cdninstagram'))) {
-        // CDN URLs sometimes contain asset_id parameter
         const assetMatch = payload.url.match(/asset_id=(\d+)/);
         if (assetMatch) {
             const assetId = assetMatch[1];
             console.log(`[Webhook] Extracted asset_id from CDN URL: ${assetId}`);
+            console.log(`[Webhook] (This is likely the same internal ID, but let's try...)`);
             
             const isReel = attachmentType === 'ig_reel' || attachmentType?.includes('reel');
-            
-            // Use our smart URL finder with oEmbed validation
             const validUrl = await findValidInstagramUrl(assetId, isReel);
+            
             if (validUrl) {
-                console.log(`[Webhook] ✅ Got validated URL from asset_id: ${validUrl}`);
-                return validUrl;
+                const validation = await validateInstagramUrl(validUrl);
+                if (validation.valid) {
+                    console.log(`[Webhook] ✅ Got validated URL from asset_id: ${validUrl}`);
+                    return validUrl;
+                }
             }
+            console.log(`[Webhook] ⚠️ asset_id also couldn't be converted to valid URL`);
         }
     }
     
@@ -1197,13 +1210,24 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
     
     if (message.message?.attachments) {
         for (const attachment of message.message.attachments) {
+            const payload = attachment.payload as any;
+            const title = payload?.title;
             const instagramUrl = await getInstagramUrlFromAttachment(attachment);
+            
             if (instagramUrl) {
                 console.log(`[Webhook] Converted attachment to URL: ${instagramUrl}`);
-                const payload = attachment.payload as any;
                 urlsWithTitles.push({ 
                     url: instagramUrl, 
-                    title: payload?.title // Instagram provides the title!
+                    title: title
+                });
+            } else if (title) {
+                // Even without a valid Instagram URL, we can still process the content
+                // using the title/caption to extract place names
+                console.log(`[Webhook] No valid Instagram URL, but have title: "${title.substring(0, 100)}..."`);
+                // Use a placeholder URL so the processing continues
+                urlsWithTitles.push({
+                    url: `instagram://attachment/${payload?.reel_video_id || payload?.id || 'unknown'}`,
+                    title: title
                 });
             }
         }
@@ -1299,12 +1323,16 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
     for (const { url, title: attachmentTitle } of urlsWithTitles) {
         console.log(`[Webhook] Processing URL: ${url}, attachment title: "${attachmentTitle?.substring(0, 50) || 'none'}..."`);
         
+        // Check if this is a placeholder URL (couldn't get valid Instagram URL)
+        const isPlaceholderUrl = url.startsWith('instagram://attachment/');
+        
         // Try Instagram oEmbed API first (free, no API key needed)
         let title: string | null = null;
         let author: string | null = null;
         let thumbnail: string | null = null;
         
-        if (url.includes('instagram.com')) {
+        // Only try oEmbed for real Instagram URLs
+        if (url.includes('instagram.com') && !isPlaceholderUrl) {
             try {
                 const oembedUrl = `https://api.instagram.com/oembed/?url=${encodeURIComponent(url)}`;
                 console.log(`[Webhook] Fetching oEmbed: ${oembedUrl}`);
@@ -1322,6 +1350,8 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
             } catch (oembedError) {
                 console.error(`[Webhook] oEmbed error:`, oembedError);
             }
+        } else if (isPlaceholderUrl) {
+            console.log(`[Webhook] Placeholder URL - will use attachment title directly`);
         }
         
         // Fallback to attachment title if oEmbed failed
@@ -1330,8 +1360,8 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
             console.log(`[Webhook] Using attachment title as fallback: "${title?.substring(0, 50)}..."`);
         }
         
-        // Fallback to Firecrawl scrape for non-Instagram URLs
-        if (!title && !url.includes('instagram.com')) {
+        // Fallback to Firecrawl scrape for non-Instagram URLs (but not placeholder URLs)
+        if (!title && !url.includes('instagram.com') && !isPlaceholderUrl) {
             try {
                 const scrapeResponse = await fetch(`https://spot-ai-3.vercel.app/api/scrape`, {
                     method: 'POST',
@@ -1366,6 +1396,9 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
             const placeholder = await generatePlaceholderName(title);
             console.log(`[Webhook] Generated placeholder: "${placeholder.name}"`);
             
+            // Only store real Instagram URLs, not placeholder ones
+            const realUrl = isPlaceholderUrl ? null : url;
+            
             const newPlace = {
                 id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
                 user_id: spotUserId,
@@ -1377,13 +1410,13 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
                 address: 'Location TBD',
                 description: `Couldn't identify this place. ${author ? `Shared by @${author} on Instagram.` : 'Saved from Instagram.'} Reply with the real name to update!`,
                 image_url: thumbnail || null,
-                source_url: url,
+                source_url: realUrl || null,
                 is_visited: false,
                 is_favorite: true,
                 notes: `Original caption: ${title.substring(0, 200)}`,
                 created_at: new Date().toISOString(),
                 // Instagram integration - needs enhancement!
-                instagram_post_url: url,
+                instagram_post_url: realUrl,
                 needs_enhancement: true,
             };
             
@@ -1431,6 +1464,9 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
                     subtype = aiCategory.subtype;
                 }
                 
+                // Only store real Instagram URLs, not placeholder ones
+                const realInstagramUrl = isPlaceholderUrl ? null : url;
+                
                 newPlace = {
                     id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
                     user_id: spotUserId,
@@ -1442,7 +1478,7 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
                     address: placeData.address,
                     description: placeData.description || (author ? `Shared by @${author} on Instagram` : `Saved from Instagram`),
                     image_url: placeData.imageUrl || thumbnail || null,
-                    source_url: placeData.sourceUrl || url,
+                    source_url: placeData.sourceUrl || realInstagramUrl || null,
                     coordinates: placeData.coordinates,
                     rating: placeData.rating,
                     is_visited: false,
@@ -1450,8 +1486,8 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
                     is_event: isEvent,
                     notes: `Saved from Instagram DM${author ? ` (via @${author})` : ''}`,
                     created_at: new Date().toISOString(),
-                    // Instagram integration
-                    instagram_post_url: url,
+                    // Instagram integration - only store if we have a real URL
+                    instagram_post_url: realInstagramUrl,
                     needs_enhancement: false,
                 };
             } else {
@@ -1462,6 +1498,9 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
                 // Generate a descriptive placeholder name
                 const placeholder = await generatePlaceholderName(title || extracted.name);
                 console.log(`[Webhook] Generated placeholder: "${placeholder.name}" (${placeholder.category}/${placeholder.subtype})`);
+                
+                // Only store real Instagram URLs, not placeholder ones
+                const realInstagramUrlForPlaceholder = isPlaceholderUrl ? null : url;
                 
                 newPlace = {
                     id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
@@ -1474,13 +1513,13 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
                     address: extracted.location || 'Location TBD',
                     description: `Originally mentioned as "${extracted.name}". ${author ? `Shared by @${author} on Instagram.` : 'Saved from Instagram.'} Reply with the real name to update!`,
                     image_url: thumbnail || null,
-                    source_url: url,
+                    source_url: realInstagramUrlForPlaceholder || null,
                     is_visited: false,
                     is_favorite: true,
                     is_event: isEvent,
                     notes: `Original mention: ${extracted.name}`,
                     // Instagram integration - needs enhancement!
-                    instagram_post_url: url,
+                    instagram_post_url: realInstagramUrlForPlaceholder,
                     needs_enhancement: true,
                     created_at: new Date().toISOString(),
                 };
