@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Sun, Cloud, CloudRain, Snowflake, RefreshCw, Plus, Check, MapPin, Loader2 } from 'lucide-react';
+import { Sun, Cloud, CloudRain, Snowflake, RefreshCw, Plus, Check, MapPin, Loader2, ExternalLink } from 'lucide-react';
 import { DraggableScrollContainer } from './DraggableScrollContainer';
 
 interface WeatherData {
@@ -17,11 +17,14 @@ interface DigestRecommendation {
   description: string;
   location: string;
   imageUrl?: string;
+  website?: string;
+  rating?: number;
   isEvent: boolean;
   startDate?: string;
   endDate?: string;
   mainCategory: 'eat' | 'see';
   subtype: string;
+  recommendedDishes?: string[];
   sources?: Array<{ domain: string; url: string }>;
   timeframe?: 'today' | 'tomorrow' | 'weekend';
 }
@@ -105,7 +108,7 @@ export function DigestCarousel({
       {/* Intro */}
       <p className="text-sm text-muted-foreground">{digest.intro_text}</p>
 
-      {/* Carousel - EXACT same structure as ChatInterface */}
+      {/* Carousel - EXACT same structure as ChatInterface search results */}
       <div className="relative w-screen -ml-4">
         <DraggableScrollContainer
           className="pb-3 flex gap-3 px-4 snap-x snap-mandatory scroll-smooth scrollbar-hide"
@@ -132,62 +135,91 @@ export function DigestCarousel({
 
                 {/* Content Area */}
                 <div className="p-3 flex flex-col flex-1">
-                  <h3 className="font-semibold text-sm leading-tight text-foreground mb-1">{place.name}</h3>
+                  <div className="flex justify-between items-start mb-1">
+                    <h3 className="font-semibold text-sm leading-tight text-foreground">{place.name}</h3>
+                    {place.rating && (
+                      <div className="flex items-center gap-0.5 bg-yellow-500/10 text-yellow-600 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                        <span>★</span>
+                        <span>{place.rating}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {place.location && (
+                    <p className="text-[10px] text-muted-foreground mb-1">📍 {place.location}</p>
+                  )}
 
                   {place.isEvent && place.startDate && (
-                    <p className="text-[10px] text-primary font-medium mb-1">
-                      📅 {new Date(place.startDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                    <p className="text-[10px] text-primary font-medium mb-2">
+                      📅 {new Date(place.startDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                     </p>
                   )}
 
-                  {!place.isEvent && place.subtype && (
-                    <p className="text-[10px] text-muted-foreground mb-1">{place.subtype}</p>
-                  )}
-
-                  <p className="text-xs text-muted-foreground line-clamp-2 flex-1 mb-2">
+                  <p className="text-xs text-muted-foreground mb-1 flex-1">
                     {place.description}
                   </p>
 
-                  {/* Sources */}
+                  {place.recommendedDishes && place.recommendedDishes.length > 0 && (
+                    <p className="text-xs text-muted-foreground/80 mb-1">
+                      <span className="font-medium">Try:</span> {place.recommendedDishes.join(' · ')}
+                    </p>
+                  )}
+
                   {place.sources && place.sources.length > 0 && (
                     <div className="flex items-center gap-1.5 mb-2">
                       <span className="text-[10px] text-muted-foreground/60">via</span>
-                      {place.sources.slice(0, 3).map((source, i) => (
-                        <a
-                          key={i}
-                          href={source.url || `https://${source.domain}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title={source.domain}
-                        >
-                          <img
-                            src={`https://www.google.com/s2/favicons?domain=${source.domain}&sz=16`}
-                            alt={source.domain}
-                            className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
-                          />
-                        </a>
-                      ))}
+                      {place.sources.slice(0, 3).map((source, i) => {
+                        const domain = typeof source === 'string' ? source : source.domain;
+                        const url = typeof source === 'string' ? `https://${source}` : source.url;
+                        return (
+                          <a 
+                            key={i}
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={domain}
+                          >
+                            <img 
+                              src={`https://www.google.com/s2/favicons?domain=${domain}&sz=16`}
+                              alt={domain}
+                              className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
+                            />
+                          </a>
+                        );
+                      })}
                     </div>
                   )}
 
-                  {/* Add Button */}
-                  <button
-                    onClick={() => handleAddPlace(place)}
-                    disabled={isSaved || isAdding}
-                    className={`flex-1 flex items-center justify-center gap-1.5 text-[10px] py-2 rounded-lg transition-colors font-medium shadow-sm ${
-                      isSaved
-                        ? 'bg-secondary text-muted-foreground cursor-not-allowed'
-                        : 'bg-primary text-primary-foreground hover:bg-primary/90'
-                    }`}
-                  >
-                    {isAdding ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : isSaved ? (
-                      <><Check className="w-3 h-3" /> Saved</>
-                    ) : (
-                      <><Plus className="w-3 h-3" /> Add to List</>
+                  <div className="flex gap-2 mt-auto">
+                    {place.website && (
+                      <a
+                        href={place.website}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 flex items-center justify-center gap-1.5 bg-secondary/50 hover:bg-secondary text-secondary-foreground text-[10px] py-2 rounded-lg transition-colors font-medium"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        Website
+                      </a>
                     )}
-                  </button>
+                    <button
+                      onClick={() => handleAddPlace(place)}
+                      disabled={isSaved || isAdding}
+                      className={`${place.website ? 'flex-1' : 'w-full'} flex items-center justify-center gap-1.5 text-[10px] py-2 rounded-lg transition-colors font-medium shadow-sm ${
+                        isSaved
+                          ? 'bg-secondary text-muted-foreground cursor-not-allowed'
+                          : 'bg-primary text-primary-foreground hover:bg-primary/90'
+                      }`}
+                    >
+                      {isAdding ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : isSaved ? (
+                        <><Check className="w-3 h-3" /> On List</>
+                      ) : (
+                        <><Plus className="w-3 h-3" /> Add</>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
             );

@@ -150,13 +150,24 @@ async function researchByTimeframe(): Promise<{
     };
 }
 
-// ============= GOOGLE PLACES (for images) =============
+// ============= GOOGLE PLACES (for images, rating, website) =============
 
-async function searchGooglePlaces(name: string, location: string = 'New York'): Promise<{ imageUrl?: string; address?: string }> {
-    if (!GOOGLE_PLACES_API_KEY) return {};
+interface PlaceDetails {
+    imageUrl?: string;
+    address?: string;
+    rating?: number;
+    website?: string;
+}
+
+async function searchGooglePlaces(name: string, location: string = 'New York'): Promise<PlaceDetails> {
+    if (!GOOGLE_PLACES_API_KEY) {
+        console.log('[Google Places] No API key configured');
+        return {};
+    }
     
     try {
-        const query = `${name} ${location}`;
+        const query = `${name} ${location} NYC`;
+        console.log(`[Google Places] Searching: ${query}`);
         const searchUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${GOOGLE_PLACES_API_KEY}`;
         const response = await fetch(searchUrl);
         const data = await response.json();
@@ -169,9 +180,30 @@ async function searchGooglePlaces(name: string, location: string = 'New York'): 
                 imageUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${GOOGLE_PLACES_API_KEY}`;
             }
             
-            return { imageUrl, address: place.formatted_address };
+            // Get place details for website
+            let website;
+            if (place.place_id) {
+                try {
+                    const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&fields=website&key=${GOOGLE_PLACES_API_KEY}`;
+                    const detailsRes = await fetch(detailsUrl);
+                    const detailsData = await detailsRes.json();
+                    website = detailsData.result?.website;
+                } catch {}
+            }
+            
+            console.log(`[Google Places] Found: ${place.name}, rating: ${place.rating}, hasImage: ${!!imageUrl}`);
+            
+            return { 
+                imageUrl, 
+                address: place.formatted_address,
+                rating: place.rating,
+                website
+            };
         }
-    } catch {}
+        console.log(`[Google Places] No results for: ${name}`);
+    } catch (error) {
+        console.error(`[Google Places] Error:`, error);
+    }
     
     return {};
 }
@@ -203,10 +235,13 @@ interface DigestRec {
     description: string;
     location: string;
     imageUrl?: string;
+    website?: string;
+    rating?: number;
     isEvent: boolean;
     startDate?: string;
     mainCategory: 'eat' | 'see';
     subtype: string;
+    recommendedDishes?: string[];
     sources: Array<{ domain: string; url: string }>;
     timeframe: 'today' | 'tomorrow' | 'weekend';
 }
@@ -247,11 +282,14 @@ Return JSON:
 {
     "intro_text": "While you were [something fun], I found some gems for your week...",
     "recommendations": [
-        {"id": "1", "name": "Name", "type": "event|restaurant|bar|cafe", "description": "Brief why it's great", "location": "Neighborhood", "isEvent": true, "startDate": "2024-12-13", "mainCategory": "see", "subtype": "Concert", "sources": [{"domain": "reddit.com", "url": ""}], "timeframe": "today"}
+        {"id": "1", "name": "Place Name", "type": "event|restaurant|bar|cafe", "description": "Brief why it's great", "location": "Neighborhood", "isEvent": false, "startDate": "2024-12-13", "mainCategory": "eat", "subtype": "Italian", "recommendedDishes": ["Dish 1", "Dish 2"], "sources": [{"domain": "reddit.com", "url": ""}], "timeframe": "today"}
     ]
 }
 
-Be specific about dates. Events need real dates from the research.`;
+IMPORTANT:
+- For restaurants/cafes/bars, include 2-3 recommendedDishes from reviews
+- Be specific about dates. Events need real dates from the research.
+- Use actual venue/restaurant names from the research`;
 
     try {
         const response = await getAI().models.generateContent({
@@ -266,18 +304,22 @@ Be specific about dates. Events need real dates from the research.`;
             // Merge sources from research
             const allSources = [...research.today.sources, ...research.tomorrow.sources, ...research.weekend.sources, ...research.food.sources];
             
-            // Enrich recommendations with sources and images
+            // Enrich recommendations with Google Places data (images, ratings, websites)
+            console.log(`[Digest] Enriching ${(parsed.recommendations || []).length} recommendations with Google Places...`);
             const enriched = await Promise.all((parsed.recommendations || []).slice(0, 15).map(async (rec: any, i: number) => {
-                // Try to get image from Google Places
+                // Try to get data from Google Places
                 const placeData = await searchGooglePlaces(rec.name, rec.location || 'New York');
                 
                 return {
                     ...rec,
                     id: rec.id || `digest-${i}`,
-                    imageUrl: placeData.imageUrl,
+                    imageUrl: placeData.imageUrl || rec.imageUrl,
+                    rating: placeData.rating || rec.rating,
+                    website: placeData.website || rec.website,
                     sources: rec.sources?.length ? rec.sources : allSources.slice(0, 2)
                 };
             }));
+            console.log(`[Digest] Enriched ${enriched.filter(r => r.imageUrl).length}/${enriched.length} with images`);
             
             return {
                 intro_text: parsed.intro_text || "Here's what's happening in NYC!",

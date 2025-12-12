@@ -569,19 +569,14 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
     }
   };
 
-  // Focus input and hide digest when user wants to ask Spot
+  // Focus input when user wants to ask Spot
   const handleAskSpot = () => {
-    setShowDigest(false);
-    setTimeout(() => {
-      inputRef.current?.focus();
-    }, 100);
+    inputRef.current?.focus();
   };
 
   const handleSend = async () => {
     if (!input.trim()) return;
-
-    // Hide digest when user sends a message
-    setShowDigest(false);
+    // Digest stays visible - just scrolls up with the chat
 
     const userInput = input; // Capture before clearing
     const userMsg: ChatMessage = { role: 'user', content: userInput };
@@ -774,8 +769,8 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-6 pb-24" style={{ paddingBottom: 'calc(6rem + env(safe-area-inset-bottom, 0px))' }}>
         
-        {/* Daily Digest (shown instead of static greeting when available) */}
-        {showDigest && digest && !digestLoading && (
+        {/* Daily Digest (always shown if available - stays visible as chat continues) */}
+        {digest && !digestLoading && (
           <DigestCarousel
             digest={digest}
             savedPlaceNames={savedPlaceNames}
@@ -801,10 +796,10 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
           </div>
         )}
 
-        {/* Messages (hide first message if digest is showing) */}
+        {/* Messages (hide first message if we have a digest) */}
         {messages.map((msg, idx) => {
           // Hide the initial greeting message if we have a digest
-          if (idx === 0 && showDigest && digest) return null;
+          if (idx === 0 && digest) return null;
           
           return (
           <div
