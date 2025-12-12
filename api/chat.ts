@@ -23,7 +23,7 @@ const FOOD_SCRAPE_SITES = [
 // Event sites to SCRAPE with Jina.ai (handles JS rendering)
 const EVENT_SCRAPE_SITES = [
     'https://theskint.com/',
-    'https://www.ohmyrockness.com/shows',  // Changed from /popular - base shows page has better content
+    'https://www.ohmyrockness.com/features.atom',  // RSS feed - cleaner structured data
     'https://edmtrain.com/new-york-city-ny',
     'https://www.timeout.com/newyork/things-to-do/this-weekend'
 ];
