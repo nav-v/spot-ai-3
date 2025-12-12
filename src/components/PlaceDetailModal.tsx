@@ -484,8 +484,8 @@ export const PlaceDetailModal = ({
                             </p>
                             <InstagramEmbed url={place.instagramPostUrl} />
                             
-                            {/* Inline Add Places - below video */}
-                            {place.needsEnhancement && (
+                            {/* Inline Add Places - below video (for enhancement or missing address) */}
+                            {(place.needsEnhancement || !place.address || place.address.trim() === '') && (
                                 <div className="mt-3 p-3 bg-gradient-to-r from-orange-50 to-pink-50 dark:from-orange-950/30 dark:to-pink-950/30 rounded-xl border border-orange-200/50 dark:border-orange-800/50">
                                     <p className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
                                         <Sparkles className="w-4 h-4 text-orange-500" />
@@ -572,12 +572,12 @@ export const PlaceDetailModal = ({
                         </div>
                     )}
                     
-                    {/* Inline enhance without Instagram post */}
-                    {place.needsEnhancement && !place.instagramPostUrl && (
+                    {/* Inline enhance for places needing enhancement or missing address */}
+                    {(place.needsEnhancement || !place.address || place.address.trim() === '') && !place.instagramPostUrl && (
                         <div className="mb-6 p-3 bg-gradient-to-r from-orange-50 to-pink-50 dark:from-orange-950/30 dark:to-pink-950/30 rounded-xl border border-orange-200/50 dark:border-orange-800/50">
                             <p className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
                                 <Sparkles className="w-4 h-4 text-orange-500" />
-                                Search for this place
+                                {!place.address || place.address.trim() === '' ? 'Find the full details' : 'Search for this place'}
                             </p>
                             
                             {/* Search input */}

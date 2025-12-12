@@ -279,58 +279,100 @@ async function searchGooglePlaces(placeName: string, location: string = 'New Yor
         let subtype = 'Restaurant';
         let legacyType = 'restaurant';
 
-        // Check for Eat types
-        if (types.some((t: string) => t.includes('restaurant') || t.includes('food'))) {
+        // ============= COMPREHENSIVE TYPE MAPPING =============
+        // Map Google Places types to our known categories
+        // Eat types
+        const eatTypeMap: Record<string, string> = {
+            'italian_restaurant': 'Italian', 'chinese_restaurant': 'Chinese',
+            'japanese_restaurant': 'Japanese', 'indian_restaurant': 'Indian',
+            'mexican_restaurant': 'Mexican', 'pizza_restaurant': 'Pizza',
+            'seafood_restaurant': 'Seafood', 'american_restaurant': 'American',
+            'thai_restaurant': 'Thai', 'vietnamese_restaurant': 'Vietnamese',
+            'korean_restaurant': 'Korean', 'french_restaurant': 'French',
+            'greek_restaurant': 'Greek', 'spanish_restaurant': 'Spanish',
+            'mediterranean_restaurant': 'Mediterranean', 'middle_eastern_restaurant': 'Middle Eastern',
+            'sushi_restaurant': 'Sushi', 'ramen_restaurant': 'Ramen',
+            'breakfast_restaurant': 'Brunch', 'brunch_restaurant': 'Brunch',
+            'steak_house': 'Steakhouse', 'hamburger_restaurant': 'American',
+            'sandwich_shop': 'Deli', 'deli': 'Deli',
+            'ice_cream_shop': 'Dessert', 'dessert_shop': 'Dessert',
+            'bakery': 'Bakery', 'bagel_shop': 'Bakery', 'donut_shop': 'Bakery',
+            'cafe': 'Coffee', 'coffee_shop': 'Coffee', 'espresso_bar': 'Coffee',
+            'bar': 'Bar', 'wine_bar': 'Wine Bar', 'cocktail_bar': 'Cocktails',
+            'pub': 'Bar', 'night_club': 'Nightlife',
+            'fast_food_restaurant': 'Fast Food', 'food_court': 'Fast Food',
+            'food': 'Restaurant', 'restaurant': 'Restaurant',
+            'meal_delivery': 'Restaurant', 'meal_takeaway': 'Restaurant',
+        };
+        
+        // See types
+        const seeTypeMap: Record<string, string> = {
+            'museum': 'Museum', 'art_museum': 'Museum', 'history_museum': 'Museum',
+            'art_gallery': 'Gallery', 'gallery': 'Gallery',
+            'park': 'Park', 'national_park': 'Park', 'garden': 'Garden',
+            'botanical_garden': 'Garden', 'zoo': 'Zoo', 'aquarium': 'Aquarium',
+            'theater': 'Theater', 'movie_theater': 'Theater', 'performing_arts_theater': 'Theater',
+            'tourist_attraction': 'Landmark', 'landmark': 'Landmark',
+            'historic_site': 'Historic Site', 'historical_landmark': 'Historic Site',
+            'shopping_mall': 'Shopping', 'store': 'Shopping', 'market': 'Market',
+            'amusement_park': 'Entertainment', 'bowling_alley': 'Entertainment',
+            'gym': 'Activity', 'spa': 'Activity', 'stadium': 'Sports',
+            'sports_complex': 'Sports', 'arena': 'Sports',
+            'library': 'Library', 'book_store': 'Shopping',
+            'night_club': 'Nightlife', 'casino': 'Entertainment',
+            'concert_hall': 'Concert', 'event_venue': 'Event',
+        };
+
+        // Find matching eat type
+        for (const t of types) {
+            if (eatTypeMap[t]) {
+                mainCategory = 'eat';
+                subtype = eatTypeMap[t];
+                legacyType = subtype === 'Bar' || subtype === 'Wine Bar' || subtype === 'Cocktails' ? 'bar' 
+                           : subtype === 'Coffee' ? 'cafe' : 'restaurant';
+                break;
+            }
+        }
+        
+        // If no eat match, try see types
+        if (subtype === 'Restaurant') {
+            for (const t of types) {
+                if (seeTypeMap[t]) {
+                    mainCategory = 'see';
+                    subtype = seeTypeMap[t];
+                    legacyType = 'attraction';
+                    break;
+                }
+            }
+        }
+        
+        // If still no match but has food-related keywords in type names
+        if (subtype === 'Restaurant' && types.some((t: string) => 
+            t.includes('restaurant') || t.includes('food') || t.includes('cafe') || 
+            t.includes('bakery') || t.includes('bar') || t.includes('coffee'))) {
             mainCategory = 'eat';
-            legacyType = 'restaurant';
-            if (types.includes('italian_restaurant')) subtype = 'Italian';
-            else if (types.includes('chinese_restaurant')) subtype = 'Chinese';
-            else if (types.includes('japanese_restaurant')) subtype = 'Japanese';
-            else if (types.includes('indian_restaurant')) subtype = 'Indian';
-            else if (types.includes('mexican_restaurant')) subtype = 'Mexican';
-            else if (types.includes('pizza_restaurant')) subtype = 'Pizza';
-            else if (types.includes('seafood_restaurant')) subtype = 'Seafood';
-            else if (types.includes('american_restaurant')) subtype = 'American';
-            else if (types.includes('thai_restaurant')) subtype = 'Thai';
-            else if (types.includes('vietnamese_restaurant')) subtype = 'Vietnamese';
-            else if (types.includes('korean_restaurant')) subtype = 'Korean';
-            else subtype = 'Restaurant';
-        } else if (types.some((t: string) => t.includes('bar') || t.includes('night_club'))) {
-            mainCategory = 'eat';
-            legacyType = 'bar';
-            subtype = 'Bar';
-        } else if (types.some((t: string) => t.includes('cafe') || t.includes('coffee'))) {
-            mainCategory = 'eat';
-            legacyType = 'cafe';
-            subtype = 'Coffee';
-        } else if (types.some((t: string) => t.includes('bakery'))) {
-            mainCategory = 'eat';
-            legacyType = 'restaurant';
-            subtype = 'Bakery';
-        } else if (types.some((t: string) => t.includes('museum'))) {
-            mainCategory = 'see';
-            legacyType = 'attraction';
-            subtype = 'Museum';
-        } else if (types.some((t: string) => t.includes('art_gallery'))) {
-            mainCategory = 'see';
-            legacyType = 'attraction';
-            subtype = 'Gallery';
-        } else if (types.some((t: string) => t.includes('park'))) {
-            mainCategory = 'see';
-            legacyType = 'attraction';
-            subtype = 'Park';
-        } else if (types.some((t: string) => t.includes('theater') || t.includes('movie_theater'))) {
-            mainCategory = 'see';
-            legacyType = 'attraction';
-            subtype = 'Theater';
-        } else if (types.some((t: string) => t.includes('tourist_attraction') || t.includes('landmark'))) {
-            mainCategory = 'see';
-            legacyType = 'attraction';
-            subtype = 'Landmark';
-        } else if (types.some((t: string) => t.includes('shopping') || t.includes('store'))) {
-            mainCategory = 'see';
-            legacyType = 'activity';
-            subtype = 'Shopping';
+            // Try to infer from type name
+            if (types.some((t: string) => t.includes('bakery') || t.includes('bagel') || t.includes('donut'))) {
+                subtype = 'Bakery';
+            } else if (types.some((t: string) => t.includes('cafe') || t.includes('coffee'))) {
+                subtype = 'Coffee';
+            } else if (types.some((t: string) => t.includes('bar'))) {
+                subtype = 'Bar';
+            }
+        }
+        
+        // Final fallback: if still default, use "Other" 
+        if (subtype === 'Restaurant' && !types.some((t: string) => t.includes('restaurant') || t.includes('food'))) {
+            // Could be a see type we don't recognize
+            if (types.some((t: string) => t.includes('attraction') || t.includes('entertainment') || 
+                t.includes('park') || t.includes('museum') || t.includes('theater'))) {
+                mainCategory = 'see';
+                subtype = 'Other';
+                legacyType = 'activity';
+            } else {
+                // Default to eat/Other for unknown places
+                subtype = 'Other';
+            }
         }
 
         // Get description from Google's editorial summary, or generate one
