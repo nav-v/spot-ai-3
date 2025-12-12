@@ -196,16 +196,18 @@ interface TasteProfile {
     priceRange: string;
     neighborhoods: string[];
     eventTypes: string[];
+    interests: string[]; // For "see" places: history, science, art, etc.
 }
 
-async function analyzeTasteProfile(places: any[]): Promise<TasteProfile> {
+async function analyzeTasteProfile(places: any[], userPreferences?: any): Promise<TasteProfile> {
     if (!places || places.length === 0) {
         return {
             cuisinePreferences: [],
             vibePreferences: [],
             priceRange: 'moderate',
             neighborhoods: [],
-            eventTypes: []
+            eventTypes: [],
+            interests: []
         };
     }
     
@@ -218,6 +220,15 @@ async function analyzeTasteProfile(places: any[]): Promise<TasteProfile> {
         return parts.join(' ');
     }).join('\n');
     
+    // Build user preferences text if available
+    const userPrefsText = userPreferences ? `
+User's stated preferences from onboarding:
+- Food cuisines: ${userPreferences.food_cuisines?.join(', ') || 'Not specified'}
+- Event types: ${userPreferences.event_types?.join(', ') || 'Not specified'}
+- Place types: ${userPreferences.place_types?.join(', ') || 'Not specified'}
+- All tags: ${userPreferences.all_tags?.slice(0, 10).join(', ') || 'None'}
+` : '';
+    
     try {
         const response = await getAI().models.generateContent({
             model: 'gemini-2.5-flash',
@@ -225,6 +236,9 @@ async function analyzeTasteProfile(places: any[]): Promise<TasteProfile> {
                 role: 'user',
                 parts: [{ text: `Analyze this user's saved places and extract their taste profile:
 
+${userPrefsText}
+
+SAVED PLACES:
 ${placesSummary}
 
 Return JSON only:
@@ -233,8 +247,16 @@ Return JSON only:
     "vibePreferences": ["cozy", "upscale", "casual", etc],
     "priceRange": "budget|moderate|upscale|mixed",
     "neighborhoods": ["neighborhood1", "neighborhood2"],
-    "eventTypes": ["concerts", "comedy", "art", etc]
-}` }]
+    "eventTypes": ["concerts", "comedy", "art", etc],
+    "interests": ["history", "science", "art", "music", "nature", "architecture", etc]
+}
+
+IMPORTANT:
+- For "interests": Analyze their saved museums, attractions, and events to infer subject interests
+  Examples: If they saved history museums → "history", science museums → "science", art galleries → "art"
+  Look for patterns: multiple art places = "art", multiple history places = "history", etc.
+- Combine user's stated preferences (from onboarding) with patterns from saved places
+- If user stated preferences exist, prioritize those but also validate against saved places` }]
             }]
         });
         
@@ -252,7 +274,8 @@ Return JSON only:
         vibePreferences: [],
         priceRange: 'moderate',
         neighborhoods: [],
-        eventTypes: []
+        eventTypes: [],
+        interests: []
     };
 }
 
@@ -286,7 +309,8 @@ interface DigestRec {
 async function generateDigest(
     userName: string,
     userPlaces: any[],
-    research: Awaited<ReturnType<typeof researchForDigest>>
+    research: Awaited<ReturnType<typeof researchForDigest>>,
+    userPreferences?: any
 ): Promise<{ intro_text: string; recommendations: DigestRec[]; next_batch: DigestRec[] }> {
     
     // Get old saved food spots to bump (sorted by oldest first)
@@ -297,8 +321,8 @@ async function generateDigest(
     
     const savedNames = new Set(userPlaces.map(p => p.name.toLowerCase()));
     
-    // Analyze taste profile using AI (same as generate.ts)
-    const tasteProfile = await analyzeTasteProfile(userPlaces);
+    // Analyze taste profile using AI (same as generate.ts) - includes user preferences
+    const tasteProfile = await analyzeTasteProfile(userPlaces, userPreferences);
     const cuisineList = tasteProfile.cuisinePreferences.length > 0 
         ? tasteProfile.cuisinePreferences.join(', ')
         : 'varied cuisines';
@@ -452,19 +476,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
         const db = getSupabase();
         
-        // Parallel: weather, research, user data
-        const [weather, research, userResult, placesResult] = await Promise.all([
+        // Parallel: weather, research, user data, user preferences
+        const [weather, research, userResult, placesResult, prefsResult] = await Promise.all([
             fetchNYCWeather(),
             researchForDigest(),
             db.from('users').select('name').eq('id', userId).single(),
-            db.from('places').select('*').eq('user_id', userId).order('created_at', { ascending: true })
+            db.from('places').select('*').eq('user_id', userId).order('created_at', { ascending: true }),
+            db.from('user_preferences').select('*').eq('user_id', userId).single()
         ]);
         
         const userName = userResult.data?.name || 'there';
         const places = placesResult.data || [];
+        const userPreferences = prefsResult.data || null;
         
         // Generate digest
-        const digest = await generateDigest(userName, places, research);
+        const digest = await generateDigest(userName, places, research, userPreferences);
         
         // Save to DB
         // Store all recommendations (15 + 6) for retrieval

@@ -172,6 +172,7 @@ interface TasteProfile {
     priceRange: string;
     vibePreferences: string[];
     locationPreferences: string[];
+    interests?: string[]; // For "see" places: history, science, art, music, nature, architecture, etc.
 }
 
 // Count categories from user's saved places for explicit preference matching
@@ -319,7 +320,8 @@ interface ResearchResults {
 async function executeSmartResearch(
     tools: ResearchTool[],
     userPlaces: any[],
-    userPreferences: any
+    userPreferences: any,
+    userId?: string
 ): Promise<ResearchResults> {
     console.log(`[Smart Research] Executing ${tools.length} research tools in parallel`);
     
@@ -460,7 +462,7 @@ async function executeSmartResearch(
         promises.push(
             (async () => {
                 try {
-                    results.tasteProfile = await analyseSavedPlaces(userPlaces, 'food', userPreferences);
+                    results.tasteProfile = await analyseSavedPlaces(userPlaces, 'food', userPreferences, userId);
                     console.log(`[Smart Research] Food taste analysis: ${results.tasteProfile?.inferences?.length || 0} inferences`);
                 } catch (e: any) {
                     console.error(`[Smart Research] Food taste analysis failed:`, e.message);
@@ -477,12 +479,19 @@ async function executeSmartResearch(
         promises.push(
             (async () => {
                 try {
-                    const seeProfile = await analyseSavedPlaces(userPlaces, 'see', userPreferences);
+                    const seeProfile = await analyseSavedPlaces(userPlaces, 'see', userPreferences, userId);
                     console.log(`[Smart Research] See taste analysis: ${seeProfile?.inferences?.length || 0} inferences`);
                     // Merge with existing taste profile or set as new
                     if (results.tasteProfile) {
                         results.tasteProfile.inferences.push(...seeProfile.inferences);
                         results.tasteProfile.vibePreferences.push(...seeProfile.vibePreferences);
+                        // Merge interests if available
+                        if (seeProfile.interests && seeProfile.interests.length > 0) {
+                            results.tasteProfile.interests = [
+                                ...(results.tasteProfile.interests || []),
+                                ...seeProfile.interests
+                            ];
+                        }
                     } else {
                         results.tasteProfile = seeProfile;
                     }
@@ -594,9 +603,28 @@ async function searchGooglePlaces(placeName: string, location: string = 'New Yor
 async function analyseSavedPlaces(
     places: any[], 
     type: 'food' | 'see',
-    userPreferences?: any
+    userPreferences?: any,
+    userId?: string
 ): Promise<TasteProfile> {
     console.log(`[Taste Analysis] Analyzing ${places.length} places for type: ${type}`);
+    
+    // Fetch user preferences from database if not provided and userId is available
+    let dbPreferences = null;
+    if (!userPreferences && userId) {
+        try {
+            const { data } = await getSupabase()
+                .from('user_preferences')
+                .select('*')
+                .eq('user_id', userId)
+                .single();
+            dbPreferences = data;
+        } catch (error) {
+            console.log(`[Taste Analysis] Could not fetch user preferences for ${userId}`);
+        }
+    }
+    
+    // Use provided preferences or database preferences
+    const prefs = userPreferences || dbPreferences;
     
     // Filter places by type
     const foodTypes = ['restaurant', 'bar', 'cafe', 'food', 'drinks'];
@@ -613,7 +641,8 @@ async function analyseSavedPlaces(
             cuisinePreferences: [],
             priceRange: 'moderate',
             vibePreferences: [],
-            locationPreferences: []
+            locationPreferences: [],
+            interests: []
         };
     }
     
@@ -622,6 +651,7 @@ async function analyseSavedPlaces(
         const parts = [p.name];
         if (p.cuisine) parts.push(`(${p.cuisine})`);
         if (p.type) parts.push(`[${p.type}]`);
+        if (p.subtype) parts.push(`{${p.subtype}}`);
         if (p.address) parts.push(`@ ${p.address}`);
         if (p.rating) parts.push(`Rating: ${p.rating}`);
         if (p.notes) parts.push(`Notes: ${p.notes}`);
@@ -630,11 +660,14 @@ async function analyseSavedPlaces(
         return parts.join(' ');
     }).join('\n');
     
-    const userPrefsText = userPreferences ? `
-User stated preferences:
-- Dietary restrictions: ${userPreferences.dietaryRestrictions?.join(', ') || 'None'}
-- Food preferences: ${userPreferences.foodPreferences?.join(', ') || 'Not specified'}
-- Interests: ${userPreferences.interests?.join(', ') || 'Not specified'}
+    // Build user preferences text from database format
+    const userPrefsText = prefs ? `
+User's stated preferences from onboarding:
+- Food cuisines: ${prefs.food_cuisines?.join(', ') || prefs.foodPreferences?.join(', ') || 'Not specified'}
+- Event types: ${prefs.event_types?.join(', ') || prefs.eventTypes?.join(', ') || 'Not specified'}
+- Place types: ${prefs.place_types?.join(', ') || prefs.placeTypes?.join(', ') || 'Not specified'}
+- All tags: ${prefs.all_tags?.slice(0, 10).join(', ') || 'None'}
+- Dietary: ${prefs.dietary_vegetarian ? 'Vegetarian' : ''} ${prefs.dietary_vegan ? 'Vegan' : ''} ${prefs.dietary_halal ? 'Halal' : ''} ${prefs.dietary_gluten_free ? 'Gluten-free' : ''}
 ` : '';
     
     const prompt = `You are a taste analyst creating a deep psychological profile. Based on these saved ${type === 'food' ? 'restaurants/food spots' : 'places/activities'}, infer 10-25 DETAILED observations about this person's tastes, preferences, and personality.
@@ -654,7 +687,8 @@ Analyze patterns and return a JSON object with:
   "cuisinePreferences": ["Italian", "Japanese", ...], // for food, or ["Museums", "Outdoor activities", ...] for see
   "priceRange": "budget" | "moderate" | "upscale" | "mixed",
   "vibePreferences": ["cozy", "trendy", "casual", ...],
-  "locationPreferences": ["Williamsburg", "East Village", ...] // neighborhoods they seem to favor
+  "locationPreferences": ["Williamsburg", "East Village", ...], // neighborhoods they seem to favor
+  ${type === 'see' ? '"interests": ["history", "science", "art", "music", "nature", "architecture", etc], // Subject interests inferred from saved museums/attractions' : ''}
 }
 
 INFERENCE RULES:
@@ -664,6 +698,9 @@ INFERENCE RULES:
 - Connect multiple data points when possible ("They saved X and Y, which suggests...")
 - Be specific about patterns, not generic observations
 - Include insights about: decision-making style, social preferences, adventure level, authenticity vs convenience, nostalgia, cultural curiosity
+${type === 'see' ? '- For "interests": Analyze their saved museums, attractions, and events to infer subject interests\n  Examples: If they saved history museums → "history", science museums → "science", art galleries → "art", music venues → "music"\n  Look for patterns: multiple art places = "art", multiple history places = "history", nature parks = "nature", etc.' : ''}
+- Combine user's stated preferences (from onboarding) with patterns from saved places
+- If user stated preferences exist, prioritize those but also validate against saved places
 
 Example good inference:
 "This person appears to value depth over breadth in their cultural experiences. Rather than checking off famous landmarks, they gravitate toward specialized museums (Transit Museum, Philip Williams Posters) that offer niche expertise. This suggests someone who researches thoroughly before visiting and wants to learn something specific, not just 'see the sights.'"
@@ -689,7 +726,8 @@ Return ONLY the JSON object, no other text.`;
             cuisinePreferences: [],
             priceRange: 'moderate',
             vibePreferences: [],
-            locationPreferences: []
+            locationPreferences: [],
+            interests: []
         };
     }
 }
@@ -1934,7 +1972,8 @@ Assistant:`;
                 const researchResults = await executeSmartResearch(
                     action.tools as ResearchTool[],
                     userPlaces,
-                    userPreferences
+                    userPreferences,
+                    userId
                 );
 
                 // Build comprehensive search results for the recommender
@@ -2008,6 +2047,7 @@ INFERRED PREFERENCES:
 - Vibes: ${researchResults.tasteProfile.vibePreferences?.slice(0, 5).join(', ') || 'flexible'}
 - Price Range: ${researchResults.tasteProfile.priceRange || 'mixed'}
 - Key Traits: ${researchResults.tasteProfile.inferences?.slice(0, 3).join('; ') || 'open-minded'}
+${researchResults.tasteProfile.interests?.length ? `- Subject Interests: ${researchResults.tasteProfile.interests.slice(0, 5).join(', ')}` : ''}
 ` : ''}
 === END PROFILE ===`;
 
