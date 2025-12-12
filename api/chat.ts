@@ -1318,6 +1318,8 @@ async function findAndAddPlace(placeName: string, location: string = 'New York, 
         place = {
             name: placeName,
             type: extraData.isEvent ? 'activity' : 'restaurant',
+            mainCategory: extraData.isEvent ? 'see' : 'eat',
+            subtype: extraData.isEvent ? 'Event' : 'Restaurant',
             address: location,
             description: '',
             sourceUrl: `https://www.google.com/search?q=${encodeURIComponent(placeName + ' ' + location)}`,
@@ -1327,11 +1329,52 @@ async function findAndAddPlace(placeName: string, location: string = 'New York, 
         };
     }
 
+    // === CATEGORIZATION LOGIC ===
+    let mainCategory: 'eat' | 'see' = (place as any).mainCategory || 'eat';
+    let subtype = (place as any).subtype || 'Restaurant';
+    const isEvent = extraData.isEvent || false;
+    
+    // Events → see/Event
+    if (isEvent) {
+        mainCategory = 'see';
+        subtype = extraData.eventType || 'Event';
+    }
+    
+    // See types from extraData.type
+    const seeTypes = ['activity', 'attraction', 'museum', 'park', 'theater', 'shopping', 'landmark', 'gallery', 'entertainment', 'show', 'concert', 'festival'];
+    if (extraData.type && seeTypes.includes(extraData.type.toLowerCase())) {
+        mainCategory = 'see';
+        if (!(place as any).mainCategory) {
+            const typeMap: Record<string, string> = {
+                'activity': 'Activity', 'attraction': 'Landmark', 'museum': 'Museum',
+                'park': 'Park', 'theater': 'Theater', 'shopping': 'Shopping',
+                'landmark': 'Landmark', 'gallery': 'Gallery', 'entertainment': 'Entertainment',
+                'show': 'Show', 'concert': 'Concert', 'festival': 'Festival'
+            };
+            subtype = typeMap[extraData.type.toLowerCase()] || 'Activity';
+        }
+    }
+
+    // === EVENT DATES ===
+    let startDate = extraData.startDate || null;
+    let endDate = extraData.endDate || null;
+    if (isEvent) {
+        if (!startDate) {
+            startDate = new Date().toISOString().split('T')[0];
+        }
+        if (!endDate) {
+            endDate = startDate;
+        }
+    }
+
     const newPlace = {
         id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
         user_id: userId,
         name: place.name,
         type: place.type || 'restaurant',
+        main_category: mainCategory,
+        subtype: subtype,
+        subtypes: [],
         cuisine: extraData.cuisine || null,
         address: place.address || '',
         description: place.description || extraData.description || null,
@@ -1343,9 +1386,9 @@ async function findAndAddPlace(placeName: string, location: string = 'New York, 
         notes: null,
         review: null,
         rating: place.rating || null,
-        start_date: extraData.startDate || null,
-        end_date: extraData.endDate || null,
-        is_event: extraData.isEvent || false,
+        start_date: startDate,
+        end_date: endDate,
+        is_event: isEvent,
         created_at: new Date().toISOString(),
     };
 
@@ -2028,10 +2071,9 @@ PRIORITIZE EVENTS over permanent places! Events are date-specific and more urgen
 OUTPUT FORMAT:
 {"action": "recommendPlaces", "sections": [
   {"title": "Section Title", "intro": "2-3 sentences explaining why these picks match the user...", "places": [
-    {"name": "PLACE or EVENT name", "type": "restaurant|bar|cafe|activity|attraction|event", "description": "Why this fits them + key details", "location": "Neighborhood OR Venue, Neighborhood", "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD", "isEvent": true/false}
+    {"name": "PLACE or EVENT name", "type": "restaurant|bar|cafe|activity|attraction|event", "description": "Why this fits them + key details", "location": "Neighborhood OR Venue, Neighborhood", "startDate": "YYYY-MM-DD (for events only)", "isEvent": true/false}
   ]}
 ]}
-⚠️ FOR EVENTS: Always include BOTH startDate AND endDate! Use same date for single-day events.
 
 SECTION GUIDELINES:
 - 🌟 FIRST SECTION: Use "From Your Saved List" or "Already On Your Radar" for matching SAVED places
