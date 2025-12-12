@@ -33,8 +33,8 @@ interface RecommendedPlace {
   subtype?: string;
   // Dish recommendations
   recommendedDishes?: string[];
-  // Source attribution
-  sources?: string[];
+  // Source attribution - domain + actual URL
+  sources?: Array<{domain: string; url: string}> | string[];
 }
 
 interface ReservationData {
@@ -664,21 +664,25 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                                     {matchedPlace.sources && matchedPlace.sources.length > 0 && (
                                       <div className="flex items-center gap-1.5 mb-2">
                                         <span className="text-[10px] text-muted-foreground/60">via</span>
-                                        {matchedPlace.sources.slice(0, 3).map((source, i) => (
-                                          <a 
-                                            key={i}
-                                            href={`https://${source}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            title={source}
-                                          >
-                                            <img 
-                                              src={`https://www.google.com/s2/favicons?domain=${source}&sz=16`}
-                                              alt={source}
-                                              className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
-                                            />
-                                          </a>
-                                        ))}
+                                        {matchedPlace.sources.slice(0, 3).map((source, i) => {
+                                          const domain = typeof source === 'string' ? source : source.domain;
+                                          const url = typeof source === 'string' ? `https://${source}` : source.url;
+                                          return (
+                                            <a 
+                                              key={i}
+                                              href={url}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              title={domain}
+                                            >
+                                              <img 
+                                                src={`https://www.google.com/s2/favicons?domain=${domain}&sz=16`}
+                                                alt={domain}
+                                                className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
+                                              />
+                                            </a>
+                                          );
+                                        })}
                                       </div>
                                     )}
                                     {!matchedPlace.sources?.length && !matchedPlace.recommendedDishes?.length && <div className="mb-2" />}
@@ -788,21 +792,25 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                                   {(matchedPlace as any).sources && (matchedPlace as any).sources.length > 0 && (
                                     <div className="flex items-center gap-1.5 mb-2">
                                       <span className="text-[10px] text-muted-foreground/60">via</span>
-                                      {(matchedPlace as any).sources.slice(0, 3).map((source: string, i: number) => (
-                                        <a 
-                                          key={i}
-                                          href={`https://${source}`}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          title={source}
-                                        >
-                                          <img 
-                                            src={`https://www.google.com/s2/favicons?domain=${source}&sz=16`}
-                                            alt={source}
-                                            className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
-                                          />
-                                        </a>
-                                      ))}
+                                      {(matchedPlace as any).sources.slice(0, 3).map((source: any, i: number) => {
+                                        const domain = typeof source === 'string' ? source : source.domain;
+                                        const url = typeof source === 'string' ? `https://${source}` : source.url;
+                                        return (
+                                          <a 
+                                            key={i}
+                                            href={url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            title={domain}
+                                          >
+                                            <img 
+                                              src={`https://www.google.com/s2/favicons?domain=${domain}&sz=16`}
+                                              alt={domain}
+                                              className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
+                                            />
+                                          </a>
+                                        );
+                                      })}
                                     </div>
                                   )}
                                   {!(matchedPlace as any).sources?.length && !matchedPlace.recommendedDishes?.length && <div className="mb-2" />}
@@ -946,21 +954,25 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                           {(place as any).sources && (place as any).sources.length > 0 && (
                             <div className="flex items-center gap-1.5 mb-2">
                               <span className="text-[10px] text-muted-foreground/60">via</span>
-                              {(place as any).sources.slice(0, 3).map((source: string, i: number) => (
-                                <a 
-                                  key={i}
-                                  href={`https://${source}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  title={source}
-                                >
-                                  <img 
-                                    src={`https://www.google.com/s2/favicons?domain=${source}&sz=16`}
-                                    alt={source}
-                                    className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
-                                  />
-                                </a>
-                              ))}
+                              {(place as any).sources.slice(0, 3).map((source: any, i: number) => {
+                                const domain = typeof source === 'string' ? source : source.domain;
+                                const url = typeof source === 'string' ? `https://${source}` : source.url;
+                                return (
+                                  <a 
+                                    key={i}
+                                    href={url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title={domain}
+                                  >
+                                    <img 
+                                      src={`https://www.google.com/s2/favicons?domain=${domain}&sz=16`}
+                                      alt={domain}
+                                      className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
+                                    />
+                                  </a>
+                                );
+                              })}
                             </div>
                           )}
 
@@ -1049,21 +1061,25 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                           {(place as any).sources && (place as any).sources.length > 0 && (
                             <div className="flex items-center gap-1.5 mb-2">
                               <span className="text-[10px] text-muted-foreground/60">via</span>
-                              {(place as any).sources.slice(0, 3).map((source: string, i: number) => (
-                                <a 
-                                  key={i}
-                                  href={`https://${source}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  title={source}
-                                >
-                                  <img 
-                                    src={`https://www.google.com/s2/favicons?domain=${source}&sz=16`}
-                                    alt={source}
-                                    className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
-                                  />
-                                </a>
-                              ))}
+                              {(place as any).sources.slice(0, 3).map((source: any, i: number) => {
+                                const domain = typeof source === 'string' ? source : source.domain;
+                                const url = typeof source === 'string' ? `https://${source}` : source.url;
+                                return (
+                                  <a 
+                                    key={i}
+                                    href={url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title={domain}
+                                  >
+                                    <img 
+                                      src={`https://www.google.com/s2/favicons?domain=${domain}&sz=16`}
+                                      alt={domain}
+                                      className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
+                                    />
+                                  </a>
+                                );
+                              })}
                             </div>
                           )}
 

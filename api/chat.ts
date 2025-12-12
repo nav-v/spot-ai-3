@@ -1608,7 +1608,7 @@ If user shares a link:
 Format - GROUP places into 2-4 logical sections. EACH SECTION MUST HAVE AN "intro" FIELD:
 {"action": "recommendPlaces", "sections": [
   {"title": "🥐 Flaky Classics", "intro": "These are the spots where they do one thing and do it perfectly - pure, buttery croissants with zero gimmicks. If you want to taste what all the fuss is about, start here.", "places": [
-    {"name": "Place Name", "type": "restaurant", "description": "Short reason why you picked it...", "location": "Neighborhood/City", "isEvent": false, "recommendedDishes": ["Dish 1", "Dish 2"], "sources": ["reddit.com", "eater.com"]}
+    {"name": "Place Name", "type": "restaurant", "description": "Short reason why you picked it...", "location": "Neighborhood/City", "isEvent": false, "recommendedDishes": ["Dish 1", "Dish 2"], "sources": [{"domain": "reddit.com", "url": "https://vertexaisearch.cloud.google.com/..."}, {"domain": "eater.com", "url": "https://vertexaisearch.cloud.google.com/..."}]}
   ]},
   {"title": "✨ Creative & Over-the-Top", "intro": "For when a regular croissant just isn't dramatic enough. These bakeries go wild with flavors, fillings, and Instagram-worthy creations.", "places": [...]}
 ]}
@@ -1630,11 +1630,11 @@ Place fields:
 - description: 1-2 sentences why you chose this + any caveats/warnings from reviews (e.g., "Amazing tacos, but cash only and expect a 30min wait")
 - location: For places: Neighborhood. For events: "Venue Name, Neighborhood" (e.g. "Madison Square Garden, Midtown")
 - recommendedDishes: (FOR RESTAURANTS/CAFES/BARS ONLY) Array of 2-3 specific dishes mentioned in reviews. Extract actual dish names like ["Spicy Vodka Rigatoni", "Tiramisu"]. Omit this field for non-food places or if no specific dishes are mentioned.
-- sources: Array of source domains that mentioned this place. Include ALL sources:
-  * From Gemini citations: Look at [1], [2] etc. and include those source domains (reddit.com, eater.com, etc.)
-  * From scraped sections: If a place was mentioned under "=== THESKINT.COM ===" include "theskint.com", under "=== OHMYROCKNESS.COM ===" include "ohmyrockness.com", under "=== TIMEOUT.COM ===" include "timeout.com", under "=== EDMTRAIN.COM ===" include "edmtrain.com", under "=== NY-EVENT-RADAR.COM ===" include "ny-event-radar.com"
-  * Examples: ["reddit.com", "theskint.com"], ["timeout.com", "eater.com"], ["ohmyrockness.com", "ny-event-radar.com"]
-  * This helps users see exactly where each recommendation came from!
+- sources: Array of source objects with domain AND the actual URL. Include ALL sources:
+  * From Gemini citations: Look at [1](url), [2](url) etc. - include the FULL vertexaisearch URL!
+  * From scraped sections: Use the section URL (theskint.com, timeout.com, etc.)
+  * Format: [{"domain": "reddit.com", "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/..."}, {"domain": "theskint.com", "url": "https://theskint.com/"}]
+  * CRITICAL: Include the ACTUAL citation URLs from the research - these redirect to the real source!
 - startDate: (REQUIRED for events) Date in "YYYY-MM-DD" format, or "Dec 13" if exact date unknown
 - DO NOT include sourceUrl - we attach verified URLs from research automatically.
 - DO NOT include sourceName or sourceQuote - these often get hallucinated
@@ -2056,7 +2056,7 @@ PRIORITIZE EVENTS over permanent places! Events are date-specific and more urgen
 OUTPUT FORMAT:
 {"action": "recommendPlaces", "sections": [
   {"title": "Section Title", "intro": "2-3 sentences explaining why these picks match the user...", "places": [
-    {"name": "PLACE or EVENT name", "type": "restaurant|bar|cafe|activity|attraction|event", "description": "Why this fits them + key details", "location": "Neighborhood OR Venue, Neighborhood", "startDate": "YYYY-MM-DD (for events only)", "isEvent": true/false, "recommendedDishes": ["Dish 1", "Dish 2"], "sources": ["reddit.com", "timeout.com"]}
+    {"name": "PLACE or EVENT name", "type": "restaurant|bar|cafe|activity|attraction|event", "description": "Why this fits them + key details", "location": "Neighborhood OR Venue, Neighborhood", "startDate": "YYYY-MM-DD (for events only)", "isEvent": true/false, "recommendedDishes": ["Dish 1", "Dish 2"], "sources": [{"domain": "reddit.com", "url": "https://vertexaisearch..."}, {"domain": "theskint.com", "url": "https://theskint.com/"}]}
   ]}
 ]}
 
