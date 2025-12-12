@@ -312,6 +312,78 @@ Default location to "New York, NY" if not specified.`;
     }
 }
 
+// Generate a descriptive placeholder name for unknown places
+async function generatePlaceholderName(caption: string): Promise<{ name: string; category: 'eat' | 'see'; subtype: string }> {
+    if (!GEMINI_API_KEY) {
+        return { name: 'Mystery Restaurant', category: 'eat', subtype: 'Restaurant' };
+    }
+    
+    try {
+        console.log(`[AI Placeholder] Generating name for: "${caption.substring(0, 100)}..."`);
+        
+        const prompt = `Based on this Instagram caption, generate a SHORT placeholder name for a place we couldn't identify.
+Caption: "${caption}"
+
+Rules:
+- Start with "Mystery" or "Unknown" or "Secret"
+- Include a clue from the caption (cuisine type, vibe, neighborhood hint)
+- Keep it under 30 characters
+- Also determine if this is a food place (eat) or activity/attraction (see)
+- Suggest a subtype (e.g., "Italian", "Sushi", "Bar", "Cafe" for eat; "Museum", "Show", "Event" for see)
+
+Examples:
+- "Mystery Indian Spot"
+- "Unknown Cocktail Bar"
+- "Secret Sushi Place"
+- "Mystery Brooklyn Cafe"
+
+Return JSON only: { "name": "...", "category": "eat" or "see", "subtype": "..." }`;
+
+        const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': GEMINI_API_KEY,
+                },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: {
+                        temperature: 0.7,
+                        maxOutputTokens: 200,
+                    }
+                }),
+            }
+        );
+        
+        if (!response.ok) {
+            console.log(`[AI Placeholder] Gemini API error: ${response.status}`);
+            return { name: 'Mystery Restaurant', category: 'eat', subtype: 'Restaurant' };
+        }
+        
+        const data = await response.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        console.log(`[AI Placeholder] Gemini response: ${text}`);
+        
+        const cleanJson = text.replace(/```json|```/g, '').trim();
+        const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            return {
+                name: parsed.name?.substring(0, 50) || 'Mystery Restaurant',
+                category: parsed.category === 'see' ? 'see' : 'eat',
+                subtype: parsed.subtype || (parsed.category === 'see' ? 'Activity' : 'Restaurant')
+            };
+        }
+        
+        return { name: 'Mystery Restaurant', category: 'eat', subtype: 'Restaurant' };
+    } catch (error) {
+        console.error('[AI Placeholder] Error:', error);
+        return { name: 'Mystery Restaurant', category: 'eat', subtype: 'Restaurant' };
+    }
+}
+
 // Fallback regex-based extraction
 function extractPlaceNameFromCaptionRegex(caption: string): { placeName: string; location: string } | null {
     // Try to find @mentions (often the restaurant's handle)
@@ -841,10 +913,10 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
     if (lookupError || !igAccount) {
         console.log(`[Webhook] No linked Spot account for IG user ${senderId}`);
         
-        // Send message asking them to link their account
+        // Not linked - send them to the app to link or join waitlist
         await sendInstagramMessage(
             senderId,
-            `Hey! 👋 I don't recognize you yet.\n\nTo save places to Spot:\n1. Open the Spot app\n2. Go to Profile → Link Instagram\n3. You'll get a code like SPOT-XXXX\n4. Send that code here!\n\nThen you can DM me any restaurant link to save it! 📍`
+            `Hey! 👋 If you have a Spot account, you can link it here: https://spot-ai-3.vercel.app/\n\nNo account yet? Join the waitlist at the same link! ✨`
         );
         return;
     }
@@ -882,10 +954,92 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
     urls.length = 0;
     
     if (urlsWithTitles.length === 0) {
-        console.log('[Webhook] No URLs found in message');
+        console.log('[Webhook] No URLs found in message - checking if this is an enhancement reply');
+        
+        // Check if user has any places needing enhancement (saved in the last 24 hours)
+        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const { data: unknownPlaces, error: unknownError } = await getSupabase()
+            .from('places')
+            .select('id, name, notes')
+            .eq('user_id', spotUserId)
+            .eq('needs_enhancement', true)
+            .gte('created_at', oneDayAgo)
+            .order('created_at', { ascending: false })
+            .limit(5);
+        
+        if (!unknownError && unknownPlaces && unknownPlaces.length > 0 && messageText.trim().length > 2) {
+            // User has recent unknown places and sent a text - try to enhance!
+            console.log(`[Webhook] User has ${unknownPlaces.length} recent unknown places, treating "${messageText}" as place name`);
+            
+            // Search Google Places with the user's message
+            const placeData = await searchGooglePlaces(messageText.trim(), 'New York, NY');
+            
+            if (placeData) {
+                // Found the place! Update the most recent unknown one
+                const placeToUpdate = unknownPlaces[0];
+                console.log(`[Webhook] Found "${placeData.name}" - updating place ${placeToUpdate.id}`);
+                
+                // Get category
+                let mainCategory: 'eat' | 'see' = placeData.mainCategory || 'eat';
+                let subtype = placeData.subtype || 'Restaurant';
+                
+                if (placeData.googleTypes && isAmbiguousType(placeData.googleTypes)) {
+                    const aiCategory = await categorizePlaceWithAI(
+                        placeData.name, 
+                        placeData.description || '', 
+                        placeData.googleTypes || []
+                    );
+                    mainCategory = aiCategory.mainCategory;
+                    subtype = aiCategory.subtype;
+                }
+                
+                const { error: updateError } = await getSupabase()
+                    .from('places')
+                    .update({
+                        name: placeData.name,
+                        type: placeData.type,
+                        main_category: mainCategory,
+                        subtype: subtype,
+                        address: placeData.address,
+                        description: placeData.description,
+                        image_url: placeData.imageUrl,
+                        source_url: placeData.sourceUrl,
+                        coordinates: placeData.coordinates,
+                        rating: placeData.rating,
+                        needs_enhancement: false,
+                    })
+                    .eq('id', placeToUpdate.id);
+                
+                if (updateError) {
+                    console.error('[Webhook] Failed to update place:', updateError);
+                    await sendInstagramMessage(
+                        senderId,
+                        `Found "${placeData.name}" but couldn't update the saved place. Try editing it directly in the app! 📱`
+                    );
+                } else {
+                    console.log(`[Webhook] Successfully enhanced place to "${placeData.name}"`);
+                    await sendInstagramMessage(
+                        senderId,
+                        `Found it! ✨ Updated to "${placeData.name}" at ${placeData.address}.\n\nCheck it out in the app!`
+                    );
+                }
+                return;
+            } else {
+                // Couldn't find place with that name
+                console.log(`[Webhook] Couldn't find place matching "${messageText}"`);
+                await sendInstagramMessage(
+                    senderId,
+                    `Hmm, I couldn't find "${messageText}" 🤔\n\nTry being more specific (like "Lucali Brooklyn") or edit it directly in the app! 📱`
+                );
+                return;
+            }
+        }
+        
+        // No recent unknown places or empty message - send "can't chat here"
+        console.log('[Webhook] No recent unknown places or not an enhancement request');
         await sendInstagramMessage(
             senderId,
-            `I didn't see any links in that message! Send me an Instagram post, Reel, or restaurant link and I'll save it to your Spot list. 📍`
+            `I can't chat here unfortunately 😅\n\nHead to https://spot-ai-3.vercel.app/ to talk to me!\n\nBut if you send me a post or Reel, I'll save it to your list! 📍`
         );
         return;
     }
@@ -893,7 +1047,7 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
     console.log(`[Webhook] Found ${urlsWithTitles.length} URLs to process`);
     
     // Process each URL through the scrape pipeline
-    const results: Array<{ url: string; success: boolean; name?: string; error?: string }> = [];
+    const results: Array<{ url: string; success: boolean; name?: string; error?: string; needsEnhancement?: boolean }> = [];
     
     for (const { url, title: attachmentTitle } of urlsWithTitles) {
         console.log(`[Webhook] Processing URL: ${url}, attachment title: "${attachmentTitle?.substring(0, 50) || 'none'}..."`);
@@ -959,25 +1113,31 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
         const extractedPlaces = await extractPlacesWithAI(title);
         
         if (extractedPlaces.length === 0) {
-            // Couldn't extract any places, save with raw caption
-            console.log(`[Webhook] Couldn't extract any places, saving with caption`);
-            const placeName = author ? `${title.substring(0, 150)} (via @${author})` : title.substring(0, 200);
+            // Couldn't extract any places - generate a placeholder name
+            console.log(`[Webhook] Couldn't extract any places, generating placeholder...`);
+            
+            const placeholder = await generatePlaceholderName(title);
+            console.log(`[Webhook] Generated placeholder: "${placeholder.name}"`);
+            
             const newPlace = {
                 id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
                 user_id: spotUserId,
-                name: placeName,
+                name: placeholder.name,
                 type: 'restaurant',
-                main_category: 'eat',
-                subtype: 'Restaurant',
+                main_category: placeholder.category,
+                subtype: placeholder.subtype,
                 subtypes: [],
                 address: 'Location TBD',
-                description: author ? `Shared by @${author} on Instagram` : `Saved from Instagram`,
+                description: `Couldn't identify this place. ${author ? `Shared by @${author} on Instagram.` : 'Saved from Instagram.'} Reply with the real name to update!`,
                 image_url: thumbnail || null,
                 source_url: url,
                 is_visited: false,
                 is_favorite: true,
-                notes: `Saved from Instagram DM`,
+                notes: `Original caption: ${title.substring(0, 200)}`,
                 created_at: new Date().toISOString(),
+                // Instagram integration - needs enhancement!
+                instagram_post_url: url,
+                needs_enhancement: true,
             };
             
             const { data: savedPlace, error: placeError } = await getSupabase()
@@ -987,9 +1147,9 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
                 .single();
             
             if (placeError) {
-                results.push({ url, success: false, error: 'Failed to save place' });
+                results.push({ url, success: false, error: 'Failed to save place', needsEnhancement: true });
             } else {
-                results.push({ url, success: true, name: savedPlace.name });
+                results.push({ url, success: true, name: savedPlace.name, needsEnhancement: true });
             }
             continue;
         }
@@ -1043,27 +1203,38 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
                     is_event: isEvent,
                     notes: `Saved from Instagram DM${author ? ` (via @${author})` : ''}`,
                     created_at: new Date().toISOString(),
+                    // Instagram integration
+                    instagram_post_url: url,
+                    needs_enhancement: false,
                 };
             } else {
-                // Google Places didn't find it, use extracted name
-                console.log(`[Webhook] Not found on Google Places, using extracted name: "${extracted.name}"`);
+                // Google Places didn't find it - save as unknown and ask for details
+                console.log(`[Webhook] Not found on Google Places, generating placeholder name...`);
                 const isEvent = extracted.isEvent || false;
+                
+                // Generate a descriptive placeholder name
+                const placeholder = await generatePlaceholderName(title || extracted.name);
+                console.log(`[Webhook] Generated placeholder: "${placeholder.name}" (${placeholder.category}/${placeholder.subtype})`);
+                
                 newPlace = {
                     id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
                     user_id: spotUserId,
-                    name: extracted.name,
+                    name: placeholder.name,
                     type: isEvent ? 'activity' : 'restaurant',
-                    main_category: isEvent ? 'see' : 'eat',
-                    subtype: isEvent ? 'Event' : 'Restaurant',
+                    main_category: isEvent ? 'see' : placeholder.category,
+                    subtype: isEvent ? 'Event' : placeholder.subtype,
                     subtypes: [],
-                    address: extracted.location,
-                    description: author ? `Shared by @${author} on Instagram` : `Saved from Instagram`,
+                    address: extracted.location || 'Location TBD',
+                    description: `Originally mentioned as "${extracted.name}". ${author ? `Shared by @${author} on Instagram.` : 'Saved from Instagram.'} Reply with the real name to update!`,
                     image_url: thumbnail || null,
                     source_url: url,
                     is_visited: false,
                     is_favorite: true,
                     is_event: isEvent,
-                    notes: `Saved from Instagram DM`,
+                    notes: `Original mention: ${extracted.name}`,
+                    // Instagram integration - needs enhancement!
+                    instagram_post_url: url,
+                    needs_enhancement: true,
                     created_at: new Date().toISOString(),
                 };
             }
@@ -1080,8 +1251,13 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
                 console.error('[Webhook] Failed to create place:', placeError);
                 results.push({ url, success: false, name: extracted.name, error: 'Failed to save place' });
             } else {
-                console.log(`[Webhook] Successfully saved place: ${savedPlace.name}`);
-                results.push({ url, success: true, name: savedPlace.name });
+                console.log(`[Webhook] Successfully saved place: ${savedPlace.name} (needs_enhancement: ${savedPlace.needs_enhancement})`);
+                results.push({ 
+                    url, 
+                    success: true, 
+                    name: savedPlace.name,
+                    needsEnhancement: savedPlace.needs_enhancement || false
+                });
             }
         }
     }
@@ -1089,18 +1265,34 @@ async function processIncomingMessage(message: WebhookMessage, rawPayload: any):
     // Send acknowledgment DM
     const successCount = results.filter(r => r.success).length;
     const failCount = results.filter(r => !r.success).length;
+    const needsEnhancementCount = results.filter(r => r.success && (r as any).needsEnhancement).length;
+    const fullyIdentifiedCount = successCount - needsEnhancementCount;
     
     let responseMessage = '';
     
-    if (successCount > 0 && failCount === 0) {
+    if (successCount === 0 && failCount > 0) {
+        // Complete failure
+        responseMessage = `😅 Couldn't fetch that content - it might be private or unavailable. Try sending a different link!`;
+    } else if (needsEnhancementCount > 0 && fullyIdentifiedCount === 0) {
+        // All places need enhancement
+        if (needsEnhancementCount === 1) {
+            const place = results.find(r => (r as any).needsEnhancement);
+            responseMessage = `🤔 I couldn't find info about this place.\n\nI've saved it as "${place?.name}" for now.\n\nReply with the restaurant name and I'll try to find it, or edit it directly in the app! 📱`;
+        } else {
+            responseMessage = `🤔 I couldn't identify ${needsEnhancementCount} places from that post.\n\nI've saved them with placeholder names - reply with the real names and I'll update them, or edit them in the app! 📱`;
+        }
+    } else if (needsEnhancementCount > 0) {
+        // Mix of identified and unidentified
+        responseMessage = `✅ Saved ${fullyIdentifiedCount} place${fullyIdentifiedCount > 1 ? 's' : ''} to your list!\n\n🤔 ${needsEnhancementCount} place${needsEnhancementCount > 1 ? 's' : ''} couldn't be identified - reply with ${needsEnhancementCount > 1 ? 'their names' : 'the name'} and I'll try to find ${needsEnhancementCount > 1 ? 'them' : 'it'}!`;
+    } else if (successCount > 0 && failCount === 0) {
+        // All successful
         if (successCount === 1) {
             responseMessage = `✅ Saved! "${results[0].name}" is now on your Spot list.`;
         } else {
             responseMessage = `✅ Saved ${successCount} places to your Spot list!`;
         }
-    } else if (successCount === 0 && failCount > 0) {
-        responseMessage = `😅 Couldn't fetch that content - it might be private or unavailable. Try sending a different link!`;
     } else {
+        // Partial success
         responseMessage = `✅ Saved ${successCount} place${successCount > 1 ? 's' : ''}! ` +
             `(${failCount} link${failCount > 1 ? 's' : ''} couldn't be fetched)`;
     }

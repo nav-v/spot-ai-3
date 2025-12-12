@@ -60,6 +60,9 @@ export interface Place {
     startDate?: string;
     endDate?: string;
     isEvent?: boolean;
+    // Instagram integration
+    needsEnhancement?: boolean;
+    instagramPostUrl?: string;
 }
 
 // Helper to convert DB user to API user format
@@ -102,6 +105,9 @@ const dbPlaceToPlace = (dbPlace: any): Place => ({
     startDate: dbPlace.start_date,
     endDate: dbPlace.end_date,
     isEvent: dbPlace.is_event,
+    // Instagram integration
+    needsEnhancement: dbPlace.needs_enhancement || false,
+    instagramPostUrl: dbPlace.instagram_post_url,
 });
 
 // Auth API - uses Supabase for user lookup but simple password matching
@@ -261,6 +267,9 @@ export const placesApi = {
             start_date: place.startDate,
             end_date: place.endDate,
             is_event: place.isEvent || false,
+            // Instagram integration
+            needs_enhancement: place.needsEnhancement || false,
+            instagram_post_url: place.instagramPostUrl,
         };
 
         const { data, error } = await supabase
@@ -297,6 +306,9 @@ export const placesApi = {
         if (updates.startDate !== undefined) dbUpdates.start_date = updates.startDate;
         if (updates.endDate !== undefined) dbUpdates.end_date = updates.endDate;
         if (updates.isEvent !== undefined) dbUpdates.is_event = updates.isEvent;
+        // Instagram integration
+        if (updates.needsEnhancement !== undefined) dbUpdates.needs_enhancement = updates.needsEnhancement;
+        if (updates.instagramPostUrl !== undefined) dbUpdates.instagram_post_url = updates.instagramPostUrl;
 
         const { data, error } = await supabase
             .from('places')
@@ -321,6 +333,39 @@ export const placesApi = {
             .eq('user_id', userId);
 
         if (error) throw new Error('Failed to delete place');
+    },
+
+    // Enhance a place by searching for it and updating with real data
+    async enhance(id: string, searchName: string): Promise<Place> {
+        const userId = getCurrentUserId();
+        if (!userId) throw new Error('Not authenticated');
+
+        // Call the enhance endpoint
+        const res = await fetch(`${API_BASE}/places/enhance`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ placeId: id, searchName, userId }),
+        });
+
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.message || 'Failed to enhance place');
+        }
+
+        return res.json();
+    },
+
+    // Search Google Places without saving
+    async searchPlaces(query: string, location: string = 'New York, NY'): Promise<any[]> {
+        const res = await fetch(`${API_BASE}/places/search`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, location }),
+        });
+
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data.results || [];
     },
 };
 

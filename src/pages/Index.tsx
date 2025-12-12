@@ -3,6 +3,7 @@ import { MapView } from '@/components/MapView';
 import { PlaceCard } from '@/components/PlaceCard';
 import { PlaceDetailModal } from '@/components/PlaceDetailModal';
 import { ChatInterface } from '@/components/ChatInterface';
+import { EnhanceModal } from '@/components/EnhanceModal';
 import { placesApi, preferencesApi, Place } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { eatCategories, seeCategories } from '@/data/categories';
@@ -54,6 +55,7 @@ const Index = () => {
   const [loading, setLoading] = useState(true);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [detailModalPlace, setDetailModalPlace] = useState<Place | null>(null);
+  const [enhanceModalPlace, setEnhanceModalPlace] = useState<Place | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('spot');
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
@@ -437,6 +439,7 @@ const Index = () => {
                     isSelected={selectedPlace?.id === place.id}
                     onToggleFavorite={handleToggleFavorite}
                     onToggleVisited={handleToggleVisited}
+                    onEnhance={(p) => setEnhanceModalPlace(p)}
                   />
                 </div>
               ))}
@@ -452,6 +455,26 @@ const Index = () => {
             onToggleFavorite={handleToggleFavorite}
             onToggleVisited={handleToggleVisited}
             onUpdate={fetchPlaces}
+          />
+        )}
+
+        {/* Enhance Modal */}
+        {enhanceModalPlace && (
+          <EnhanceModal
+            place={enhanceModalPlace}
+            isOpen={!!enhanceModalPlace}
+            onClose={() => setEnhanceModalPlace(null)}
+            onEnhanced={(updatedPlace) => {
+              // Update the place in the list
+              setPlaces(prev => prev.map(p => 
+                p.id === updatedPlace.id ? updatedPlace : p
+              ));
+              setEnhanceModalPlace(null);
+              toast({
+                title: 'Place enhanced!',
+                description: `Updated to "${updatedPlace.name}"`,
+              });
+            }}
           />
         )}
       </div>
