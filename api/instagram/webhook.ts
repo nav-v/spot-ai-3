@@ -10,23 +10,39 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABA
 // ============= INSTAGRAM ID TO SHORTCODE =============
 // Convert Instagram media ID to shortcode for constructing URLs
 // Based on: https://github.com/slang800/instagram-id-to-url-segment
-function mediaIdToShortcode(instagramId: string): string {
-    // Handle underscore-separated IDs (e.g. "12345_6789")
-    const id = instagramId.toString().split('_')[0];
+// and https://stackoverflow.com/questions/24437823/get-instagram-post-url-from-media-id
+function mediaIdToShortcode(instagramId: string | number): string {
+    // Ensure we have a string and handle underscore-separated IDs (e.g. "12345_6789")
+    let idStr = String(instagramId);
     
-    // BigInt required because Instagram IDs are too large for Number
-    let bigId = BigInt(id);
-    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-    let shortcode = '';
-    
-    // Convert Base10 ID to Base64 Shortcode
-    while (bigId > 0n) {
-        const remainder = bigId % 64n;
-        bigId = bigId / 64n;
-        shortcode = alphabet.charAt(Number(remainder)) + shortcode;
+    // If the ID contains underscore, take only the first part (the actual media ID)
+    if (idStr.includes('_')) {
+        idStr = idStr.substring(0, idStr.indexOf('_'));
     }
     
-    return shortcode;
+    console.log(`[Shortcode] Converting media ID: "${idStr}" (original: "${instagramId}")`);
+    
+    // BigInt is required because Instagram IDs are too large for JavaScript Number
+    // (they can be 19+ digits, but Number only handles up to ~15 digits precisely)
+    try {
+        let bigId = BigInt(idStr);
+        const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+        let shortcode = '';
+        
+        // Convert Base10 ID to Base64 Shortcode
+        while (bigId > 0n) {
+            const remainder = bigId % 64n;
+            bigId = bigId / 64n;
+            shortcode = alphabet.charAt(Number(remainder)) + shortcode;
+        }
+        
+        console.log(`[Shortcode] Result: "${shortcode}"`);
+        return shortcode;
+    } catch (error) {
+        console.error(`[Shortcode] Failed to convert "${idStr}":`, error);
+        // Return the original as fallback (might work for newer format IDs)
+        return idStr;
+    }
 }
 
 // ============= GOOGLE PLACES API =============
@@ -414,33 +430,77 @@ function extractPlaceNameFromCaptionRegex(caption: string): { placeName: string;
 // Construct Instagram URL from attachment data
 function getInstagramUrlFromAttachment(attachment: any): string | null {
     const payload = attachment.payload as any;
+    const attachmentType = attachment.type;
     
-    // 1. First check if URL is directly provided
+    // Debug logging
+    console.log(`[Webhook] Attachment type: "${attachmentType}"`);
+    console.log(`[Webhook] Payload keys: ${payload ? Object.keys(payload).join(', ') : 'null'}`);
+    console.log(`[Webhook] Full payload: ${JSON.stringify(payload)?.substring(0, 500)}`);
+    
+    // 1. First check if a direct Instagram URL is provided anywhere
     if (payload?.url && payload.url.includes('instagram.com')) {
-        console.log(`[Webhook] Using direct URL from payload`);
+        console.log(`[Webhook] Using direct URL from payload.url`);
         return payload.url;
     }
     
-    // 2. For Reels - check both 'id' and 'reel_video_id' fields
-    if (attachment.type === 'ig_reel') {
-        const mediaId = payload?.id || payload?.reel_video_id;
+    // Check for link field (some attachments have this)
+    if (payload?.link && payload.link.includes('instagram.com')) {
+        console.log(`[Webhook] Using direct URL from payload.link`);
+        return payload.link;
+    }
+    
+    // 2. For Reels - check multiple possible field names
+    if (attachmentType === 'ig_reel' || attachmentType === 'reel') {
+        const mediaId = payload?.reel_video_id || payload?.id || payload?.media_id;
         if (mediaId) {
-            const shortcode = mediaIdToShortcode(mediaId);
+            const shortcode = mediaIdToShortcode(String(mediaId));
             const url = `https://www.instagram.com/reel/${shortcode}/`;
-            console.log(`[Webhook] Converted ID ${mediaId} to shortcode ${shortcode}`);
+            console.log(`[Webhook] Reel: Converted ID "${mediaId}" to shortcode "${shortcode}"`);
+            return url;
+        }
+        console.log(`[Webhook] Reel attachment but no media ID found`);
+    }
+    
+    // 3. For shares/posts - check multiple possible field names
+    if (attachmentType === 'share' || attachmentType === 'media_share' || attachmentType === 'ig_post') {
+        // Instagram uses different field names in different contexts
+        const mediaId = payload?.ig_post_media_id || payload?.media_id || payload?.id;
+        if (mediaId) {
+            const shortcode = mediaIdToShortcode(String(mediaId));
+            const url = `https://www.instagram.com/p/${shortcode}/`;
+            console.log(`[Webhook] Post: Converted ID "${mediaId}" to shortcode "${shortcode}"`);
+            return url;
+        }
+        console.log(`[Webhook] Share attachment but no media ID found`);
+    }
+    
+    // 4. For stories
+    if (attachmentType === 'ig_story' || attachmentType === 'story') {
+        const storyId = payload?.story_id || payload?.id;
+        if (storyId) {
+            // Stories don't have permanent URLs, but we can try
+            console.log(`[Webhook] Story detected with ID: ${storyId} (stories are ephemeral)`);
+            return null; // Stories aren't accessible via URL
+        }
+    }
+    
+    // 5. Fallback: Try to find ANY media ID in the payload
+    const possibleIdFields = ['reel_video_id', 'ig_post_media_id', 'media_id', 'id', 'post_id'];
+    for (const field of possibleIdFields) {
+        if (payload?.[field]) {
+            const mediaId = String(payload[field]);
+            // Determine if it's likely a reel or post based on attachment type hint
+            const isReel = attachmentType?.includes('reel') || mediaId.length < 15;
+            const shortcode = mediaIdToShortcode(mediaId);
+            const url = isReel 
+                ? `https://www.instagram.com/reel/${shortcode}/`
+                : `https://www.instagram.com/p/${shortcode}/`;
+            console.log(`[Webhook] Fallback: Found ID in "${field}", converted to ${url}`);
             return url;
         }
     }
     
-    // 3. For shares/posts
-    if (attachment.type === 'share') {
-        const mediaId = payload?.id;
-        if (mediaId) {
-            const shortcode = mediaIdToShortcode(mediaId);
-            return `https://www.instagram.com/p/${shortcode}/`;
-        }
-    }
-    
+    console.log(`[Webhook] Could not extract Instagram URL from attachment type "${attachmentType}"`);
     return null;
 }
 
