@@ -712,15 +712,16 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
       pendingSearchRef.current = null;
 
       if (res && res.content) {
-        // Handle both new sections format and legacy flat places array
+        // Handle speed mode response (has recommendations directly)
+        // Handle new sections format and legacy flat places array
         const sections = res.actionResult?.sections;
-        const legacyPlaces = res.actionResult?.places;
+        const legacyPlaces = res.speedMode ? res.recommendations : res.actionResult?.places;
 
         const assistantMsg: ChatMessage = {
           role: 'assistant',
           content: res.content,
           sections: sections, // New: grouped recommendations
-          recommendations: legacyPlaces, // Legacy: flat list for backwards compat
+          recommendations: legacyPlaces, // Speed mode OR legacy flat list
           sources: res.actionResult?.sources, // Verified sources from Gemini grounding
           reservation: res.actionResult?.type === 'reservations' ? res.actionResult : undefined,
           bookings: res.actionResult?.type === 'bookings' ? res.actionResult.bookings : undefined,
