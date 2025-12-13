@@ -34,7 +34,7 @@ interface RecommendedPlace {
   // Dish recommendations
   recommendedDishes?: string[];
   // Source attribution - domain + actual URL
-  sources?: Array<{domain: string; url: string}> | string[];
+  sources?: Array<{ domain: string; url: string }> | string[];
 }
 
 interface ReservationData {
@@ -135,13 +135,13 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
   const pendingSearchRef = useRef<{ input: string; messages: ChatMessage[] } | null>(null);
   const { toast } = useToast();
   const [savedPlaceNames, setSavedPlaceNames] = useState<Set<string>>(new Set());
-  
+
   // Digest state
   const [digest, setDigest] = useState<DigestData | null>(null);
   const [digestLoading, setDigestLoading] = useState(true);
   const [showDigest, setShowDigest] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
-  
+
   // Chat persistence state
   const [chatId, setChatId] = useState<string | null>(null);
   const [chatLoading, setChatLoading] = useState(true);
@@ -152,16 +152,16 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
       setSavedPlaceNames(new Set(places.map(p => p.name.toLowerCase())));
     });
   }, []);
-  
+
   // Load persisted chat messages on mount
   useEffect(() => {
     if (!user?.id) return;
-    
+
     const loadChat = async () => {
       try {
         const response = await fetch(`/api/chats?userId=${user.id}`);
         const data = await response.json();
-        
+
         if (data.messages && data.messages.length > 0) {
           console.log(`[Chat] Loaded ${data.messages.length} messages from chat ${data.chatId}`);
           setMessages(data.messages);
@@ -175,14 +175,14 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
         setChatLoading(false);
       }
     };
-    
+
     loadChat();
   }, [user?.id]);
-  
+
   // Save message to database
   const saveMessage = useCallback(async (message: ChatMessage) => {
     if (!user?.id) return;
-    
+
     try {
       const response = await fetch('/api/chats', {
         method: 'POST',
@@ -198,7 +198,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
           }
         })
       });
-      
+
       const data = await response.json();
       if (data.chatId && !chatId) {
         setChatId(data.chatId);
@@ -207,18 +207,18 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
       console.error('[Chat] Failed to save message:', error);
     }
   }, [user?.id, chatId]);
-  
+
   // Start new chat
   const handleNewChat = useCallback(async () => {
     if (!user?.id) return;
-    
+
     try {
       const response = await fetch('/api/chats', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id })
       });
-      
+
       const data = await response.json();
       if (data.success) {
         console.log('[Chat] Started new chat:', data.chatId);
@@ -235,43 +235,49 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
   // Fetch daily digest (cached in localStorage - only generates once per day)
   useEffect(() => {
     if (!user?.id) return;
-    
+
     const fetchDigest = async () => {
       const cacheKey = `spot-digest-${user.id}`;
       const today = new Date().toDateString();
-      
+
       console.log(`[Digest] Fetching for user ${user.id}, date: ${today}`);
-      
+
       // Check localStorage cache first (won't work in incognito, but fast path for normal use)
       const cached = localStorage.getItem(cacheKey);
       if (cached) {
         try {
           const { digest: cachedDigest, date } = JSON.parse(cached);
-          if (date === today && cachedDigest) {
+          // Validate cache: must have date match AND actual recommendations (not a placeholder)
+          const hasRecs = cachedDigest?.recommendations?.length > 0;
+          const isPlaceholder = cachedDigest?.greeting === 'Generating...';
+          if (date === today && cachedDigest && hasRecs && !isPlaceholder) {
             console.log('[Digest] Using localStorage cache');
             setDigest(cachedDigest);
             setShowDigest(true);
             setDigestLoading(false);
             return; // Use cache, don't hit server
+          } else if (date === today && (!hasRecs || isPlaceholder)) {
+            console.log('[Digest] Cached digest is a placeholder, clearing and fetching fresh');
+            localStorage.removeItem(cacheKey);
           }
-        } catch {}
+        } catch { }
       }
-      
+
       try {
         // Check server for existing digest
         console.log('[Digest] Checking server for existing digest...');
         const response = await fetch(`/api/digest/${user.id}`);
         const data = await response.json();
-        
+
         console.log('[Digest] Server response:', { hasDigest: data.hasDigest, hasData: !!data.digest });
-        
+
         if (data.hasDigest && data.digest) {
           console.log('[Digest] ✅ Found existing digest on server');
           setDigest(data.digest);
           setShowDigest(true);
           try {
             localStorage.setItem(cacheKey, JSON.stringify({ digest: data.digest, date: today }));
-          } catch {} // localStorage might fail in incognito
+          } catch { } // localStorage might fail in incognito
         } else {
           // First time today - generate on-demand
           console.log('[Digest] ❌ No digest found, generating new one...');
@@ -281,15 +287,15 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
             body: JSON.stringify({ userId: user.id })
           });
           const genData = await genResponse.json();
-          
+
           console.log('[Digest] Generate response:', { hasDigest: genData.hasDigest, success: genData.success });
-          
+
           if (genData.hasDigest && genData.digest) {
             setDigest(genData.digest);
             setShowDigest(true);
             try {
               localStorage.setItem(cacheKey, JSON.stringify({ digest: genData.digest, date: today }));
-            } catch {} // localStorage might fail in incognito
+            } catch { } // localStorage might fail in incognito
           } else {
             setDigest(null);
             setShowDigest(false);
@@ -303,7 +309,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
         setDigestLoading(false);
       }
     };
-    
+
     fetchDigest();
   }, [user?.id]);
 
@@ -602,7 +608,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
         mainCategory: place.mainCategory,
         subtype: place.subtype,
       });
-      
+
       setSavedPlaceNames(prev => new Set(prev).add(place.name.toLowerCase()));
       toast({ title: 'Added!', description: `${place.name} saved to your list.` });
       onPlaceAdded?.();
@@ -614,14 +620,14 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
   // Handle loading more digest recommendations (adds to existing, doesn't replace)
   const handleDigestLoadMore = async (): Promise<DigestRecommendation[]> => {
     try {
-      
+
       // No preloaded batch, fetch now
       const response = await fetch('/api/digest/load-more', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user?.id })
       });
-      
+
       const data = await response.json();
       return data.recommendations || [];
     } catch (error) {
@@ -645,7 +651,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
     setMessages(currentMessages);
     setInput('');
     setIsTyping(true);
-    
+
     // Persist user message
     saveMessage(userMsg);
 
@@ -657,7 +663,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
       history.push({ role: 'user', content: userInput });
 
       const res = await chatApi.send(history, user?.name, user?.preferences);
-      
+
       // Clear pending search on success
       pendingSearchRef.current = null;
 
@@ -665,7 +671,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
         // Handle both new sections format and legacy flat places array
         const sections = res.actionResult?.sections;
         const legacyPlaces = res.actionResult?.places;
-        
+
         const assistantMsg: ChatMessage = {
           role: 'assistant',
           content: res.content,
@@ -713,7 +719,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
           setDisplayedText('');
           return newMessages;
         });
-        
+
         // Persist assistant message
         saveMessage(assistantMsg);
       } else {
@@ -792,7 +798,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
   // Auto-scroll to bottom when NEW messages are added (not on initial load)
   useEffect(() => {
     if (messages.length > 1) {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, displayedText, displayedTrace, reasoningTrace]);
 
@@ -800,18 +806,18 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
     try {
       // Determine if this is an event based on multiple signals
       const isEvent = place.isEvent || place.type === 'event' || Boolean(place.startDate);
-      
+
       // Determine mainCategory: events go to 'see', restaurants go to 'eat'
-      const mainCategory = place.mainCategory || (isEvent ? 'see' : 
+      const mainCategory = place.mainCategory || (isEvent ? 'see' :
         ['restaurant', 'cafe', 'bar'].includes(place.type || '') ? 'eat' : 'see');
-      
+
       // Determine subtype
-      const subtype = place.subtype || (isEvent ? 'Event' : 
-        place.type === 'cafe' ? 'Coffee' : 
-        place.type === 'bar' ? 'Bar' : 
-        place.type === 'activity' ? 'Activity' :
-        place.type === 'attraction' ? 'Landmark' : 'Restaurant');
-      
+      const subtype = place.subtype || (isEvent ? 'Event' :
+        place.type === 'cafe' ? 'Coffee' :
+          place.type === 'bar' ? 'Bar' :
+            place.type === 'activity' ? 'Activity' :
+              place.type === 'attraction' ? 'Landmark' : 'Restaurant');
+
       await placesApi.create({
         name: place.name,
         address: place.location,
@@ -837,10 +843,10 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
 
   return (
     <div className="flex flex-col h-full bg-background relative">
-      
+
       {/* Messages */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-6 pb-24" style={{ paddingBottom: 'calc(6rem + env(safe-area-inset-bottom, 0px))' }}>
-        
+
         {/* Daily Digest or Loading State */}
         {digestLoading ? (
           <div className="space-y-4">
@@ -849,7 +855,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
               Hey! I'm Spot – ask me to plan, find, or add food, places and events
               <span className="inline-block w-1.5 h-1.5 bg-orange-500 rounded-full ml-1.5 align-middle" style={{ animation: 'pulse-fast 0.4s ease-in-out infinite' }} />
             </p>
-            
+
             {/* Loading spinner */}
             <div className="flex flex-col items-center py-12 space-y-3">
               <div className="relative">
@@ -878,40 +884,161 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
         {messages.map((msg, idx) => {
           // Hide the initial greeting message if we have a digest or are loading one
           if (idx === 0 && (digest || digestLoading)) return null;
-          
+
           return (
-          <div
-            key={idx}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            {/* Message Content */}
-            <div className={`max-w-[92%] ${msg.role === 'user'
-              ? 'px-5 py-1.5 bg-primary text-primary-foreground rounded-[2rem] rounded-tr-sm shadow-sm'
-              : 'text-foreground px-0' // Removed bubble styling for assistant
-              } relative group`}>
+            <div
+              key={idx}
+              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              {/* Message Content */}
+              <div className={`max-w-[92%] ${msg.role === 'user'
+                ? 'px-5 py-1.5 bg-primary text-primary-foreground rounded-[2rem] rounded-tr-sm shadow-sm'
+                : 'text-foreground px-0' // Removed bubble styling for assistant
+                } relative group`}>
 
-              {/* Floating Suggestions removed from here - moved to bottom */}
+                {/* Floating Suggestions removed from here - moved to bottom */}
 
-              <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                {(() => {
-                  // Determine which content to show (typewriter or full)
-                  const isCurrentlyTyping = idx === typingMessageIndex && msg.role === 'assistant';
-                  const contentToShow = isCurrentlyTyping ? displayedText : msg.content;
-                  // Only show Spot dot on the LAST assistant message AND not during reasoning
-                  const lastAssistantIdx = messages.map((m, i) => m.role === 'assistant' ? i : -1).filter(i => i >= 0).pop();
-                  const showSpotDot = msg.role === 'assistant' && idx === lastAssistantIdx && !isTyping;
+                <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                  {(() => {
+                    // Determine which content to show (typewriter or full)
+                    const isCurrentlyTyping = idx === typingMessageIndex && msg.role === 'assistant';
+                    const contentToShow = isCurrentlyTyping ? displayedText : msg.content;
+                    // Only show Spot dot on the LAST assistant message AND not during reasoning
+                    const lastAssistantIdx = messages.map((m, i) => m.role === 'assistant' ? i : -1).filter(i => i >= 0).pop();
+                    const showSpotDot = msg.role === 'assistant' && idx === lastAssistantIdx && !isTyping;
 
-                  // During typing: show formatted content progressively with dot at end
-                  if (isCurrentlyTyping) {
-                    const lines = contentToShow.split('\n');
-                    const lastLineIdx = lines.length - 1;
+                    // During typing: show formatted content progressively with dot at end
+                    if (isCurrentlyTyping) {
+                      const lines = contentToShow.split('\n');
+                      const lastLineIdx = lines.length - 1;
 
+                      return (
+                        <>
+                          {lines.map((line, i) => {
+                            const matchedPlace = msg.recommendations?.find(p => contentToShow.includes(p.name) && line.includes(p.name));
+                            const isLastLine = i === lastLineIdx;
+
+                            if (line.trim() === '') {
+                              return <div key={i} className="h-3" />;
+                            }
+
+                            // Format bold text
+                            const formattedLine = line.split(/(\*\*.*?\*\*)/).map((part, j) => {
+                              if (part.startsWith('**') && part.endsWith('**')) {
+                                return <strong key={j} className="font-semibold text-foreground">{part.slice(2, -2)}</strong>;
+                              }
+                              return part;
+                            });
+
+                            // Show card if place name is fully typed
+                            if (matchedPlace && !line.startsWith('*')) {
+                              return (
+                                <div key={i} className="my-5">
+                                  <p className="mb-2">{formattedLine}</p>
+                                  <div className="max-w-sm bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow animate-in fade-in duration-300">
+                                    {matchedPlace.imageUrl && (
+                                      <div className="h-32 w-full overflow-hidden relative group">
+                                        <img src={matchedPlace.imageUrl} alt={matchedPlace.name} className="w-full h-full object-cover" />
+                                        <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full font-medium">
+                                          {matchedPlace.location}
+                                        </div>
+                                      </div>
+                                    )}
+                                    <div className="p-3">
+                                      <h4 className="font-semibold text-sm text-foreground mb-1">{formattedLine}</h4>
+                                      <p className="text-xs text-muted-foreground mb-1">{matchedPlace.description}</p>
+                                      {matchedPlace.recommendedDishes && matchedPlace.recommendedDishes.length > 0 && (
+                                        <p className="text-xs text-muted-foreground/80 mb-1">
+                                          <span className="font-medium">Try:</span> {matchedPlace.recommendedDishes.join(' · ')}
+                                        </p>
+                                      )}
+                                      {matchedPlace.sources && matchedPlace.sources.length > 0 && (
+                                        <div className="flex items-center gap-1.5 mb-2">
+                                          <span className="text-[10px] text-muted-foreground/60">via</span>
+                                          {matchedPlace.sources.slice(0, 3).map((source, i) => {
+                                            const domain = typeof source === 'string' ? source : source.domain;
+                                            const url = typeof source === 'string' ? `https://${source}` : source.url;
+                                            return (
+                                              <a
+                                                key={i}
+                                                href={url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                title={domain}
+                                              >
+                                                <img
+                                                  src={`https://www.google.com/s2/favicons?domain=${domain}&sz=16`}
+                                                  alt={domain}
+                                                  className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
+                                                />
+                                              </a>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                      {!matchedPlace.sources?.length && !matchedPlace.recommendedDishes?.length && <div className="mb-2" />}
+                                      <div className="flex gap-2">
+                                        <a href={matchedPlace.website} target="_blank" rel="noopener noreferrer" className="flex-1 flex items-center justify-center gap-1.5 bg-secondary/50 hover:bg-secondary text-secondary-foreground text-[10px] py-2 rounded-lg transition-colors font-medium">
+                                          <ExternalLink className="w-3 h-3" /> Website
+                                        </a>
+                                        <button
+                                          onClick={() => !savedPlaceNames.has(matchedPlace.name.toLowerCase()) && handleAddRecommendation(matchedPlace)}
+                                          disabled={savedPlaceNames.has(matchedPlace.name.toLowerCase())}
+                                          className={`flex-1 flex items-center justify-center gap-1.5 text-[10px] py-2 rounded-lg transition-colors font-medium shadow-sm ${savedPlaceNames.has(matchedPlace.name.toLowerCase())
+                                            ? 'bg-secondary text-muted-foreground cursor-not-allowed'
+                                            : 'bg-primary text-primary-foreground hover:bg-primary/90'
+                                            }`}
+                                        >
+                                          {savedPlaceNames.has(matchedPlace.name.toLowerCase()) ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+                                          {savedPlaceNames.has(matchedPlace.name.toLowerCase()) ? 'On List' : 'Add'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            // Bullet points
+                            const bulletMatch = line.match(/^[\*\-]\s+(.*)$/);
+                            if (bulletMatch) {
+                              const bulletContent = bulletMatch[1].split(/(\*\*.*?\*\*)/).map((part, j) => {
+                                if (part.startsWith('**') && part.endsWith('**')) {
+                                  return <strong key={j} className="font-semibold text-foreground">{part.slice(2, -2)}</strong>;
+                                }
+                                return part;
+                              });
+                              return (
+                                <div key={i} className="flex gap-2 mb-1 ml-2">
+                                  <span className="text-muted-foreground">•</span>
+                                  <span>
+                                    {bulletContent}
+                                    {isLastLine && <span className="inline-block w-2 h-2 bg-orange-500 rounded-full ml-0.5 align-middle" style={{ animation: 'pulse-fast 0.4s ease-in-out infinite' }} />}
+                                  </span>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <p key={i} className="mb-1">
+                                {formattedLine}
+                                {isLastLine && <span className="inline-block w-2 h-2 bg-orange-500 rounded-full ml-0.5 align-middle" style={{ animation: 'pulse-fast 0.4s ease-in-out infinite' }} />}
+                              </p>
+                            );
+                          })}
+                        </>
+                      );
+                    }
+
+                    // After typing complete: show formatted content
                     return (
                       <>
-                        {lines.map((line, i) => {
-                          const matchedPlace = msg.recommendations?.find(p => contentToShow.includes(p.name) && line.includes(p.name));
-                          const isLastLine = i === lastLineIdx;
+                        {contentToShow.split('\n').map((line, i, arr) => {
+                          // Check for inline card triggers
+                          const matchedPlace = msg.recommendations?.find(p => line.includes(p.name));
+                          const isLastLine = i === arr.length - 1;
 
+                          // Handle paragraph breaks (empty lines)
                           if (line.trim() === '') {
                             return <div key={i} className="h-3" />;
                           }
@@ -924,43 +1051,50 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                             return part;
                           });
 
-                          // Show card if place name is fully typed
                           if (matchedPlace && !line.startsWith('*')) {
                             return (
                               <div key={i} className="my-5">
                                 <p className="mb-2">{formattedLine}</p>
-                                <div className="max-w-sm bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow animate-in fade-in duration-300">
+                                <div className="max-w-sm bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
                                   {matchedPlace.imageUrl && (
                                     <div className="h-32 w-full overflow-hidden relative group">
-                                      <img src={matchedPlace.imageUrl} alt={matchedPlace.name} className="w-full h-full object-cover" />
+                                      <img src={matchedPlace.imageUrl} alt={matchedPlace.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
                                       <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full font-medium">
                                         {matchedPlace.location}
                                       </div>
                                     </div>
                                   )}
                                   <div className="p-3">
-                                    <h4 className="font-semibold text-sm text-foreground mb-1">{formattedLine}</h4>
+                                    <div className="flex justify-between items-start mb-1">
+                                      <h4 className="font-semibold text-sm text-foreground">{matchedPlace.name}</h4>
+                                      {(matchedPlace as any).rating && (
+                                        <div className="flex items-center gap-0.5 bg-yellow-500/10 text-yellow-600 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                          <span>★</span>
+                                          <span>{(matchedPlace as any).rating}</span>
+                                        </div>
+                                      )}
+                                    </div>
                                     <p className="text-xs text-muted-foreground mb-1">{matchedPlace.description}</p>
                                     {matchedPlace.recommendedDishes && matchedPlace.recommendedDishes.length > 0 && (
                                       <p className="text-xs text-muted-foreground/80 mb-1">
                                         <span className="font-medium">Try:</span> {matchedPlace.recommendedDishes.join(' · ')}
                                       </p>
                                     )}
-                                    {matchedPlace.sources && matchedPlace.sources.length > 0 && (
+                                    {(matchedPlace as any).sources && (matchedPlace as any).sources.length > 0 && (
                                       <div className="flex items-center gap-1.5 mb-2">
                                         <span className="text-[10px] text-muted-foreground/60">via</span>
-                                        {matchedPlace.sources.slice(0, 3).map((source, i) => {
+                                        {(matchedPlace as any).sources.slice(0, 3).map((source: any, i: number) => {
                                           const domain = typeof source === 'string' ? source : source.domain;
                                           const url = typeof source === 'string' ? `https://${source}` : source.url;
                                           return (
-                                            <a 
+                                            <a
                                               key={i}
                                               href={url}
                                               target="_blank"
                                               rel="noopener noreferrer"
                                               title={domain}
                                             >
-                                              <img 
+                                              <img
                                                 src={`https://www.google.com/s2/favicons?domain=${domain}&sz=16`}
                                                 alt={domain}
                                                 className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
@@ -970,10 +1104,17 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                                         })}
                                       </div>
                                     )}
-                                    {!matchedPlace.sources?.length && !matchedPlace.recommendedDishes?.length && <div className="mb-2" />}
+                                    {!(matchedPlace as any).sources?.length && !matchedPlace.recommendedDishes?.length && <div className="mb-2" />}
+
                                     <div className="flex gap-2">
-                                      <a href={matchedPlace.website} target="_blank" rel="noopener noreferrer" className="flex-1 flex items-center justify-center gap-1.5 bg-secondary/50 hover:bg-secondary text-secondary-foreground text-[10px] py-2 rounded-lg transition-colors font-medium">
-                                        <ExternalLink className="w-3 h-3" /> Website
+                                      <a
+                                        href={matchedPlace.website}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex-1 flex items-center justify-center gap-1.5 bg-secondary/50 hover:bg-secondary text-secondary-foreground text-[10px] py-2 rounded-lg transition-colors font-medium"
+                                      >
+                                        <ExternalLink className="w-3 h-3" />
+                                        Website
                                       </a>
                                       <button
                                         onClick={() => !savedPlaceNames.has(matchedPlace.name.toLowerCase()) && handleAddRecommendation(matchedPlace)}
@@ -993,7 +1134,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                             );
                           }
 
-                          // Bullet points
+                          // Handle bullet points (lines starting with * or -)
                           const bulletMatch = line.match(/^[\*\-]\s+(.*)$/);
                           if (bulletMatch) {
                             const bulletContent = bulletMatch[1].split(/(\*\*.*?\*\*)/).map((part, j) => {
@@ -1007,7 +1148,13 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                                 <span className="text-muted-foreground">•</span>
                                 <span>
                                   {bulletContent}
-                                  {isLastLine && <span className="inline-block w-2 h-2 bg-orange-500 rounded-full ml-0.5 align-middle" style={{ animation: 'pulse-fast 0.4s ease-in-out infinite' }} />}
+                                  {/* Show Spot dot at end of last line */}
+                                  {showSpotDot && isLastLine && (
+                                    <span
+                                      className="inline-block w-2 h-2 bg-orange-500 rounded-full ml-1 align-middle"
+                                      style={{ animation: 'pulse-slow 1.5s ease-in-out infinite' }}
+                                    />
+                                  )}
                                 </span>
                               </div>
                             );
@@ -1016,79 +1163,100 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                           return (
                             <p key={i} className="mb-1">
                               {formattedLine}
-                              {isLastLine && <span className="inline-block w-2 h-2 bg-orange-500 rounded-full ml-0.5 align-middle" style={{ animation: 'pulse-fast 0.4s ease-in-out infinite' }} />}
+                              {/* Show Spot dot at end of last line */}
+                              {showSpotDot && isLastLine && (
+                                <span
+                                  className="inline-block w-2 h-2 bg-orange-500 rounded-full ml-1 align-middle"
+                                  style={{ animation: 'pulse-slow 1.5s ease-in-out infinite' }}
+                                />
+                              )}
                             </p>
                           );
                         })}
                       </>
                     );
-                  }
+                  })()}
+                </div>
 
-                  // After typing complete: show formatted content
-                  return (
-                    <>
-                      {contentToShow.split('\n').map((line, i, arr) => {
-                        // Check for inline card triggers
-                        const matchedPlace = msg.recommendations?.find(p => line.includes(p.name));
-                        const isLastLine = i === arr.length - 1;
+                {/* Sectioned Carousels - New Format */}
+                {msg.sections && msg.sections.length > 0 && (
+                  <div className="mt-4 space-y-5">
+                    {msg.sections.map((section, sectionIdx) => (
+                      <div key={sectionIdx}>
+                        {/* Section Title */}
+                        <h3 className="text-sm font-semibold text-foreground mb-1 px-1">{section.title}</h3>
 
-                        // Handle paragraph breaks (empty lines)
-                        if (line.trim() === '') {
-                          return <div key={i} className="h-3" />;
-                        }
+                        {/* Section Intro */}
+                        {section.intro && (
+                          <p className="text-sm text-muted-foreground mb-3 px-1 leading-relaxed">{section.intro}</p>
+                        )}
 
-                        // Format bold text
-                        const formattedLine = line.split(/(\*\*.*?\*\*)/).map((part, j) => {
-                          if (part.startsWith('**') && part.endsWith('**')) {
-                            return <strong key={j} className="font-semibold text-foreground">{part.slice(2, -2)}</strong>;
-                          }
-                          return part;
-                        });
-
-                        if (matchedPlace && !line.startsWith('*')) {
-                          return (
-                            <div key={i} className="my-5">
-                              <p className="mb-2">{formattedLine}</p>
-                              <div className="max-w-sm bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                                {matchedPlace.imageUrl && (
-                                  <div className="h-32 w-full overflow-hidden relative group">
-                                    <img src={matchedPlace.imageUrl} alt={matchedPlace.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
-                                    <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full font-medium">
-                                      {matchedPlace.location}
+                        {/* Section Carousel */}
+                        <div className="relative w-screen -ml-4">
+                          <DraggableScrollContainer
+                            className="pb-3 flex gap-3 px-4 snap-x snap-mandatory scroll-smooth scrollbar-hide"
+                          >
+                            {section.places.map((place, placeIdx) => (
+                              <div key={placeIdx} className="min-w-[65%] sm:min-w-[240px] sm:w-[240px] bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all snap-center flex flex-col">
+                                {/* Image Area */}
+                                <div className="h-36 w-full bg-muted relative overflow-hidden group">
+                                  {place.imageUrl ? (
+                                    <img src={place.imageUrl} alt={place.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center bg-secondary/30">
+                                      <MapPin className="w-8 h-8 text-muted-foreground/50" />
                                     </div>
+                                  )}
+                                  <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full font-medium">
+                                    {place.location}
                                   </div>
-                                )}
-                                <div className="p-3">
+                                </div>
+
+                                {/* Content Area */}
+                                <div className="p-3 flex flex-col flex-1">
                                   <div className="flex justify-between items-start mb-1">
-                                    <h4 className="font-semibold text-sm text-foreground">{matchedPlace.name}</h4>
-                                    {(matchedPlace as any).rating && (
+                                    <h3 className="font-semibold text-sm leading-tight text-foreground">{place.name}</h3>
+                                    {(place as any).rating && (
                                       <div className="flex items-center gap-0.5 bg-yellow-500/10 text-yellow-600 px-1.5 py-0.5 rounded text-[10px] font-bold">
                                         <span>★</span>
-                                        <span>{(matchedPlace as any).rating}</span>
+                                        <span>{(place as any).rating}</span>
                                       </div>
                                     )}
                                   </div>
-                                  <p className="text-xs text-muted-foreground mb-1">{matchedPlace.description}</p>
-                                  {matchedPlace.recommendedDishes && matchedPlace.recommendedDishes.length > 0 && (
-                                    <p className="text-xs text-muted-foreground/80 mb-1">
-                                      <span className="font-medium">Try:</span> {matchedPlace.recommendedDishes.join(' · ')}
+
+                                  {place.location && (
+                                    <p className="text-[10px] text-muted-foreground mb-1">📍 {place.location}</p>
+                                  )}
+
+                                  {(place as any).startDate && (
+                                    <p className="text-[10px] text-primary font-medium mb-2">
+                                      📅 {new Date((place as any).startDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                                     </p>
                                   )}
-                                  {(matchedPlace as any).sources && (matchedPlace as any).sources.length > 0 && (
+
+                                  <p className="text-xs text-muted-foreground mb-1 flex-1">
+                                    {place.description}
+                                  </p>
+                                  {(place as any).recommendedDishes && (place as any).recommendedDishes.length > 0 && (
+                                    <p className="text-xs text-muted-foreground/80 mb-1">
+                                      <span className="font-medium">Try:</span> {(place as any).recommendedDishes.join(' · ')}
+                                    </p>
+                                  )}
+                                  {(place as any).sources && (place as any).sources.length > 0 && (
                                     <div className="flex items-center gap-1.5 mb-2">
                                       <span className="text-[10px] text-muted-foreground/60">via</span>
-                                      {(matchedPlace as any).sources.slice(0, 3).map((source: any, i: number) => {
+                                      {(place as any).sources.slice(0, 3).map((source: any, i: number) => {
                                         const domain = typeof source === 'string' ? source : source.domain;
                                         const url = typeof source === 'string' ? `https://${source}` : source.url;
                                         return (
-                                          <a 
+                                          <a
                                             key={i}
                                             href={url}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             title={domain}
                                           >
-                                            <img 
+                                            <img
                                               src={`https://www.google.com/s2/favicons?domain=${domain}&sz=16`}
                                               alt={domain}
                                               className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
@@ -1098,11 +1266,10 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                                       })}
                                     </div>
                                   )}
-                                  {!(matchedPlace as any).sources?.length && !matchedPlace.recommendedDishes?.length && <div className="mb-2" />}
 
-                                  <div className="flex gap-2">
+                                  <div className="flex gap-2 mt-auto">
                                     <a
-                                      href={matchedPlace.website}
+                                      href={place.website}
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className="flex-1 flex items-center justify-center gap-1.5 bg-secondary/50 hover:bg-secondary text-secondary-foreground text-[10px] py-2 rounded-lg transition-colors font-medium"
@@ -1111,388 +1278,227 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
                                       Website
                                     </a>
                                     <button
-                                      onClick={() => !savedPlaceNames.has(matchedPlace.name.toLowerCase()) && handleAddRecommendation(matchedPlace)}
-                                      disabled={savedPlaceNames.has(matchedPlace.name.toLowerCase())}
-                                      className={`flex-1 flex items-center justify-center gap-1.5 text-[10px] py-2 rounded-lg transition-colors font-medium shadow-sm ${savedPlaceNames.has(matchedPlace.name.toLowerCase())
+                                      onClick={() => !savedPlaceNames.has(place.name.toLowerCase()) && handleAddRecommendation(place)}
+                                      disabled={savedPlaceNames.has(place.name.toLowerCase())}
+                                      className={`flex-1 flex items-center justify-center gap-1.5 text-[10px] py-2 rounded-lg transition-colors font-medium shadow-sm ${savedPlaceNames.has(place.name.toLowerCase())
                                         ? 'bg-secondary text-muted-foreground cursor-not-allowed'
                                         : 'bg-primary text-primary-foreground hover:bg-primary/90'
                                         }`}
                                     >
-                                      {savedPlaceNames.has(matchedPlace.name.toLowerCase()) ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
-                                      {savedPlaceNames.has(matchedPlace.name.toLowerCase()) ? 'On List' : 'Add'}
+                                      {savedPlaceNames.has(place.name.toLowerCase()) ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+                                      {savedPlaceNames.has(place.name.toLowerCase()) ? 'On List' : 'Add'}
                                     </button>
                                   </div>
                                 </div>
                               </div>
-                            </div>
-                          );
-                        }
-
-                        // Handle bullet points (lines starting with * or -)
-                        const bulletMatch = line.match(/^[\*\-]\s+(.*)$/);
-                        if (bulletMatch) {
-                          const bulletContent = bulletMatch[1].split(/(\*\*.*?\*\*)/).map((part, j) => {
-                            if (part.startsWith('**') && part.endsWith('**')) {
-                              return <strong key={j} className="font-semibold text-foreground">{part.slice(2, -2)}</strong>;
-                            }
-                            return part;
-                          });
-                          return (
-                            <div key={i} className="flex gap-2 mb-1 ml-2">
-                              <span className="text-muted-foreground">•</span>
-                              <span>
-                                {bulletContent}
-                                {/* Show Spot dot at end of last line */}
-                                {showSpotDot && isLastLine && (
-                                  <span
-                                    className="inline-block w-2 h-2 bg-orange-500 rounded-full ml-1 align-middle"
-                                    style={{ animation: 'pulse-slow 1.5s ease-in-out infinite' }}
-                                  />
-                                )}
-                              </span>
-                            </div>
-                          );
-                        }
-
-                        return (
-                          <p key={i} className="mb-1">
-                            {formattedLine}
-                            {/* Show Spot dot at end of last line */}
-                            {showSpotDot && isLastLine && (
-                              <span
-                                className="inline-block w-2 h-2 bg-orange-500 rounded-full ml-1 align-middle"
-                                style={{ animation: 'pulse-slow 1.5s ease-in-out infinite' }}
-                              />
-                            )}
-                          </p>
-                        );
-                      })}
-                    </>
-                  );
-                })()}
-              </div>
-
-              {/* Sectioned Carousels - New Format */}
-              {msg.sections && msg.sections.length > 0 && (
-                <div className="mt-4 space-y-5">
-                  {msg.sections.map((section, sectionIdx) => (
-                    <div key={sectionIdx}>
-                      {/* Section Title */}
-                      <h3 className="text-sm font-semibold text-foreground mb-1 px-1">{section.title}</h3>
-                      
-                      {/* Section Intro */}
-                      {section.intro && (
-                        <p className="text-sm text-muted-foreground mb-3 px-1 leading-relaxed">{section.intro}</p>
-                      )}
-                      
-                      {/* Section Carousel */}
-                      <div className="relative w-screen -ml-4">
-                  <DraggableScrollContainer
-                    className="pb-3 flex gap-3 px-4 snap-x snap-mandatory scroll-smooth scrollbar-hide"
-                  >
-                          {section.places.map((place, placeIdx) => (
-                      <div key={placeIdx} className="min-w-[65%] sm:min-w-[240px] sm:w-[240px] bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all snap-center flex flex-col">
-                        {/* Image Area */}
-                        <div className="h-36 w-full bg-muted relative overflow-hidden group">
-                          {place.imageUrl ? (
-                            <img src={place.imageUrl} alt={place.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-secondary/30">
-                              <MapPin className="w-8 h-8 text-muted-foreground/50" />
-                            </div>
-                          )}
-                          <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full font-medium">
-                            {place.location}
-                          </div>
+                            ))}
+                          </DraggableScrollContainer>
                         </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
-                        {/* Content Area */}
-                        <div className="p-3 flex flex-col flex-1">
-                          <div className="flex justify-between items-start mb-1">
-                            <h3 className="font-semibold text-sm leading-tight text-foreground">{place.name}</h3>
-                            {(place as any).rating && (
-                              <div className="flex items-center gap-0.5 bg-yellow-500/10 text-yellow-600 px-1.5 py-0.5 rounded text-[10px] font-bold">
-                                <span>★</span>
-                                <span>{(place as any).rating}</span>
+                {/* Legacy Single Carousel - Backwards Compatibility */}
+                {!msg.sections && msg.recommendations && msg.recommendations.length > 0 && (
+                  <div className="relative w-screen -ml-4 mt-4">
+                    <DraggableScrollContainer
+                      className="pb-3 flex gap-3 px-4 snap-x snap-mandatory scroll-smooth scrollbar-hide"
+                    >
+                      {msg.recommendations.map((place, placeIdx) => (
+                        <div key={placeIdx} className="min-w-[65%] sm:min-w-[240px] sm:w-[240px] bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all snap-center flex flex-col">
+                          <div className="h-36 w-full bg-muted relative overflow-hidden group">
+                            {place.imageUrl ? (
+                              <img src={place.imageUrl} alt={place.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-secondary/30">
+                                <MapPin className="w-8 h-8 text-muted-foreground/50" />
                               </div>
                             )}
+                            <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full font-medium">
+                              {place.location}
+                            </div>
                           </div>
 
-                          {place.location && (
-                            <p className="text-[10px] text-muted-foreground mb-1">📍 {place.location}</p>
-                          )}
-
-                          {(place as any).startDate && (
-                            <p className="text-[10px] text-primary font-medium mb-2">
-                              📅 {new Date((place as any).startDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                            </p>
-                          )}
-
-                          <p className="text-xs text-muted-foreground mb-1 flex-1">
-                            {place.description}
-                          </p>
-                          {(place as any).recommendedDishes && (place as any).recommendedDishes.length > 0 && (
-                            <p className="text-xs text-muted-foreground/80 mb-1">
-                              <span className="font-medium">Try:</span> {(place as any).recommendedDishes.join(' · ')}
-                            </p>
-                          )}
-                          {(place as any).sources && (place as any).sources.length > 0 && (
-                            <div className="flex items-center gap-1.5 mb-2">
-                              <span className="text-[10px] text-muted-foreground/60">via</span>
-                              {(place as any).sources.slice(0, 3).map((source: any, i: number) => {
-                                const domain = typeof source === 'string' ? source : source.domain;
-                                const url = typeof source === 'string' ? `https://${source}` : source.url;
-                                return (
-                                  <a 
-                                    key={i}
-                                    href={url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    title={domain}
-                                  >
-                                    <img 
-                                      src={`https://www.google.com/s2/favicons?domain=${domain}&sz=16`}
-                                      alt={domain}
-                                      className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
-                                    />
-                                  </a>
-                                );
-                              })}
-                            </div>
-                          )}
-
-                                <div className="flex gap-2 mt-auto">
-                                  <a
-                                    href={place.website}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="flex-1 flex items-center justify-center gap-1.5 bg-secondary/50 hover:bg-secondary text-secondary-foreground text-[10px] py-2 rounded-lg transition-colors font-medium"
-                                  >
-                                    <ExternalLink className="w-3 h-3" />
-                                    Website
-                                  </a>
-                                  <button
-                                    onClick={() => !savedPlaceNames.has(place.name.toLowerCase()) && handleAddRecommendation(place)}
-                                    disabled={savedPlaceNames.has(place.name.toLowerCase())}
-                                    className={`flex-1 flex items-center justify-center gap-1.5 text-[10px] py-2 rounded-lg transition-colors font-medium shadow-sm ${savedPlaceNames.has(place.name.toLowerCase())
-                                      ? 'bg-secondary text-muted-foreground cursor-not-allowed'
-                                      : 'bg-primary text-primary-foreground hover:bg-primary/90'
-                                      }`}
-                                  >
-                                    {savedPlaceNames.has(place.name.toLowerCase()) ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
-                                    {savedPlaceNames.has(place.name.toLowerCase()) ? 'On List' : 'Add'}
-                                  </button>
+                          <div className="p-3 flex flex-col flex-1">
+                            <div className="flex justify-between items-start mb-1">
+                              <h3 className="font-semibold text-sm leading-tight text-foreground">{place.name}</h3>
+                              {(place as any).rating && (
+                                <div className="flex items-center gap-0.5 bg-yellow-500/10 text-yellow-600 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                  <span>★</span>
+                                  <span>{(place as any).rating}</span>
                                 </div>
+                              )}
+                            </div>
+
+                            {place.location && (
+                              <p className="text-[10px] text-muted-foreground mb-1">📍 {place.location}</p>
+                            )}
+
+                            {(place as any).startDate && (
+                              <p className="text-[10px] text-primary font-medium mb-2">
+                                📅 {new Date((place as any).startDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                              </p>
+                            )}
+
+                            <p className="text-xs text-muted-foreground mb-1 flex-1">
+                              {place.description}
+                            </p>
+                            {(place as any).recommendedDishes && (place as any).recommendedDishes.length > 0 && (
+                              <p className="text-xs text-muted-foreground/80 mb-1">
+                                <span className="font-medium">Try:</span> {(place as any).recommendedDishes.join(' · ')}
+                              </p>
+                            )}
+                            {(place as any).sources && (place as any).sources.length > 0 && (
+                              <div className="flex items-center gap-1.5 mb-2">
+                                <span className="text-[10px] text-muted-foreground/60">via</span>
+                                {(place as any).sources.slice(0, 3).map((source: any, i: number) => {
+                                  const domain = typeof source === 'string' ? source : source.domain;
+                                  const url = typeof source === 'string' ? `https://${source}` : source.url;
+                                  return (
+                                    <a
+                                      key={i}
+                                      href={url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      title={domain}
+                                    >
+                                      <img
+                                        src={`https://www.google.com/s2/favicons?domain=${domain}&sz=16`}
+                                        alt={domain}
+                                        className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
+                                      />
+                                    </a>
+                                  );
+                                })}
                               </div>
-                            </div>
-                          ))}
-                        </DraggableScrollContainer>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                            )}
 
-              {/* Legacy Single Carousel - Backwards Compatibility */}
-              {!msg.sections && msg.recommendations && msg.recommendations.length > 0 && (
-                <div className="relative w-screen -ml-4 mt-4">
-                  <DraggableScrollContainer
-                    className="pb-3 flex gap-3 px-4 snap-x snap-mandatory scroll-smooth scrollbar-hide"
-                  >
-                    {msg.recommendations.map((place, placeIdx) => (
-                      <div key={placeIdx} className="min-w-[65%] sm:min-w-[240px] sm:w-[240px] bg-background border border-border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all snap-center flex flex-col">
-                        <div className="h-36 w-full bg-muted relative overflow-hidden group">
-                          {place.imageUrl ? (
-                            <img src={place.imageUrl} alt={place.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-secondary/30">
-                              <MapPin className="w-8 h-8 text-muted-foreground/50" />
+                            <div className="flex gap-2 mt-auto">
+                              <a
+                                href={place.website}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex-1 flex items-center justify-center gap-1.5 bg-secondary/50 hover:bg-secondary text-secondary-foreground text-[10px] py-2 rounded-lg transition-colors font-medium"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                Website
+                              </a>
+                              <button
+                                onClick={() => !savedPlaceNames.has(place.name.toLowerCase()) && handleAddRecommendation(place)}
+                                disabled={savedPlaceNames.has(place.name.toLowerCase())}
+                                className={`flex-1 flex items-center justify-center gap-1.5 text-[10px] py-2 rounded-lg transition-colors font-medium shadow-sm ${savedPlaceNames.has(place.name.toLowerCase())
+                                  ? 'bg-secondary text-muted-foreground cursor-not-allowed'
+                                  : 'bg-primary text-primary-foreground hover:bg-primary/90'
+                                  }`}
+                              >
+                                {savedPlaceNames.has(place.name.toLowerCase()) ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
+                                {savedPlaceNames.has(place.name.toLowerCase()) ? 'On List' : 'Add'}
+                              </button>
                             </div>
-                          )}
-                          <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-full font-medium">
-                            {place.location}
                           </div>
                         </div>
-
-                        <div className="p-3 flex flex-col flex-1">
-                          <div className="flex justify-between items-start mb-1">
-                            <h3 className="font-semibold text-sm leading-tight text-foreground">{place.name}</h3>
-                            {(place as any).rating && (
-                              <div className="flex items-center gap-0.5 bg-yellow-500/10 text-yellow-600 px-1.5 py-0.5 rounded text-[10px] font-bold">
-                                <span>★</span>
-                                <span>{(place as any).rating}</span>
-                            </div>
-                          )}
-                          </div>
-
-                          {place.location && (
-                            <p className="text-[10px] text-muted-foreground mb-1">📍 {place.location}</p>
-                          )}
-
-                          {(place as any).startDate && (
-                            <p className="text-[10px] text-primary font-medium mb-2">
-                              📅 {new Date((place as any).startDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                            </p>
-                          )}
-
-                          <p className="text-xs text-muted-foreground mb-1 flex-1">
-                            {place.description}
-                          </p>
-                          {(place as any).recommendedDishes && (place as any).recommendedDishes.length > 0 && (
-                            <p className="text-xs text-muted-foreground/80 mb-1">
-                              <span className="font-medium">Try:</span> {(place as any).recommendedDishes.join(' · ')}
-                            </p>
-                          )}
-                          {(place as any).sources && (place as any).sources.length > 0 && (
-                            <div className="flex items-center gap-1.5 mb-2">
-                              <span className="text-[10px] text-muted-foreground/60">via</span>
-                              {(place as any).sources.slice(0, 3).map((source: any, i: number) => {
-                                const domain = typeof source === 'string' ? source : source.domain;
-                                const url = typeof source === 'string' ? `https://${source}` : source.url;
-                                return (
-                                  <a 
-                                    key={i}
-                                    href={url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    title={domain}
-                                  >
-                                    <img 
-                                      src={`https://www.google.com/s2/favicons?domain=${domain}&sz=16`}
-                                      alt={domain}
-                                      className="w-3.5 h-3.5 rounded-sm opacity-70 hover:opacity-100 transition-opacity"
-                                    />
-                                  </a>
-                                );
-                              })}
-                            </div>
-                          )}
-
-                          <div className="flex gap-2 mt-auto">
-                            <a
-                              href={place.website}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex-1 flex items-center justify-center gap-1.5 bg-secondary/50 hover:bg-secondary text-secondary-foreground text-[10px] py-2 rounded-lg transition-colors font-medium"
-                            >
-                              <ExternalLink className="w-3 h-3" />
-                              Website
-                            </a>
-                            <button
-                              onClick={() => !savedPlaceNames.has(place.name.toLowerCase()) && handleAddRecommendation(place)}
-                              disabled={savedPlaceNames.has(place.name.toLowerCase())}
-                              className={`flex-1 flex items-center justify-center gap-1.5 text-[10px] py-2 rounded-lg transition-colors font-medium shadow-sm ${savedPlaceNames.has(place.name.toLowerCase())
-                                ? 'bg-secondary text-muted-foreground cursor-not-allowed'
-                                : 'bg-primary text-primary-foreground hover:bg-primary/90'
-                                }`}
-                            >
-                              {savedPlaceNames.has(place.name.toLowerCase()) ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
-                              {savedPlaceNames.has(place.name.toLowerCase()) ? 'On List' : 'Add'}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </DraggableScrollContainer>
-                </div>
-              )}
-
-              {/* Sources Box - shows verified sources from research */}
-              {msg.sources && msg.sources.length > 0 && (
-                <div className="mt-4 mx-4">
-                  <details className="group">
-                    <summary className="flex items-center gap-2 cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors">
-                      <div className="flex items-center gap-1">
-                        {msg.sources.slice(0, 3).map((source, i) => (
-                          <img 
-                            key={i} 
-                            src={source.favicon} 
-                            alt={source.domain}
-                            className="w-4 h-4 rounded-sm"
-                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                          />
-                        ))}
-                      </div>
-                      <span className="font-medium">Sources ({msg.sources.length})</span>
-                      <span className="text-[10px] opacity-60 group-open:hidden">Click to expand</span>
-                    </summary>
-                    <div className="mt-2 p-3 bg-secondary/30 rounded-lg border border-border/50 space-y-2">
-                      {msg.sources.map((source, i) => (
-                        <a
-                          key={i}
-                          href={source.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-2 text-xs hover:bg-secondary/50 p-1.5 rounded-md transition-colors group/link"
-                        >
-                          <img 
-                            src={source.favicon} 
-                            alt={source.domain}
-                            className="w-4 h-4 rounded-sm flex-shrink-0"
-                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                          />
-                          <span className="text-muted-foreground truncate flex-1">{source.title}</span>
-                          <ExternalLink className="w-3 h-3 opacity-0 group-hover/link:opacity-50 flex-shrink-0" />
-                        </a>
                       ))}
-                    </div>
-                  </details>
-                </div>
-              )}
-
-              {/* Reservation Data */}
-              {msg.reservation && (
-                <div className="mt-5 bg-background rounded-xl border border-border p-4 shadow-sm">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Calendar className="w-4 h-4 text-primary" />
-                    <span className="font-medium text-sm text-foreground">Reservations for {msg.reservation.restaurantName}</span>
+                    </DraggableScrollContainer>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {msg.reservation.bookingLinks && Object.entries(msg.reservation.bookingLinks).map(([platform, link]) => (
-                      <a
-                        key={platform}
-                        href={link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center justify-center gap-2 px-3 py-2 bg-secondary/50 hover:bg-secondary rounded-lg text-xs font-medium transition-colors capitalize text-foreground"
-                      >
-                        {platform} <ArrowRight className="w-3 h-3 opacity-50" />
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
+                )}
 
-              {/* Bookings List (New) */}
-              {msg.bookings && (
-                <div className="mt-5 space-y-4">
-                  {msg.bookings.map((booking, i) => (
-                    <div key={i} className="bg-background rounded-xl border border-border p-4 shadow-sm">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Calendar className="w-4 h-4 text-primary" />
-                        <span className="font-medium text-sm text-foreground">
-                          {booking.type === 'tickets' ? `Tickets for ${booking.name}` : `Reservations for ${booking.name}`}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
-                        {booking.bookingLinks && Object.entries(booking.bookingLinks).map(([platform, link]) => (
+                {/* Sources Box - shows verified sources from research */}
+                {msg.sources && msg.sources.length > 0 && (
+                  <div className="mt-4 mx-4">
+                    <details className="group">
+                      <summary className="flex items-center gap-2 cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors">
+                        <div className="flex items-center gap-1">
+                          {msg.sources.slice(0, 3).map((source, i) => (
+                            <img
+                              key={i}
+                              src={source.favicon}
+                              alt={source.domain}
+                              className="w-4 h-4 rounded-sm"
+                              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                            />
+                          ))}
+                        </div>
+                        <span className="font-medium">Sources ({msg.sources.length})</span>
+                        <span className="text-[10px] opacity-60 group-open:hidden">Click to expand</span>
+                      </summary>
+                      <div className="mt-2 p-3 bg-secondary/30 rounded-lg border border-border/50 space-y-2">
+                        {msg.sources.map((source, i) => (
                           <a
-                            key={platform}
-                            href={link}
+                            key={i}
+                            href={source.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex items-center justify-center gap-2 px-3 py-2 bg-secondary/50 hover:bg-secondary rounded-lg text-xs font-medium transition-colors capitalize text-foreground"
+                            className="flex items-center gap-2 text-xs hover:bg-secondary/50 p-1.5 rounded-md transition-colors group/link"
                           >
-                            {platform === 'website' ? 'Official Site' : platform} <ArrowRight className="w-3 h-3 opacity-50" />
+                            <img
+                              src={source.favicon}
+                              alt={source.domain}
+                              className="w-4 h-4 rounded-sm flex-shrink-0"
+                              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                            />
+                            <span className="text-muted-foreground truncate flex-1">{source.title}</span>
+                            <ExternalLink className="w-3 h-3 opacity-0 group-hover/link:opacity-50 flex-shrink-0" />
                           </a>
                         ))}
                       </div>
+                    </details>
+                  </div>
+                )}
+
+                {/* Reservation Data */}
+                {msg.reservation && (
+                  <div className="mt-5 bg-background rounded-xl border border-border p-4 shadow-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Calendar className="w-4 h-4 text-primary" />
+                      <span className="font-medium text-sm text-foreground">Reservations for {msg.reservation.restaurantName}</span>
                     </div>
-                  ))}
-                </div>
-              )}
+                    <div className="grid grid-cols-2 gap-2">
+                      {msg.reservation.bookingLinks && Object.entries(msg.reservation.bookingLinks).map(([platform, link]) => (
+                        <a
+                          key={platform}
+                          href={link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center gap-2 px-3 py-2 bg-secondary/50 hover:bg-secondary rounded-lg text-xs font-medium transition-colors capitalize text-foreground"
+                        >
+                          {platform} <ArrowRight className="w-3 h-3 opacity-50" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Bookings List (New) */}
+                {msg.bookings && (
+                  <div className="mt-5 space-y-4">
+                    {msg.bookings.map((booking, i) => (
+                      <div key={i} className="bg-background rounded-xl border border-border p-4 shadow-sm">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Calendar className="w-4 h-4 text-primary" />
+                          <span className="font-medium text-sm text-foreground">
+                            {booking.type === 'tickets' ? `Tickets for ${booking.name}` : `Reservations for ${booking.name}`}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {booking.bookingLinks && Object.entries(booking.bookingLinks).map(([platform, link]) => (
+                            <a
+                              key={platform}
+                              href={link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center justify-center gap-2 px-3 py-2 bg-secondary/50 hover:bg-secondary rounded-lg text-xs font-medium transition-colors capitalize text-foreground"
+                            >
+                              {platform === 'website' ? 'Official Site' : platform} <ArrowRight className="w-3 h-3 opacity-50" />
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
           );
         })}
 
