@@ -171,20 +171,78 @@ async function researchForDigest(): Promise<{
     food: SearchResult;
     scraped: string;
 }> {
-    const today = new Date();
-    const dayName = today.toLocaleDateString('en-US', { weekday: 'long' });
+    // Get current date info for the prompt
+    const now = new Date();
+    const nycTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const dayName = nycTime.toLocaleDateString('en-US', { weekday: 'long' });
+    const dateStr = nycTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
     
-    const [eventsRes, foodRes, scrape1, scrape2] = await Promise.all([
-        geminiSearchWithSources(`NYC events happening ${dayName} this weekend concerts shows markets festivals r/nyc r/AskNYC`),
-        geminiSearchWithSources(`best restaurants NYC must try hidden gems highly rated r/FoodNYC r/nyc`),
+    // Match the same subreddits used in chat.ts
+    const eventSubs = ['nyc', 'AskNYC', 'NYCbitcheswithtaste'];
+    const foodSubs = ['FoodNYC', 'AskNYC', 'NYCbitcheswithtaste', 'nyc'];
+    
+    // Parallel: Reddit searches + Event site scrapes
+    const [
+        // Event Reddit searches
+        eventSearch1,
+        eventSearch2,
+        eventSearch3,
+        // Food Reddit searches
+        foodSearch1,
+        foodSearch2,
+        foodSearch3,
+        // Event site scrapes
+        skintScrape,
+        timeoutScrape,
+        ohmyrocknessScrape
+    ] = await Promise.all([
+        // Events - use r/subreddit pattern like chat.ts
+        geminiSearchWithSources(`NYC events this weekend ${dateStr} concerts shows r/${eventSubs[0]}`),
+        geminiSearchWithSources(`things to do NYC this weekend ${dayName} r/${eventSubs[1]}`),
+        geminiSearchWithSources(`NYC events happening now ${dayName} r/${eventSubs[2]}`),
+        // Food - use r/subreddit pattern like chat.ts
+        geminiSearchWithSources(`best restaurants NYC hidden gems highly rated r/${foodSubs[0]}`),
+        geminiSearchWithSources(`NYC restaurant recommendations r/${foodSubs[1]}`),
+        geminiSearchWithSources(`where to eat NYC this weekend r/${foodSubs[2]}`),
+        // Scrape event sites
         scrapeWithJina('https://theskint.com/'),
         scrapeWithJina('https://www.timeout.com/newyork/things-to-do/this-weekend'),
+        scrapeWithJina('https://www.ohmyrockness.com/features.atom')
     ]);
     
+    // Merge event sources
+    const eventSources = [
+        ...eventSearch1.sources,
+        ...eventSearch2.sources,
+        ...eventSearch3.sources
+    ];
+    const eventText = [eventSearch1.text, eventSearch2.text, eventSearch3.text].join('\n\n');
+    
+    // Merge food sources
+    const foodSources = [
+        ...foodSearch1.sources,
+        ...foodSearch2.sources,
+        ...foodSearch3.sources
+    ];
+    const foodText = [foodSearch1.text, foodSearch2.text, foodSearch3.text].join('\n\n');
+    
+    // Build scraped content with clear source labels
+    const scraped = `=== THESKINT.COM (Events ${dateStr}) ===
+${skintScrape}
+
+=== TIMEOUT.COM (This Weekend) ===
+${timeoutScrape}
+
+=== OHMYROCKNESS.COM (Live Music) ===
+${ohmyrocknessScrape}
+
+TODAY IS: ${dayName}, ${dateStr}
+Use ONLY events with dates that match today, tomorrow, or this weekend.`;
+    
     return {
-        events: eventsRes,
-        food: foodRes,
-        scraped: `=== THESKINT.COM ===\n${scrape1}\n\n=== TIMEOUT.COM ===\n${scrape2}`
+        events: { text: eventText, sources: eventSources },
+        food: { text: foodText, sources: foodSources },
+        scraped
     };
 }
 
@@ -338,6 +396,15 @@ async function generateDigest(
     const secondaryPersona = userPreferences?.secondary_persona || '';
     const personaText = primaryPersona ? `${primaryPersona}${secondaryPersona ? ` with ${secondaryPersona} tendencies` : ''}` : '';
     
+    // Build available sources list for the AI to cite
+    const availableSources = [
+        ...research.events.sources.map(s => `${s.domain}: ${s.url}`),
+        ...research.food.sources.map(s => `${s.domain}: ${s.url}`),
+        'theskint.com: https://theskint.com/',
+        'timeout.com: https://www.timeout.com/newyork/things-to-do/this-weekend',
+        'ohmyrockness.com: https://www.ohmyrockness.com/'
+    ].slice(0, 20).join('\n');
+    
     const prompt = `You are Spot. Generate a daily digest for ${userName}.
 
 USER PERSONA: ${personaText || 'Adventurous explorer'}
@@ -348,6 +415,9 @@ TASTE PROFILE (in order of importance):
 3. VIBE PREFERENCES: ${tasteProfile.vibePreferences.join(', ') || 'flexible vibes'}
 4. PRICE RANGE: ${tasteProfile.priceRange || 'moderate'}
 5. NEIGHBORHOODS (least important): ${tasteProfile.neighborhoods.join(', ') || 'all NYC'}
+
+=== AVAILABLE SOURCES (cite these!) ===
+${availableSources}
 
 === EVENTS ===
 ${research.events.text.substring(0, 4000)}
@@ -361,35 +431,38 @@ DO NOT RECOMMEND (already saved): ${Array.from(savedNames).slice(0, 30).join(', 
 Generate exactly 21 recommendations in 2:1 pattern (EVENT, EVENT, FOOD, repeat 7 times).
 So 14 events + 7 food items.
 
+CRITICAL - DATES:
+- ONLY use dates that appear in the scraped content above
+- If an event says "Saturday December 14" use that EXACT date
+- If you can't find the date in the sources, DON'T include the event
+- Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' })}
+
+CRITICAL - SOURCES:
+- For each recommendation, include the source where you found it
+- Use the FULL grounding URL from the AVAILABLE SOURCES section above
+- Format: "sources": [{"domain": "reddit.com", "url": "https://vertexaisearch..."}]
+- If from scraped sites: {"domain": "theskint.com", "url": "https://theskint.com/"}
+
 Return JSON:
 {
     "intro_text": "While you were [something fun], I found some gems...",
     "recommendations": [
-        {"name": "Event Name", "type": "event", "description": "Perfect for you because [reference their taste]...", "location": "Venue, Neighborhood", "isEvent": true, "startDate": "2024-12-13", "mainCategory": "see", "subtype": "Concert", "sources": [{"domain": "theskint.com", "url": ""}]},
-        {"name": "Restaurant", "type": "restaurant", "description": "Since you love ${tasteProfile.cuisinePreferences[0] || 'varied cuisines'}, you'll enjoy...", "location": "Neighborhood", "isEvent": false, "mainCategory": "eat", "subtype": "Italian", "recommendedDishes": ["Pasta"], "sources": []}
+        {"name": "Event Name", "type": "event", "description": "Perfect for you because...", "location": "Venue, Neighborhood", "isEvent": true, "startDate": "2024-12-15", "mainCategory": "see", "subtype": "Concert", "sources": [{"domain": "theskint.com", "url": "https://theskint.com/"}]},
+        {"name": "Restaurant", "type": "restaurant", "description": "Since you love Italian...", "location": "Neighborhood", "isEvent": false, "mainCategory": "eat", "subtype": "Italian", "recommendedDishes": ["Pasta"], "sources": [{"domain": "reddit.com", "url": "https://vertexaisearch..."}]}
     ]
 }
 
 CRITICAL FORMATTING:
-- NEVER use underscores in descriptions! Write naturally: "budget friendly" not "budget_friendly", "Downtown Manhattan" not "downtown_manhattan"
+- NEVER use underscores in descriptions! Write naturally: "budget friendly" not "budget_friendly"
 - All text should be human-readable, conversational prose
 
 PERSONALIZATION PRIORITY (match to their persona: ${personaText || 'explorer'}):
 1. FIRST reference their INTERESTS: ${tasteProfile.interests?.join(', ') || 'exploration, culture'}
-2. THEN reference CUISINE/VIBE preferences: ${tasteProfile.cuisinePreferences.join(', ') || 'varied'}, ${tasteProfile.vibePreferences.join(', ') || 'flexible'}
-3. ONLY mention location if it's a strong match, otherwise skip it
-
-GOOD EXAMPLES:
-- "Your love for live music and Italian food makes this jazz supper club ideal"
-- "As someone who enjoys art and cozy spots, this gallery cafe is perfect"
-- "This fits your adventurous palate and appreciation for authentic cuisine"
-
-BAD EXAMPLES (don't do this):
-- "Since you love downtown_manhattan and budget_friendly places..." (NO UNDERSCORES!)
-- "Perfect for your Upper West Side preference..." (don't lead with location)
+2. THEN reference CUISINE/VIBE preferences: ${tasteProfile.cuisinePreferences.join(', ') || 'varied'}
+3. ONLY mention location if it's a strong match
 
 - Follow the 2:1 pattern (event, event, food, event, event, food...)
-- Events need real dates from research
+- Events MUST have accurate dates from the research
 - Food needs recommendedDishes`;
 
     try {

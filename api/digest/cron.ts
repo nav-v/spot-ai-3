@@ -78,30 +78,69 @@ async function scrapeWithJina(url: string): Promise<string> {
     }
 }
 
-async function geminiSearch(query: string): Promise<string> {
+interface SearchResult {
+    text: string;
+    sources: Array<{ domain: string; url: string }>;
+}
+
+async function geminiSearchWithSources(query: string): Promise<SearchResult> {
     try {
         const response = await getAI().models.generateContent({
             model: 'gemini-2.5-flash',
             contents: [{ role: 'user', parts: [{ text: query }] }],
             config: { tools: [{ googleSearch: {} }] }
         });
-        return response.text || '';
+        
+        const sources: Array<{ domain: string; url: string }> = [];
+        const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+        for (const chunk of chunks) {
+            if (chunk.web?.uri) {
+                try {
+                    const domain = new URL(chunk.web.uri).hostname.replace('www.', '');
+                    sources.push({ domain, url: chunk.web.uri });
+                } catch {}
+            }
+        }
+        
+        return { text: response.text || '', sources };
     } catch {
-        return '';
+        return { text: '', sources: [] };
     }
 }
 
 async function researchForDigest() {
-    const [eventScrapes, eventSearches, foodSearches] = await Promise.all([
-        Promise.all(EVENT_SCRAPE_SITES.slice(0, 2).map(url => scrapeWithJina(url))),
-        Promise.all(EVENT_SUBREDDITS.slice(0, 2).map(sub => geminiSearch(`NYC events this week r/${sub}`))),
-        Promise.all(FOOD_SUBREDDITS.slice(0, 2).map(sub => geminiSearch(`best new restaurants NYC r/${sub}`)))
+    const now = new Date();
+    const nycTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const dayName = nycTime.toLocaleDateString('en-US', { weekday: 'long' });
+    const dateStr = nycTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    
+    const [eventSearch1, eventSearch2, foodSearch1, foodSearch2, scrape1, scrape2] = await Promise.all([
+        geminiSearchWithSources(`NYC events this weekend ${dateStr} r/${EVENT_SUBREDDITS[0]}`),
+        geminiSearchWithSources(`things to do NYC ${dayName} r/${EVENT_SUBREDDITS[1]}`),
+        geminiSearchWithSources(`best restaurants NYC r/${FOOD_SUBREDDITS[0]}`),
+        geminiSearchWithSources(`NYC food recommendations r/${FOOD_SUBREDDITS[1]}`),
+        scrapeWithJina('https://theskint.com/'),
+        scrapeWithJina('https://www.timeout.com/newyork/things-to-do/this-weekend')
     ]);
     
+    const scraped = `=== THESKINT.COM (${dateStr}) ===
+${scrape1}
+
+=== TIMEOUT.COM ===
+${scrape2}
+
+TODAY IS: ${dayName}, ${dateStr}`;
+    
     return {
-        scraped: eventScrapes.join('\n\n').substring(0, 4000),
-        events: { text: eventSearches.join('\n\n').substring(0, 3000) },
-        food: { text: foodSearches.join('\n\n').substring(0, 3000) }
+        scraped,
+        events: { 
+            text: [eventSearch1.text, eventSearch2.text].join('\n\n').substring(0, 3000),
+            sources: [...eventSearch1.sources, ...eventSearch2.sources]
+        },
+        food: { 
+            text: [foodSearch1.text, foodSearch2.text].join('\n\n').substring(0, 3000),
+            sources: [...foodSearch1.sources, ...foodSearch2.sources]
+        }
     };
 }
 
@@ -135,6 +174,16 @@ async function generateDigestForUser(userId: string, userName: string, places: a
     const secondaryPersona = userPreferences?.secondary_persona || '';
     const personaText = primaryPersona ? `${primaryPersona}${secondaryPersona ? ` with ${secondaryPersona} tendencies` : ''}` : '';
 
+    // Build available sources for citation
+    const availableSources = [
+        ...(research.events.sources || []).map((s: any) => `${s.domain}: ${s.url}`),
+        ...(research.food.sources || []).map((s: any) => `${s.domain}: ${s.url}`),
+        'theskint.com: https://theskint.com/',
+        'timeout.com: https://www.timeout.com/newyork/'
+    ].slice(0, 15).join('\n');
+    
+    const todayStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' });
+
     const prompt = `You are Spot. Generate a daily digest for ${userName}.
 
 USER PERSONA: ${personaText || 'Adventurous explorer'}
@@ -148,6 +197,9 @@ TASTE PROFILE (in order of importance):
 
 Weather: ${weather.temp}°F, ${weather.conditions}
 
+=== AVAILABLE SOURCES (cite these!) ===
+${availableSources}
+
 === EVENTS ===
 ${research.scraped.substring(0, 2000)}
 ${research.events.text.substring(0, 2000)}
@@ -157,14 +209,24 @@ ${research.food.text.substring(0, 2000)}
 
 DO NOT RECOMMEND (already saved): ${Array.from(savedNames).slice(0, 20).join(', ')}
 
+TODAY IS: ${todayStr}
+
 Generate exactly 21 recommendations in 2:1 pattern (EVENT, EVENT, FOOD, repeat 7 times = 14 events + 7 food).
 
-CRITICAL FORMATTING:
-- NEVER use underscores in descriptions! Write naturally: "budget friendly" not "budget_friendly"
-- All text should be human-readable, conversational prose
+CRITICAL - DATES:
+- ONLY use dates that appear in the scraped content
+- If you can't find the exact date, DON'T include the event
+- Use format: YYYY-MM-DD
 
-PERSONALIZATION PRIORITY (match to their persona: ${personaText || 'explorer'}):
-1. FIRST reference their INTERESTS: ${tasteProfile.interests.join(', ') || 'exploration'}
+CRITICAL - SOURCES:
+- Include the FULL URL from the AVAILABLE SOURCES section
+- Format: "sources": [{"domain": "reddit.com", "url": "https://vertexaisearch..."}]
+
+CRITICAL FORMATTING:
+- NEVER use underscores! Write: "budget friendly" not "budget_friendly"
+
+PERSONALIZATION PRIORITY:
+1. FIRST reference INTERESTS: ${tasteProfile.interests.join(', ') || 'exploration'}
 2. THEN reference CUISINE/VIBE: ${tasteProfile.cuisinePreferences.join(', ') || 'varied'}
 3. ONLY mention location if it's a strong match
 
@@ -172,7 +234,7 @@ Return JSON:
 {
     "intro_text": "While you were sleeping, I found some gems...",
     "recommendations": [
-        {"id": "unique-id", "name": "Name", "type": "event", "description": "Perfect for you because...", "location": "Venue, Neighborhood", "isEvent": true, "startDate": "2024-12-13", "mainCategory": "see", "subtype": "Concert", "sources": [{"domain": "theskint.com", "url": ""}]},
+        {"id": "unique-id", "name": "Name", "type": "event", "description": "Perfect for you...", "location": "Venue, Neighborhood", "isEvent": true, "startDate": "2024-12-15", "mainCategory": "see", "subtype": "Concert", "sources": [{"domain": "theskint.com", "url": "https://theskint.com/"}]},
         ...
     ]
 }`;
