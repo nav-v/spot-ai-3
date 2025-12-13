@@ -106,7 +106,9 @@ async function researchForDigest() {
 }
 
 function getTimeOfDay(): string {
-    const hour = new Date().getHours();
+    // Use NYC timezone (Eastern Time)
+    const nycTime = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+    const hour = new Date(nycTime).getHours();
     if (hour < 12) return 'morning';
     if (hour < 17) return 'afternoon';
     return 'evening';
@@ -127,14 +129,22 @@ async function generateDigestForUser(userId: string, userName: string, places: a
         neighborhoods: [...new Set(places.map(p => p.address?.split(',')[1]?.trim()).filter(Boolean))].slice(0, 3),
         interests: userPreferences?.all_tags?.filter((t: string) => t.startsWith('interest:'))?.map((t: string) => t.replace('interest:', '')) || []
     };
+    
+    // Get user personas
+    const primaryPersona = userPreferences?.primary_persona || '';
+    const secondaryPersona = userPreferences?.secondary_persona || '';
+    const personaText = primaryPersona ? `${primaryPersona}${secondaryPersona ? ` with ${secondaryPersona} tendencies` : ''}` : '';
 
     const prompt = `You are Spot. Generate a daily digest for ${userName}.
 
-Taste Profile:
-- Cuisines: ${tasteProfile.cuisinePreferences.join(', ') || 'varied'}
-- Vibes: ${tasteProfile.vibePreferences.join(', ') || 'flexible'}
-- Neighborhoods: ${tasteProfile.neighborhoods.join(', ') || 'all NYC'}
-- Interests: ${tasteProfile.interests.join(', ') || 'varied'}
+USER PERSONA: ${personaText || 'Adventurous explorer'}
+
+TASTE PROFILE (in order of importance):
+1. INTERESTS & PASSIONS: ${tasteProfile.interests.join(', ') || 'varied interests'}
+2. CUISINE PREFERENCES: ${tasteProfile.cuisinePreferences.join(', ') || 'varied cuisines'}
+3. VIBE PREFERENCES: ${tasteProfile.vibePreferences.join(', ') || 'flexible vibes'}
+4. PRICE RANGE: ${tasteProfile.priceRange || 'moderate'}
+5. NEIGHBORHOODS (least important): ${tasteProfile.neighborhoods.join(', ') || 'all NYC'}
 
 Weather: ${weather.temp}°F, ${weather.conditions}
 
@@ -149,7 +159,14 @@ DO NOT RECOMMEND (already saved): ${Array.from(savedNames).slice(0, 20).join(', 
 
 Generate exactly 21 recommendations in 2:1 pattern (EVENT, EVENT, FOOD, repeat 7 times = 14 events + 7 food).
 
-PERSONALIZE each description: explain WHY it fits ${userName}'s taste.
+CRITICAL FORMATTING:
+- NEVER use underscores in descriptions! Write naturally: "budget friendly" not "budget_friendly"
+- All text should be human-readable, conversational prose
+
+PERSONALIZATION PRIORITY (match to their persona: ${personaText || 'explorer'}):
+1. FIRST reference their INTERESTS: ${tasteProfile.interests.join(', ') || 'exploration'}
+2. THEN reference CUISINE/VIBE: ${tasteProfile.cuisinePreferences.join(', ') || 'varied'}
+3. ONLY mention location if it's a strong match
 
 Return JSON:
 {

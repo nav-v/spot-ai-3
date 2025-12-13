@@ -282,7 +282,9 @@ IMPORTANT:
 // ============= DIGEST GENERATION =============
 
 function getTimeOfDay(): string {
-    const hour = new Date().getHours();
+    // Use NYC timezone (Eastern Time)
+    const nycTime = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+    const hour = new Date(nycTime).getHours();
     if (hour < 12) return 'morning';
     if (hour < 17) return 'afternoon';
     return 'evening';
@@ -331,13 +333,21 @@ async function generateDigest(
         : '';
     const tasteHint = `${cuisineList}${vibeList ? `, ${vibeList}` : ''}` || 'varied tastes';
     
+    // Get user personas
+    const primaryPersona = userPreferences?.primary_persona || '';
+    const secondaryPersona = userPreferences?.secondary_persona || '';
+    const personaText = primaryPersona ? `${primaryPersona}${secondaryPersona ? ` with ${secondaryPersona} tendencies` : ''}` : '';
+    
     const prompt = `You are Spot. Generate a daily digest for ${userName}.
 
-Taste Profile:
-- Cuisine preferences: ${tasteProfile.cuisinePreferences.join(', ') || 'varied'}
-- Vibe preferences: ${tasteProfile.vibePreferences.join(', ') || 'flexible'}
-- Favorite neighborhoods: ${tasteProfile.neighborhoods.join(', ') || 'all around NYC'}
-- Price range: ${tasteProfile.priceRange || 'moderate'}
+USER PERSONA: ${personaText || 'Adventurous explorer'}
+
+TASTE PROFILE (in order of importance):
+1. INTERESTS & PASSIONS: ${tasteProfile.interests?.join(', ') || 'varied interests'}
+2. CUISINE PREFERENCES: ${tasteProfile.cuisinePreferences.join(', ') || 'varied cuisines'}
+3. VIBE PREFERENCES: ${tasteProfile.vibePreferences.join(', ') || 'flexible vibes'}
+4. PRICE RANGE: ${tasteProfile.priceRange || 'moderate'}
+5. NEIGHBORHOODS (least important): ${tasteProfile.neighborhoods.join(', ') || 'all NYC'}
 
 === EVENTS ===
 ${research.events.text.substring(0, 4000)}
@@ -360,12 +370,24 @@ Return JSON:
     ]
 }
 
-CRITICAL:
-- PERSONALIZE descriptions: explain WHY this rec fits ${userName}'s taste profile
-- Reference their actual cuisine preferences: ${tasteProfile.cuisinePreferences.join(', ') || 'varied tastes'}
-- Reference their vibe preferences: ${tasteProfile.vibePreferences.join(', ') || 'flexible'}
-- Example: "Since you love ${tasteProfile.cuisinePreferences[0] || 'Italian'} and ${tasteProfile.vibePreferences[0] || 'cozy'} spots, this intimate trattoria will be perfect"
-- Example: "Given your love for ${tasteProfile.eventTypes[0] || 'live music'} and ${tasteProfile.neighborhoods[0] || 'Williamsburg'}, this jazz club is a must"
+CRITICAL FORMATTING:
+- NEVER use underscores in descriptions! Write naturally: "budget friendly" not "budget_friendly", "Downtown Manhattan" not "downtown_manhattan"
+- All text should be human-readable, conversational prose
+
+PERSONALIZATION PRIORITY (match to their persona: ${personaText || 'explorer'}):
+1. FIRST reference their INTERESTS: ${tasteProfile.interests?.join(', ') || 'exploration, culture'}
+2. THEN reference CUISINE/VIBE preferences: ${tasteProfile.cuisinePreferences.join(', ') || 'varied'}, ${tasteProfile.vibePreferences.join(', ') || 'flexible'}
+3. ONLY mention location if it's a strong match, otherwise skip it
+
+GOOD EXAMPLES:
+- "Your love for live music and Italian food makes this jazz supper club ideal"
+- "As someone who enjoys art and cozy spots, this gallery cafe is perfect"
+- "This fits your adventurous palate and appreciation for authentic cuisine"
+
+BAD EXAMPLES (don't do this):
+- "Since you love downtown_manhattan and budget_friendly places..." (NO UNDERSCORES!)
+- "Perfect for your Upper West Side preference..." (don't lead with location)
+
 - Follow the 2:1 pattern (event, event, food, event, event, food...)
 - Events need real dates from research
 - Food needs recommendedDishes`;
