@@ -421,13 +421,13 @@ TASTE PROFILE (in order of importance):
 ${availableSources}
 
 === EVENTS ===
-${research.events.text.substring(0, 4000)}
-${research.scraped.substring(0, 3000)}
+${research.events.text.substring(0, 2500)}
+${research.scraped.substring(0, 2000)}
 
 === FOOD ===
-${research.food.text.substring(0, 3000)}
+${research.food.text.substring(0, 2000)}
 
-DO NOT RECOMMEND (already saved): ${Array.from(savedNames).slice(0, 30).join(', ')}
+DO NOT RECOMMEND (already saved): ${Array.from(savedNames).slice(0, 20).join(', ')}
 
 Generate exactly 21 recommendations in 2:1 pattern (EVENT, EVENT, FOOD, repeat 7 times).
 So 14 events + 7 food items.
@@ -467,10 +467,12 @@ PERSONALIZATION PRIORITY (match to their persona: ${personaText || 'explorer'}):
 - Food needs recommendedDishes`;
 
     try {
+        console.log(`[Digest] Prompt length: ${prompt.length} chars`);
         const response = await getAI().models.generateContent({
-            model: 'gemini-2.5-pro',
+            model: 'gemini-2.5-flash', // Use flash for speed (90s timeout)
             contents: [{ role: 'user', parts: [{ text: prompt }] }]
         });
+        console.log(`[Digest] AI response received`);
 
         const jsonMatch = (response.text || '{}').match(/\{[\s\S]*\}/);
         if (jsonMatch) {
@@ -483,29 +485,27 @@ PERSONALIZATION PRIORITY (match to their persona: ${personaText || 'explorer'}):
             // Insert 2 saved food items at food positions (positions 2, 5 - 0-indexed)
             const savedToInsert = savedFood.slice(0, 2);
 
-            // Enrich with Google Places data
-            console.log(`[Digest] Enriching ${recs.length} recommendations...`);
+            // Build recommendations list first (no enrichment)
+            console.log(`[Digest] Processing ${recs.length} AI recommendations...`);
             const enriched: DigestRec[] = [];
-
             let savedIdx = 0;
+
             for (let i = 0; i < recs.length && enriched.length < 21; i++) {
                 const rec = recs[i];
 
                 // At food positions (2, 5, 8, 11, 14), check if we should insert saved
                 const isFoodPosition = (i + 1) % 3 === 0;
                 if (isFoodPosition && savedIdx < savedToInsert.length) {
-                    // Insert saved food item
                     const saved = savedToInsert[savedIdx];
-                    const placeData = await searchGooglePlaces(saved.name, saved.address || 'New York');
                     enriched.push({
                         id: `saved-${savedIdx}`,
                         name: saved.name,
                         type: saved.type || 'restaurant',
                         description: saved.description || `One of your saved spots - haven't visited in a while?`,
                         location: saved.address?.split(',')[0] || 'NYC',
-                        imageUrl: placeData?.imageUrl || saved.image_url,
-                        website: placeData?.website || saved.source_url,
-                        rating: placeData?.rating || saved.rating,
+                        imageUrl: saved.image_url,
+                        website: saved.source_url,
+                        rating: saved.rating,
                         isEvent: false,
                         mainCategory: 'eat',
                         subtype: saved.subtype || saved.cuisine || 'Restaurant',
@@ -516,18 +516,15 @@ PERSONALIZATION PRIORITY (match to their persona: ${personaText || 'explorer'}):
                     savedIdx++;
                 }
 
-                // Add the AI recommendation
-                const placeData = await searchGooglePlaces(rec.name, rec.location || 'New York');
-
                 enriched.push({
                     id: `digest-${i}`,
                     name: rec.name,
                     type: rec.type || 'event',
                     description: rec.description,
                     location: rec.location,
-                    imageUrl: placeData?.imageUrl,
-                    website: placeData?.website,
-                    rating: placeData?.rating,
+                    imageUrl: undefined, // Will be enriched
+                    website: undefined,
+                    rating: undefined,
                     isEvent: rec.isEvent ?? rec.type === 'event',
                     startDate: rec.startDate,
                     mainCategory: rec.mainCategory || (rec.isEvent ? 'see' : 'eat'),
@@ -536,6 +533,20 @@ PERSONALIZATION PRIORITY (match to their persona: ${personaText || 'explorer'}):
                     sources: rec.sources?.length ? rec.sources : allSources.slice(0, 2)
                 });
             }
+
+            // Parallel enrichment for first 10 items only (to stay under timeout)
+            console.log(`[Digest] Enriching first 10 items with Google Places data...`);
+            const enrichmentPromises = enriched.slice(0, 10).map(async (rec, i) => {
+                try {
+                    const placeData = await searchGooglePlaces(rec.name, rec.location || 'New York');
+                    if (placeData) {
+                        enriched[i].imageUrl = placeData.imageUrl;
+                        enriched[i].website = placeData.website;
+                        enriched[i].rating = placeData.rating;
+                    }
+                } catch { /* ignore enrichment failures */ }
+            });
+            await Promise.all(enrichmentPromises);
 
             console.log(`[Digest] Enriched ${enriched.filter(r => r.imageUrl).length}/${enriched.length} with images`);
 
