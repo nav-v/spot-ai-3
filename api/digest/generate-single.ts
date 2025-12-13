@@ -523,11 +523,69 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         console.log(`[Digest] ❌ No existing digest found in last 12 hours, generating new one...`);
         
-        // For the date range used in double-check later, also use 12 hours
-        const todayUTC = twelveHoursAgo;
-        const tomorrowUTC = new Date(now.getTime() + 12 * 60 * 60 * 1000);
+        // IMMEDIATELY create a placeholder digest to prevent race conditions
+        // Other requests will find this and wait or see "generating" status
+        const { data: placeholder, error: placeholderError } = await db
+            .from('daily_digests')
+            .insert({
+                user_id: userId,
+                weather: null,
+                greeting: 'Generating...',
+                intro_text: 'Curating your personalized recommendations...',
+                recommendations: [], // Empty - signals "still generating"
+                shown_ids: []
+            })
+            .select()
+            .single();
         
-        // Parallel: weather, research, user data, user preferences
+        if (placeholderError) {
+            // If insert failed, another request might have just created one - check again
+            console.log(`[Digest] Placeholder insert failed, checking for existing...`);
+            const { data: raceCheck } = await db
+                .from('daily_digests')
+                .select('*')
+                .eq('user_id', userId)
+                .gte('created_at', twelveHoursAgo.toISOString())
+                .order('created_at', { ascending: false })
+                .limit(1);
+            
+            if (raceCheck && raceCheck.length > 0) {
+                const existing = raceCheck[0];
+                // If it has recommendations, return it; otherwise, tell frontend to wait
+                if (existing.recommendations && existing.recommendations.length > 0) {
+                    console.log(`[Digest] Found completed digest from race condition`);
+                    const allRecs = existing.recommendations || [];
+                    return res.status(200).json({
+                        success: true,
+                        hasDigest: true,
+                        digest: {
+                            id: existing.id,
+                            greeting: existing.greeting,
+                            weather: existing.weather,
+                            intro_text: existing.intro_text,
+                            recommendations: allRecs.slice(0, 15),
+                            next_batch: allRecs.slice(15, 21),
+                            shown_ids: existing.shown_ids,
+                            created_at: existing.created_at
+                        }
+                    });
+                } else {
+                    // Another request is generating, tell frontend to wait
+                    console.log(`[Digest] Another request is generating, returning generating status`);
+                    return res.status(202).json({
+                        success: true,
+                        hasDigest: false,
+                        generating: true,
+                        message: 'Digest is being generated, please wait...'
+                    });
+                }
+            }
+        }
+        
+        const placeholderId = placeholder?.id;
+        console.log(`[Digest] Created placeholder with ID: ${placeholderId}`);
+        
+        // Now do the expensive generation
         const [weather, research, userResult, placesResult, prefsResult] = await Promise.all([
             fetchNYCWeather(),
             researchForDigest(),
@@ -543,58 +601,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Generate digest
         const digest = await generateDigest(userName, places, research, userPreferences);
         
-        // DOUBLE-CHECK: Before saving, check one more time if digest was created (race condition protection)
-        const { data: doubleCheckDigests } = await db
-            .from('daily_digests')
-            .select('*')
-            .eq('user_id', userId)
-            .gte('created_at', todayUTC.toISOString())
-            .lt('created_at', tomorrowUTC.toISOString())
-            .order('created_at', { ascending: false })
-            .limit(1);
-        
-        if (doubleCheckDigests && doubleCheckDigests.length > 0) {
-            console.log(`[Digest] ⚠️ Race condition detected! Another digest was created while we were generating. Returning existing one.`);
-            const existingDigest = doubleCheckDigests[0];
-            const allRecs = existingDigest.recommendations || [];
-            const recommendations = allRecs.slice(0, 15);
-            const next_batch = allRecs.slice(15, 21);
-            
-            return res.status(200).json({
-                success: true,
-                hasDigest: true,
-                digest: {
-                    id: existingDigest.id,
-                    greeting: existingDigest.greeting,
-                    weather: existingDigest.weather,
-                    intro_text: existingDigest.intro_text,
-                    recommendations: recommendations,
-                    next_batch: next_batch,
-                    shown_ids: existingDigest.shown_ids,
-                    created_at: existingDigest.created_at
-                }
-            });
-        }
-        
-        // Save to DB
-        // Store all recommendations (15 + 6) for retrieval
+        // UPDATE the placeholder with real data (instead of inserting new)
         const allRecs = [...digest.recommendations, ...digest.next_batch];
         
-        const { data: saved, error: insertError } = await db.from('daily_digests').insert({
-            user_id: userId,
-            weather,
-            greeting: `Good ${getTimeOfDay()} ${userName}`,
-            intro_text: digest.intro_text,
-            recommendations: allRecs, // Store all 21
-            shown_ids: []
-        }).select().single();
+        const { data: saved, error: updateError } = await db
+            .from('daily_digests')
+            .update({
+                weather,
+                greeting: `Good ${getTimeOfDay()} ${userName}`,
+                intro_text: digest.intro_text,
+                recommendations: allRecs, // Store all 21
+                shown_ids: []
+            })
+            .eq('id', placeholderId)
+            .select()
+            .single();
         
-        if (insertError) {
-            console.error(`[Digest] ❌ Failed to save to database:`, insertError);
-            console.error(`[Digest] Error details:`, JSON.stringify(insertError, null, 2));
+        if (updateError) {
+            console.error(`[Digest] ❌ Failed to update placeholder:`, updateError);
             // Still return the digest even if DB save fails (user can still see it)
         } else {
-            console.log(`[Digest] ✅ Saved to database with ID: ${saved?.id}`);
+            console.log(`[Digest] ✅ Updated placeholder ${placeholderId} with ${allRecs.length} recommendations`);
         }
         
         console.log(`[Digest] Done in ${Date.now() - start}ms with ${digest.recommendations.length} + ${digest.next_batch.length} recs`);

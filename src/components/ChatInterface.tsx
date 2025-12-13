@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Send, MapPin, Loader2, Sparkles, ExternalLink, Calendar, Plus, ArrowRight, Check } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { PlaceDetailModal } from './PlaceDetailModal';
@@ -141,12 +141,96 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
   const [digestLoading, setDigestLoading] = useState(true);
   const [showDigest, setShowDigest] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
+  
+  // Chat persistence state
+  const [chatId, setChatId] = useState<string | null>(null);
+  const [chatLoading, setChatLoading] = useState(true);
 
+  // Load saved places
   useEffect(() => {
     placesApi.getAll().then(places => {
       setSavedPlaceNames(new Set(places.map(p => p.name.toLowerCase())));
     });
   }, []);
+  
+  // Load persisted chat messages on mount
+  useEffect(() => {
+    if (!user?.id) return;
+    
+    const loadChat = async () => {
+      try {
+        const response = await fetch(`/api/chats?userId=${user.id}`);
+        const data = await response.json();
+        
+        if (data.messages && data.messages.length > 0) {
+          console.log(`[Chat] Loaded ${data.messages.length} messages from chat ${data.chatId}`);
+          setMessages(data.messages);
+          setChatId(data.chatId);
+        } else {
+          console.log('[Chat] No existing messages, starting fresh');
+        }
+      } catch (error) {
+        console.error('[Chat] Failed to load messages:', error);
+      } finally {
+        setChatLoading(false);
+      }
+    };
+    
+    loadChat();
+  }, [user?.id]);
+  
+  // Save message to database
+  const saveMessage = useCallback(async (message: ChatMessage) => {
+    if (!user?.id) return;
+    
+    try {
+      const response = await fetch('/api/chats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          chatId,
+          message: {
+            role: message.role,
+            content: message.content,
+            recommendations: message.recommendations || message.sections?.flatMap(s => s.places) || null,
+            reasoningTrace: null
+          }
+        })
+      });
+      
+      const data = await response.json();
+      if (data.chatId && !chatId) {
+        setChatId(data.chatId);
+      }
+    } catch (error) {
+      console.error('[Chat] Failed to save message:', error);
+    }
+  }, [user?.id, chatId]);
+  
+  // Start new chat
+  const handleNewChat = useCallback(async () => {
+    if (!user?.id) return;
+    
+    try {
+      const response = await fetch('/api/chats', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id })
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        console.log('[Chat] Started new chat:', data.chatId);
+        setChatId(data.chatId);
+        setMessages([]);
+        setShowDigest(true);
+        toast({ title: 'New chat started', description: 'Your previous conversation has been saved.' });
+      }
+    } catch (error) {
+      console.error('[Chat] Failed to start new chat:', error);
+    }
+  }, [user?.id, toast]);
 
   // Fetch daily digest (cached in localStorage - only generates once per day)
   useEffect(() => {
@@ -233,27 +317,10 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
     content: "Hey! I'm Spot – ask me to plan, find, or add food, places and events 🎉"
   };
 
-  // Load messages for current user
+  // Scroll to bottom when messages change
   useEffect(() => {
-    if (!user?.id) return;
-
-    const storageKey = `spot-chat-messages-${user.id}`;
-    const saved = localStorage.getItem(storageKey);
-    if (saved) {
-      setMessages(JSON.parse(saved));
-    } else {
-      setMessages([initialMessage]);
-    }
-  }, [user?.id]);
-
-  // Save messages for current user
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const storageKey = `spot-chat-messages-${user.id}`;
-    localStorage.setItem(storageKey, JSON.stringify(messages));
     scrollToBottom();
-  }, [messages, user?.id]);
+  }, [messages]);
 
   // Handle mobile tab-out: retry search when user returns
   useEffect(() => {
@@ -578,6 +645,9 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
     setMessages(currentMessages);
     setInput('');
     setIsTyping(true);
+    
+    // Persist user message
+    saveMessage(userMsg);
 
     // Store pending search in case user tabs out on mobile
     pendingSearchRef.current = { input: userInput, messages: currentMessages };
@@ -643,6 +713,9 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
           setDisplayedText('');
           return newMessages;
         });
+        
+        // Persist assistant message
+        saveMessage(assistantMsg);
       } else {
         toast({ title: 'Error', description: 'Failed to get response', variant: 'destructive' });
       }
@@ -761,14 +834,10 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
     }
   };
 
-  const startNewChat = () => {
-    setMessages([initialMessage]);
-    localStorage.removeItem('spot-chat-messages');
-    toast({ title: 'New Chat Started', description: 'Conversation history cleared.' });
-  };
 
   return (
     <div className="flex flex-col h-full bg-background relative">
+      
       {/* Messages */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-6 pb-24" style={{ paddingBottom: 'calc(6rem + env(safe-area-inset-bottom, 0px))' }}>
         
@@ -1458,12 +1527,12 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
             <AlertDialogHeader>
               <AlertDialogTitle>Start a new chat?</AlertDialogTitle>
               <AlertDialogDescription>
-                This will clear your current conversation history.
+                Your current conversation will be saved. You can always access it later.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={startNewChat}>Continue</AlertDialogAction>
+              <AlertDialogAction onClick={handleNewChat}>Continue</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
