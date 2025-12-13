@@ -534,9 +534,9 @@ PERSONALIZATION PRIORITY (match to their persona: ${personaText || 'explorer'}):
                 });
             }
 
-            // Parallel enrichment for first 10 items only (to stay under timeout)
-            console.log(`[Digest] Enriching first 10 items with Google Places data...`);
-            const enrichmentPromises = enriched.slice(0, 10).map(async (rec, i) => {
+            // Parallel enrichment for ALL items
+            console.log(`[Digest] Enriching all ${enriched.length} items with Google Places data (parallel)...`);
+            const enrichmentPromises = enriched.map(async (rec, i) => {
                 try {
                     const placeData = await searchGooglePlaces(rec.name, rec.location || 'New York');
                     if (placeData) {
