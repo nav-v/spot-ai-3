@@ -504,7 +504,7 @@ PERSONALIZATION: Reference the specific inferences about ${userName} in your des
     try {
         console.log(`[Digest] Prompt length: ${prompt.length} chars`);
         const response = await getAI().models.generateContent({
-            model: 'gemini-2.5-pro', // Use Pro for better personalization
+            model: 'gemini-2.5-flash', // Use flash for speed (Pro times out)
             contents: [{ role: 'user', parts: [{ text: prompt }] }]
         });
         console.log(`[Digest] AI response received`);
