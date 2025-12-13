@@ -80,6 +80,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         // If recommendations are empty, this is a placeholder still generating
         if (allRecs.length === 0) {
+            // Check if placeholder is stale (older than 5 minutes = failed generation)
+            const createdAt = new Date(digest.created_at);
+            const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+            if (createdAt < fiveMinutesAgo) {
+                // Stale placeholder - generation failed. Delete it so frontend can regenerate
+                console.log(`[Digest Fetch] ❌ Stale placeholder (created ${createdAt.toISOString()}), deleting...`);
+                await db.from('daily_digests').delete().eq('id', digest.id);
+                return res.status(200).json({
+                    hasDigest: false,
+                    message: 'Digest generation timed out, please regenerate'
+                });
+            }
+
             console.log(`[Digest Fetch] ⏳ Digest is a placeholder (still generating), returning generating status`);
             return res.status(200).json({
                 hasDigest: false,
