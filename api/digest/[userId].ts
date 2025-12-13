@@ -3,7 +3,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 // ============= LAZY INITIALIZATION =============
 
-let supabase: ReturnType<typeof createClient>;
+let supabase: any;
 function getSupabase() {
     if (!supabase) {
         const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';

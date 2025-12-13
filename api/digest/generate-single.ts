@@ -12,7 +12,7 @@ const FOOD_SUBREDDITS = ['nyc', 'AskNYC', 'FoodNYC', 'NYCbitcheswithtaste'];
 
 // ============= LAZY INIT =============
 
-let supabase: ReturnType<typeof createClient>;
+let supabase: any;
 function getSupabase() {
     if (!supabase) {
         const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';

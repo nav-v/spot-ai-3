@@ -4,7 +4,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY || '';
 
-let supabase: ReturnType<typeof createClient>;
+let supabase: any;
 function getSupabase() {
     if (!supabase) {
         const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
@@ -62,17 +62,17 @@ async function geminiSearch(query: string): Promise<{ text: string; sources: any
             contents: [{ role: 'user', parts: [{ text: query }] }],
             config: { tools: [{ googleSearch: {} }] }
         });
-        
+
         const sources: any[] = [];
         const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
         for (const chunk of chunks) {
             if (chunk.web?.uri) {
                 try {
                     sources.push({ domain: new URL(chunk.web.uri).hostname.replace('www.', ''), url: chunk.web.uri });
-                } catch {}
+                } catch { }
             }
         }
-        
+
         return { text: response.text || '', sources };
     } catch {
         return { text: '', sources: [] };
@@ -84,28 +84,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    
+
     if (req.method === 'OPTIONS') return res.status(200).end();
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-    
+
     const { userId } = req.body || {};
     if (!userId) return res.status(400).json({ error: 'userId required' });
-    
+
     console.log(`[Load More] Generating 6 more for ${userId}`);
-    
+
     try {
         const db = getSupabase();
-        
+
         // Get user's taste profile from saved places
         const { data: places } = await db.from('places').select('name, cuisine, subtype').eq('user_id', userId).limit(20);
         const tasteHint = places?.map(p => p.cuisine || p.subtype).filter(Boolean).slice(0, 5).join(', ') || 'varied';
-        
+
         // Quick research
         const [eventsRes, foodRes] = await Promise.all([
             geminiSearch(`NYC events this weekend concerts shows markets r/nyc`),
             geminiSearch(`best restaurants NYC ${tasteHint} r/FoodNYC`)
         ]);
-        
+
         const prompt = `Generate 6 NYC recommendations in 2:1 pattern (event, event, food, event, event, food).
 
 === EVENTS ===
@@ -128,14 +128,14 @@ IMPORTANT: Explain WHY each recommendation fits the user's taste in the descript
             model: 'gemini-2.5-flash',
             contents: [{ role: 'user', parts: [{ text: prompt }] }]
         });
-        
+
         const jsonMatch = (response.text || '[]').match(/\[[\s\S]*\]/);
         let recommendations: any[] = [];
-        
+
         if (jsonMatch) {
             const parsed = JSON.parse(jsonMatch[0]);
             const allSources = [...eventsRes.sources, ...foodRes.sources];
-            
+
             // Generate truly unique IDs with random suffix
             const batchId = Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
             recommendations = await Promise.all(parsed.slice(0, 6).map(async (rec: any, i: number) => {
@@ -150,11 +150,11 @@ IMPORTANT: Explain WHY each recommendation fits the user's taste in the descript
                 };
             }));
         }
-        
+
         console.log(`[Load More] Generated ${recommendations.length} recs`);
-        
+
         return res.status(200).json({ success: true, recommendations });
-        
+
     } catch (error: any) {
         console.error('[Load More] Error:', error);
         return res.status(500).json({ error: error.message, recommendations: [] });
