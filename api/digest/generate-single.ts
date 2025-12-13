@@ -514,8 +514,23 @@ PERSONALIZATION: Reference the specific inferences about ${userName} in your des
             const parsed = JSON.parse(jsonMatch[0]);
             const recs = parsed.recommendations || [];
 
-            // Merge sources from research
-            const allSources = [...research.events.sources, ...research.food.sources];
+            // Filter sources to only include real domains (not grounding redirects)
+            const filterRealSources = (sources: Array<{ domain: string; url: string }>) =>
+                sources.filter(s => !s.domain.includes('vertexaisearch') && !s.domain.includes('googleapis'));
+
+            const eventSources = filterRealSources(research.events.sources);
+            const foodSources = filterRealSources(research.food.sources);
+
+            // Add static sources for scraped content
+            const scrapedSources = [
+                { domain: 'theskint.com', url: 'https://theskint.com/' },
+                { domain: 'timeout.com', url: 'https://www.timeout.com/newyork' }
+            ];
+
+            // Helper to get sources based on recommendation type
+            const getSourcesForRec = (isEvent: boolean) => isEvent
+                ? [...scrapedSources, ...eventSources].slice(0, 2)
+                : [...foodSources, ...scrapedSources].slice(0, 2);
 
             // Insert 2 saved food items at food positions (positions 2, 5 - 0-indexed)
             const savedToInsert = savedFood.slice(0, 2);
@@ -565,7 +580,7 @@ PERSONALIZATION: Reference the specific inferences about ${userName} in your des
                     mainCategory: rec.mainCategory || (rec.isEvent ? 'see' : 'eat'),
                     subtype: rec.subtype || 'Event',
                     recommendedDishes: rec.recommendedDishes,
-                    sources: rec.sources?.length ? rec.sources : allSources.slice(0, 2)
+                    sources: getSourcesForRec(rec.isEvent ?? rec.type === 'event')
                 });
             }
 
