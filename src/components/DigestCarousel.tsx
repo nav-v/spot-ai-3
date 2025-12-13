@@ -180,11 +180,13 @@ export function DigestCarousel({
     <div className="space-y-3">
       {/* Header: Greeting + Weather */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-foreground">{digest.greeting}</h1>
-        <div className="flex items-center gap-1.5 text-muted-foreground">
-          {getWeatherIcon(digest.weather.icon)}
-          <span className="text-sm font-medium">{digest.weather.temp}°</span>
-        </div>
+        <h1 className="text-xl font-semibold text-foreground">{digest.greeting || 'Good day'}</h1>
+        {digest.weather && (
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            {getWeatherIcon(digest.weather.icon || '01d')}
+            <span className="text-sm font-medium">{digest.weather.temp || '--'}°</span>
+          </div>
+        )}
       </div>
 
       {/* Intro - more compact */}
