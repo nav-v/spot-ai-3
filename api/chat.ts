@@ -1412,8 +1412,13 @@ async function findAndAddPlace(placeName: string, location: string = 'New York, 
 
 // ============= SPEED MODE (3-CALL FAST FLOW) =============
 
-// Call 1: Determine which subreddits to search based on user query
-async function determineSearchSources(userMessage: string): Promise<{ query: string; subreddits: string[] }> {
+// Call 1: Decide if research is needed, and if so, which sources to use
+async function decideAndPrepareSearch(userMessage: string): Promise<{
+    needsResearch: boolean;
+    directResponse?: string;
+    query?: string;
+    subreddits?: string[]
+}> {
     const availableSubs = [
         ...TOOL_SUBREDDITS.research_food,
         ...TOOL_SUBREDDITS.research_places,
@@ -1422,21 +1427,28 @@ async function determineSearchSources(userMessage: string): Promise<{ query: str
     ];
     const uniqueSubs = [...new Set(availableSubs)];
 
-    const prompt = `You are a source selector. Given a user query, pick the most relevant subreddits to search.
+    const prompt = `You are Spot, an NYC recommendation assistant. Given a user message, decide if you need to search for information.
+
+USER MESSAGE: "${userMessage}"
 
 AVAILABLE SUBREDDITS: ${uniqueSubs.join(', ')}
 
-USER QUERY: "${userMessage}"
+DECIDE:
+- If this is a greeting, simple question, or something you can answer directly → respond directly
+- If this asks for specific places, restaurants, events, or recommendations → you need to search
 
 Output JSON only:
-{"query": "cleaned search query without location", "subreddits": ["sub1", "sub2", "sub3"]}
+{
+  "needsResearch": true/false,
+  "directResponse": "Your friendly response if no research needed",
+  "query": "search query if research needed",
+  "subreddits": ["sub1", "sub2"] 
+}
 
-RULES:
-- Pick 2-4 subreddits max
+RULES for subreddits (if research needed):
+- Pick 2-4 max from the AVAILABLE SUBREDDITS list
 - Always include at least one base sub (AskNYC, FoodNYC, nyc)
-- Add location-specific subs if query mentions a neighborhood
-- query should be the core search term
-- ONLY pick from the available list above`;
+- Add location-specific subs if query mentions a neighborhood`;
 
     try {
         const response = await getAI().models.generateContent({
@@ -1447,17 +1459,27 @@ RULES:
         const match = (response.text || '{}').match(/\{[\s\S]*\}/);
         if (match) {
             const parsed = JSON.parse(match[0]);
-            console.log(`[SpeedMode] Sources: query="${parsed.query}", subs=${parsed.subreddits?.join(', ')}`);
+            console.log(`[SpeedMode] Decision: needsResearch=${parsed.needsResearch}`);
+
+            if (!parsed.needsResearch) {
+                return {
+                    needsResearch: false,
+                    directResponse: parsed.directResponse || "Hey! How can I help you find something today?"
+                };
+            }
+
             return {
+                needsResearch: true,
                 query: parsed.query || userMessage,
                 subreddits: (parsed.subreddits || ['AskNYC', 'FoodNYC']).slice(0, 4)
             };
         }
     } catch (e) {
-        console.error('[SpeedMode] determineSearchSources error:', e);
+        console.error('[SpeedMode] decideAndPrepareSearch error:', e);
     }
 
-    return { query: userMessage, subreddits: ['AskNYC', 'FoodNYC', 'nyc'] };
+    // Default: assume research is needed
+    return { needsResearch: true, query: userMessage, subreddits: ['AskNYC', 'FoodNYC', 'nyc'] };
 }
 
 // Call 2: Targeted Gemini grounding search with specific subreddits
@@ -1596,12 +1618,18 @@ async function handleSpeedMode(
     console.log('[SpeedMode] ========== SPEED MODE START ==========');
     const startTime = Date.now();
 
-    // Call 1: Determine sources
-    const sources = await determineSearchSources(userMessage);
+    // Call 1: Decide if research is needed
+    const decision = await decideAndPrepareSearch(userMessage);
     console.log(`[SpeedMode] Call 1 done: ${Date.now() - startTime}ms`);
 
+    // If no research needed, return direct response
+    if (!decision.needsResearch) {
+        console.log(`[SpeedMode] ========== NO RESEARCH NEEDED: ${Date.now() - startTime}ms ==========`);
+        return { response: decision.directResponse || "Hey! How can I help?", recommendations: [] };
+    }
+
     // Call 2: Targeted search
-    const searchResults = await targetedGeminiSearch(sources.query, sources.subreddits);
+    const searchResults = await targetedGeminiSearch(decision.query || userMessage, decision.subreddits || ['AskNYC', 'FoodNYC']);
     console.log(`[SpeedMode] Call 2 done: ${Date.now() - startTime}ms`);
 
     // Get cached taste profile (don't generate new one - that's slow!)

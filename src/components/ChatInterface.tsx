@@ -146,8 +146,8 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
   const [chatId, setChatId] = useState<string | null>(null);
   const [chatLoading, setChatLoading] = useState(true);
 
-  // Speed mode for fast 3-call chat flow (defaults to ON)
-  const [speedMode, setSpeedMode] = useState(true);
+  // Speed mode for fast 3-call chat flow (defaults to OFF - experimental)
+  const [speedMode, setSpeedMode] = useState(false);
 
   // Load saved places
   useEffect(() => {
