@@ -1491,7 +1491,7 @@ async function targetedGeminiSearch(query: string, subreddits: string[]): Promis
 
     try {
         const response = await getAI().models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-2.5-pro',
             contents: [{ role: 'user', parts: [{ text: searchQuery }] }],
             config: { tools: [{ googleSearch: {} }] }
         });
@@ -1641,6 +1641,29 @@ async function handleSpeedMode(
     // Call 3: Generate recommendations
     const result = await generateSpeedRecommendations(searchResults, tasteProfile, userName, userMessage);
     console.log(`[SpeedMode] Call 3 done: ${Date.now() - startTime}ms`);
+
+    // Parallel Enrichment: Google Places (images, ratings, address)
+    // We do this concurrently for all places to keep it fast
+    if (result.places.length > 0) {
+        console.log(`[SpeedMode] Enriching ${result.places.length} places (parallel)...`);
+        await Promise.all(result.places.map(async (place) => {
+            try {
+                const placeData = await searchGooglePlaces(place.name, place.location || 'New York, NY');
+                if (placeData) {
+                    place.imageUrl = placeData.imageUrl;
+                    place.rating = placeData.rating;
+                    place.address = placeData.address;
+                    place.website = placeData.sourceUrl; // Mapped from sourceUrl
+                    place.coordinates = placeData.coordinates;
+                    // priceLevel not returned by searchGooglePlaces currently
+                }
+            } catch (e) {
+                console.warn(`[SpeedMode] Failed to enrich ${place.name}:`, e);
+            }
+        }));
+        console.log(`[SpeedMode] Enrichment done: ${Date.now() - startTime}ms`);
+    }
+
     console.log(`[SpeedMode] ========== SPEED MODE COMPLETE: ${Date.now() - startTime}ms ==========`);
 
     return { response: result.text, recommendations: result.places };
