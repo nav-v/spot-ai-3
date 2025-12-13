@@ -269,7 +269,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
         const response = await fetch(`/api/digest/${user.id}`);
         const data = await response.json();
 
-        console.log('[Digest] Server response:', { hasDigest: data.hasDigest, hasData: !!data.digest });
+        console.log('[Digest] Server response:', { hasDigest: data.hasDigest, generating: data.generating, hasData: !!data.digest });
 
         if (data.hasDigest && data.digest) {
           console.log('[Digest] ✅ Found existing digest on server');
@@ -278,8 +278,49 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
           try {
             localStorage.setItem(cacheKey, JSON.stringify({ digest: data.digest, date: today }));
           } catch { } // localStorage might fail in incognito
-        } else {
-          // First time today - generate on-demand
+        } else if (data.generating) {
+          // Another process is generating - poll until ready
+          console.log('[Digest] ⏳ Digest is being generated, polling...');
+          let attempts = 0;
+          const maxAttempts = 30; // 30 * 2s = 60s max wait
+
+          const poll = async (): Promise<boolean> => {
+            attempts++;
+            await new Promise(r => setTimeout(r, 2000)); // Wait 2 seconds
+
+            const pollRes = await fetch(`/api/digest/${user.id}`);
+            const pollData = await pollRes.json();
+
+            console.log(`[Digest] Poll attempt ${attempts}:`, { hasDigest: pollData.hasDigest, generating: pollData.generating });
+
+            if (pollData.hasDigest && pollData.digest) {
+              setDigest(pollData.digest);
+              setShowDigest(true);
+              try {
+                localStorage.setItem(cacheKey, JSON.stringify({ digest: pollData.digest, date: today }));
+              } catch { }
+              return true;
+            }
+
+            if (attempts < maxAttempts && pollData.generating) {
+              return poll(); // Keep polling
+            }
+
+            return false; // Give up
+          };
+
+          const success = await poll();
+          if (!success) {
+            console.log('[Digest] Polling timed out, generating fresh...');
+            // Fall through to generate
+          } else {
+            setDigestLoading(false);
+            return;
+          }
+        }
+
+        // No digest exists - generate on-demand
+        if (!data.hasDigest && !data.generating) {
           console.log('[Digest] ❌ No digest found, generating new one...');
           const genResponse = await fetch('/api/digest/generate-single', {
             method: 'POST',

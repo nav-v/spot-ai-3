@@ -94,14 +94,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         console.log(`[Digest Fetch] Returning ${recommendations.length} recommendations + ${next_batch.length} preloaded`);
 
+        // Fix stale greeting if it's still "Generating..." but we have recommendations
+        let greeting = digest.greeting;
+        let intro_text = digest.intro_text;
+        if (greeting === 'Generating...' || intro_text === 'Curating your personalized recommendations...') {
+            // Generate proper greeting based on time of day
+            const nycTime = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+            const hour = new Date(nycTime).getHours();
+            const timeOfDay = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
+            greeting = `Good ${timeOfDay}`;
+            intro_text = intro_text === 'Curating your personalized recommendations...'
+                ? "While you were away, I found some gems for your NYC adventures..."
+                : intro_text;
+            console.log(`[Digest Fetch] Fixed stale greeting: ${greeting}`);
+        }
+
         // Return formatted digest with split recommendations
         return res.status(200).json({
             hasDigest: true,
             digest: {
                 id: digest.id,
-                greeting: digest.greeting,
+                greeting: greeting,
                 weather: digest.weather,
-                intro_text: digest.intro_text,
+                intro_text: intro_text,
                 recommendations: recommendations, // First 15
                 next_batch: next_batch, // Preloaded 6
                 shown_ids: digest.shown_ids,
