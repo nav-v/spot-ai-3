@@ -918,13 +918,19 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
             onAddPlace={handleDigestAddPlace}
             onLoadMore={handleDigestLoadMore}
             onAskSpot={handleAskSpot}
+            hasUserSentMessage={messages.some(m => m.role === 'user')}
           />
         )}
 
-        {/* Messages (hide first message if we have a digest or are loading it) */}
+        {/* Messages (hide initial assistant messages if we have a digest) */}
         {messages.map((msg, idx) => {
-          // Hide the initial greeting message if we have a digest or are loading one
-          if (idx === 0 && (digest || digestLoading)) return null;
+          // Hide all assistant messages that come before any user message when we have a digest
+          if (digest || digestLoading) {
+            const firstUserMsgIdx = messages.findIndex(m => m.role === 'user');
+            if (msg.role === 'assistant' && (firstUserMsgIdx === -1 || idx < firstUserMsgIdx)) {
+              return null;
+            }
+          }
 
           return (
             <div

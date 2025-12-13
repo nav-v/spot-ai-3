@@ -46,6 +46,7 @@ interface DigestCarouselProps {
   onAddPlace: (place: DigestRecommendation) => Promise<void>;
   onLoadMore: () => Promise<DigestRecommendation[]>;
   onAskSpot: () => void;
+  hasUserSentMessage?: boolean; // Hide pulsating dot after user sends first message
 }
 
 function getWeatherIcon(icon: string) {
@@ -60,7 +61,8 @@ export function DigestCarousel({
   savedPlaceNames,
   onAddPlace,
   onLoadMore,
-  onAskSpot
+  onAskSpot,
+  hasUserSentMessage = false
 }: DigestCarouselProps) {
   // Start with first 15 recommendations
   const [visibleRecs, setVisibleRecs] = useState(digest.recommendations.slice(0, 15));
@@ -304,9 +306,12 @@ export function DigestCarousel({
         </DraggableScrollContainer>
       </div>
 
-      {/* CTA */}
+      {/* CTA - show pulsating dot until user sends first message */}
       <p className="text-xs text-muted-foreground">
         Ask me to plan, find, or add food, places and events
+        {!hasUserSentMessage && (
+          <span className="inline-block w-1.5 h-1.5 bg-orange-500 rounded-full ml-1.5 align-middle" style={{ animation: 'pulse-fast 0.4s ease-in-out infinite' }} />
+        )}
       </p>
     </div>
   );
