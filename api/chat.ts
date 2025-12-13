@@ -38,7 +38,7 @@ const LOCATION_SUBREDDITS: Record<string, string[]> = {
     inwood: ['Inwood'],
     west_village: ['WestVillage'],
     chelsea: ['ChelseaNYC'],
-    
+
     // Brooklyn - borough-wide + neighborhoods
     brooklyn: ['Brooklyn', 'BayRidge', 'BedStuy', 'Bushwick', 'CarrollGardens', 'ConeyIsland', 'DitmasPark', 'DowntownBrooklyn', 'DUMBO', 'Flatbush', 'fortgreene', 'Greenpoint', 'ParkSlope', 'Williamsburg'],
     bay_ridge: ['BayRidge'],
@@ -54,7 +54,7 @@ const LOCATION_SUBREDDITS: Record<string, string[]> = {
     greenpoint: ['Greenpoint'],
     park_slope: ['ParkSlope'],
     williamsburg: ['Williamsburg'],
-    
+
     // Queens - borough-wide + neighborhoods
     queens: ['Queens', 'astoria', 'Bayside', 'Flushing', 'ForestHills', 'jacksonheights', 'longislandcity', 'ridgewood', 'Woodhaven', 'woodside'],
     astoria: ['astoria'],
@@ -67,7 +67,7 @@ const LOCATION_SUBREDDITS: Record<string, string[]> = {
     ridgewood: ['ridgewood'],
     woodhaven: ['Woodhaven'],
     woodside: ['woodside'],
-    
+
     // Bronx
     bronx: ['Bronx']
 };
@@ -140,19 +140,19 @@ function extractAllActions(text: string): { action: any; match: string }[] {
     const actions: { action: any; match: string }[] = [];
     let remainingText = text;
     let safety = 0;
-    
+
     while (safety < 10) { // Prevent infinite loops
         safety++;
         const extracted = extractAction(remainingText);
         if (!extracted) break;
-        
+
         actions.push(extracted);
         // Remove the found action from remaining text
         const idx = remainingText.indexOf(extracted.match);
         if (idx === -1) break;
         remainingText = remainingText.substring(idx + extracted.match.length);
     }
-    
+
     console.log(`[extractAllActions] Found ${actions.length} actions in text`);
     return actions;
 }
@@ -176,7 +176,7 @@ interface TasteProfile {
 }
 
 // Count categories from user's saved places for explicit preference matching
-function countUserPreferences(places: any[]): { 
+function countUserPreferences(places: any[]): {
     cuisineCounts: Record<string, number>;
     typeCounts: Record<string, number>;
     neighborhoodCounts: Record<string, number>;
@@ -187,7 +187,7 @@ function countUserPreferences(places: any[]): {
     const cuisineCounts: Record<string, number> = {};
     const typeCounts: Record<string, number> = {};
     const neighborhoodCounts: Record<string, number> = {};
-    
+
     for (const p of places) {
         // Count cuisines
         if (p.cuisine) {
@@ -201,7 +201,7 @@ function countUserPreferences(places: any[]): {
         }
         // Extract neighborhood from address
         if (p.address) {
-            const neighborhoods = ['williamsburg', 'east village', 'west village', 'soho', 'tribeca', 
+            const neighborhoods = ['williamsburg', 'east village', 'west village', 'soho', 'tribeca',
                 'lower east side', 'upper east side', 'upper west side', 'chelsea', 'midtown',
                 'brooklyn', 'queens', 'harlem', 'bushwick', 'greenpoint', 'dumbo', 'park slope',
                 'astoria', 'flushing', 'jackson heights', 'crown heights', 'bed-stuy', 'cobble hill'];
@@ -213,11 +213,11 @@ function countUserPreferences(places: any[]): {
             }
         }
     }
-    
+
     // Sort and get top preferences
-    const sortByCount = (obj: Record<string, number>) => 
+    const sortByCount = (obj: Record<string, number>) =>
         Object.entries(obj).sort((a, b) => b[1] - a[1]);
-    
+
     return {
         cuisineCounts,
         typeCounts,
@@ -257,17 +257,17 @@ function buildCrossCorroborationMap(
     webSources: { text: string; source: string }[]
 ): Map<string, PlaceMention> {
     const mentionMap = new Map<string, PlaceMention>();
-    
+
     // Process Reddit results
     for (const post of redditResults) {
         // Extract potential place names from title and text (simple heuristic)
         const textToAnalyze = `${post.title} ${post.text}`.toLowerCase();
         const source = post.source || `r/${post.subreddit}`;
-        
+
         // This is a simplified extraction - the full AI will do better
         // For now, just track the post as a potential source
         const normalizedTitle = normalizePlaceName(post.title);
-        
+
         if (!mentionMap.has(normalizedTitle)) {
             mentionMap.set(normalizedTitle, {
                 name: post.title,
@@ -289,15 +289,15 @@ function buildCrossCorroborationMap(
             }
         }
     }
-    
+
     console.log(`[Cross-Corroboration] Built map with ${mentionMap.size} unique mentions`);
-    
+
     // Calculate final scores
     for (const [key, mention] of mentionMap) {
         // Score = mentionCount * 10 + uniqueSourceCount * 5
         mention.score = mention.mentionCount * 10 + mention.sources.length * 5;
     }
-    
+
     return mentionMap;
 }
 
@@ -324,24 +324,24 @@ async function executeSmartResearch(
     userId?: string
 ): Promise<ResearchResults> {
     console.log(`[Smart Research] Executing ${tools.length} research tools in parallel`);
-    
+
     const results: ResearchResults = {
         webResults: { text: '', textWithCitations: '', sources: [], citations: [] },
         eventScrapedContent: '',
         tasteProfile: null,
         toolsUsed: []
     };
-    
+
     // Group tools by type for efficient execution
     const foodTools = tools.filter(t => t.tool === 'research_food');
     const placesTools = tools.filter(t => t.tool === 'research_places');
     const eventsTools = tools.filter(t => t.tool === 'research_events');
     const analyseFoodTools = tools.filter(t => t.tool === 'analyse_saved_food');
     const analyseSeeTools = tools.filter(t => t.tool === 'analyse_saved_see');
-    
+
     // Build parallel execution promises
     const promises: Promise<void>[] = [];
-    
+
     // Helper to add a Gemini search promise
     const addSearch = (searchQuery: string, label: string) => {
         promises.push(
@@ -367,46 +367,46 @@ async function executeSmartResearch(
         const tool = foodTools[0];
         const query = tool.query || 'best food';
         const locationSubs = tool.subreddits || [];
-        
+
         console.log(`[Smart Research] research_food: query="${query}", location subreddits: ${locationSubs.join(', ') || 'none'}`);
-        
+
         // Base subreddits - one Gemini search each
         const baseFoodSubs = TOOL_SUBREDDITS.research_food;
         for (const sub of baseFoodSubs) {
             addSearch(`${query} NYC r/${sub}`, `r/${sub}`);
         }
-        
+
         // Location-specific subreddits - one Gemini search each
         for (const sub of locationSubs) {
             addSearch(`${query} r/${sub}`, `r/${sub}`);
         }
-        
+
         // Food publications via Gemini search (articles/reviews, not lists - so search is better than scraping)
         addSearch(`${query} NYC Eater`, 'Eater NY');
         addSearch(`${query} NYC NY Times food`, 'NY Times Food');
         addSearch(`${query} NYC The Infatuation`, 'The Infatuation NYC');
     }
-    
+
     // RESEARCH_PLACES: Subreddit searches + scrape TimeOut
     if (placesTools.length > 0) {
         results.toolsUsed.push('research_places');
         const tool = placesTools[0];
         const query = tool.query || 'things to do';
         const locationSubs = tool.subreddits || [];
-        
+
         console.log(`[Smart Research] research_places: query="${query}", location subreddits: ${locationSubs.join(', ') || 'none'}`);
-        
+
         // Base subreddits - Gemini search
         const basePlacesSubs = TOOL_SUBREDDITS.research_places;
         for (const sub of basePlacesSubs) {
             addSearch(`${query} NYC r/${sub}`, `r/${sub}`);
         }
-        
+
         // Location-specific subreddits - Gemini search
         for (const sub of locationSubs) {
             addSearch(`${query} r/${sub}`, `r/${sub}`);
         }
-        
+
         // Scrape TimeOut directly
         promises.push(
             (async () => {
@@ -423,7 +423,7 @@ async function executeSmartResearch(
             })()
         );
     }
-    
+
     // RESEARCH_EVENTS: Subreddit searches + direct scraping (no duplicate Gemini searches for scraped sites)
     if (eventsTools.length > 0) {
         results.toolsUsed.push('research_events');
@@ -431,15 +431,15 @@ async function executeSmartResearch(
         const query = tool.query || 'things to do december 2025';
         const dateFilter = tool.dates || '';
         const fullQuery = `${query} ${dateFilter}`.trim();
-        
+
         console.log(`[Smart Research] research_events: query="${fullQuery}"`);
-        
+
         // Subreddit searches via Gemini (these can't be scraped)
         const baseEventsSubs = TOOL_SUBREDDITS.research_events;
         for (const sub of baseEventsSubs) {
             addSearch(`${fullQuery} r/${sub}`, `r/${sub}`);
         }
-        
+
         // Scrape all event sites directly
         promises.push(
             (async () => {
@@ -453,12 +453,12 @@ async function executeSmartResearch(
             })()
         );
     }
-    
+
     // ANALYSE_SAVED_FOOD: Taste analysis (Gemini 2.5 Pro)
     if (analyseFoodTools.length > 0) {
         results.toolsUsed.push('analyse_saved_food');
         console.log(`[Smart Research] analyse_saved_food: analyzing ${userPlaces.length} places`);
-        
+
         promises.push(
             (async () => {
                 try {
@@ -470,12 +470,12 @@ async function executeSmartResearch(
             })()
         );
     }
-    
+
     // ANALYSE_SAVED_SEE: Taste analysis for non-food
     if (analyseSeeTools.length > 0) {
         results.toolsUsed.push('analyse_saved_see');
         console.log(`[Smart Research] analyse_saved_see: analyzing ${userPlaces.length} places`);
-        
+
         promises.push(
             (async () => {
                 try {
@@ -501,13 +501,13 @@ async function executeSmartResearch(
             })()
         );
     }
-    
+
     // Execute all in parallel
     console.log(`[Smart Research] Starting ${promises.length} parallel tasks...`);
     await Promise.all(promises);
-    
+
     console.log(`[Smart Research] Completed. Web sources: ${results.webResults.sources.length}, Event content: ${results.eventScrapedContent.length} chars, Taste inferences: ${results.tasteProfile?.inferences?.length || 0}`);
-    
+
     return results;
 }
 
@@ -601,13 +601,13 @@ async function searchGooglePlaces(placeName: string, location: string = 'New Yor
 // ============= TASTE ANALYSIS (Gemini 2.5 Pro) =============
 
 async function analyseSavedPlaces(
-    places: any[], 
+    places: any[],
     type: 'food' | 'see',
     userPreferences?: any,
     userId?: string
 ): Promise<TasteProfile> {
     console.log(`[Taste Analysis] Analyzing ${places.length} places for type: ${type}`);
-    
+
     // Fetch user preferences from database if not provided and userId is available
     let dbPreferences = null;
     if (!userPreferences && userId) {
@@ -622,18 +622,18 @@ async function analyseSavedPlaces(
             console.log(`[Taste Analysis] Could not fetch user preferences for ${userId}`);
         }
     }
-    
+
     // Use provided preferences or database preferences
     const prefs = userPreferences || dbPreferences;
-    
+
     // Filter places by type
     const foodTypes = ['restaurant', 'bar', 'cafe', 'food', 'drinks'];
     const seeTypes = ['activity', 'attraction', 'museum', 'park', 'entertainment'];
-    
+
     const filtered = type === 'food'
         ? places.filter(p => foodTypes.includes((p.type || 'restaurant').toLowerCase()))
         : places.filter(p => seeTypes.includes((p.type || '').toLowerCase()) || p.is_event);
-    
+
     if (filtered.length === 0) {
         console.log(`[Taste Analysis] No ${type} places found, returning empty profile`);
         return {
@@ -645,7 +645,7 @@ async function analyseSavedPlaces(
             interests: []
         };
     }
-    
+
     // Build a summary of saved places for analysis
     const placesSummary = filtered.slice(0, 30).map(p => {
         const parts = [p.name];
@@ -659,7 +659,7 @@ async function analyseSavedPlaces(
         if (p.is_visited) parts.push('✓ VISITED');
         return parts.join(' ');
     }).join('\n');
-    
+
     // Build user preferences text from database format
     const userPrefsText = prefs ? `
 User's stated preferences from onboarding:
@@ -669,7 +669,7 @@ User's stated preferences from onboarding:
 - All tags: ${prefs.all_tags?.slice(0, 10).join(', ') || 'None'}
 - Dietary: ${prefs.dietary_vegetarian ? 'Vegetarian' : ''} ${prefs.dietary_vegan ? 'Vegan' : ''} ${prefs.dietary_halal ? 'Halal' : ''} ${prefs.dietary_gluten_free ? 'Gluten-free' : ''}
 ` : '';
-    
+
     const prompt = `You are a taste analyst creating a deep psychological profile. Based on these saved ${type === 'food' ? 'restaurants/food spots' : 'places/activities'}, infer 10-25 DETAILED observations about this person's tastes, preferences, and personality.
 
 ${userPrefsText}
@@ -712,11 +712,11 @@ Return ONLY the JSON object, no other text.`;
             model: 'gemini-2.5-flash', // Fast pattern extraction (Pro not needed)
             contents: [{ role: 'user', parts: [{ text: prompt }] }]
         });
-        
+
         const text = response.text || '';
         const cleanJson = text.replace(/```json|```/g, '').trim();
         const profile = JSON.parse(cleanJson);
-        
+
         console.log(`[Taste Analysis] Generated ${profile.inferences?.length || 0} inferences`);
         return profile;
     } catch (error: any) {
@@ -735,12 +735,12 @@ Return ONLY the JSON object, no other text.`;
 // ============= REDDIT API =============
 
 async function searchRedditMultiQuery(
-    queries: string[], 
+    queries: string[],
     baseSubreddits: string[] = ['foodnyc', 'AskNYC'],
     locationSubreddits: string[] = []
 ) {
     const results: any[] = [];
-    
+
     // Merge base subreddits with location-specific ones, removing duplicates
     const allSubreddits = [...new Set([...baseSubreddits, ...locationSubreddits])];
 
@@ -838,14 +838,14 @@ async function getRedditComments(postUrl: string) {
 
 async function scrapeWebsite(url: string): Promise<{ success: boolean; content: string; error?: string }> {
     console.log(`[Jina] Scraping: ${url}`);
-    
+
     try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000); // 20s timeout
-        
+
         // Use Jina.ai Reader API - handles JS rendering, returns clean markdown
         const jinaUrl = `https://r.jina.ai/${url}`;
-        
+
         const response = await fetch(jinaUrl, {
             headers: {
                 'Accept': 'text/plain',
@@ -853,22 +853,22 @@ async function scrapeWebsite(url: string): Promise<{ success: boolean; content: 
             signal: controller.signal
         });
         clearTimeout(timeoutId);
-        
+
         if (!response.ok) {
             console.log(`[Jina] HTTP ${response.status} for ${url}`);
             return { success: false, content: '', error: `HTTP ${response.status}` };
         }
-        
+
         let text = await response.text();
-        
+
         // Limit content length
         if (text.length > 10000) {
             text = text.substring(0, 10000) + '...';
         }
-        
+
         console.log(`[Jina] SUCCESS for ${url}: ${text.length} chars`);
         return { success: true, content: text };
-        
+
     } catch (error: any) {
         if (error.name === 'AbortError') {
             console.log(`[Jina] TIMEOUT for ${url}`);
@@ -883,10 +883,10 @@ async function scrapeWebsite(url: string): Promise<{ success: boolean; content: 
 async function scrapeWithFirecrawl(url: string) {
     // Skip Firecrawl entirely - go straight to Jina for speed
     const result = await scrapeWebsite(url);
-    return { 
-        success: result.success, 
+    return {
+        success: result.success,
         data: { markdown: result.content },
-        error: result.error 
+        error: result.error
     };
 }
 
@@ -895,10 +895,10 @@ async function _unusedFirecrawl(url: string) {
     const apiKey = process.env.FIRECRAWL_API_KEY;
     if (!apiKey) {
         const result = await scrapeWebsite(url);
-        return { 
-            success: result.success, 
+        return {
+            success: result.success,
             data: { markdown: result.content },
-            error: result.error 
+            error: result.error
         };
     }
 
@@ -918,28 +918,28 @@ async function _unusedFirecrawl(url: string) {
             }),
         });
         const result = await response.json();
-        
+
         if (!result.success) {
             console.log(`[Firecrawl] FAILED for ${url}: ${result.error || 'Unknown error'}`);
             console.log(`[Firecrawl] Falling back to simple scraper...`);
             const fallbackResult = await scrapeWebsite(url);
-            return { 
-                success: fallbackResult.success, 
+            return {
+                success: fallbackResult.success,
                 data: { markdown: fallbackResult.content },
-                error: fallbackResult.error 
+                error: fallbackResult.error
             };
         }
-        
+
         console.log(`[Firecrawl] SUCCESS for ${url}: ${result.data?.markdown?.length || 0} chars`);
         return result;
     } catch (error: any) {
         console.error(`[Firecrawl] Exception for ${url}:`, error.message);
         // Fallback to simple scraper on exception
         const fallbackResult = await scrapeWebsite(url);
-        return { 
-            success: fallbackResult.success, 
+        return {
+            success: fallbackResult.success,
             data: { markdown: fallbackResult.content },
-            error: fallbackResult.error 
+            error: fallbackResult.error
         };
     }
 }
@@ -960,17 +960,17 @@ async function scrapeEventSites(dateFilter?: string): Promise<{ events: ScrapedE
     if (dateFilter) {
         console.log(`[Event Scraper] Date filter: ${dateFilter}`);
     }
-    
+
     const scrapePromises = EVENT_SCRAPE_SITES.map(async (url) => {
         try {
             console.log(`[Event Scraper] Scraping: ${url}`);
             const result = await scrapeWithFirecrawl(url);
-            
+
             if (result.success && result.data?.markdown) {
                 const content = result.data.markdown.slice(0, 4000); // Increased limit for event data
                 const sourceName = new URL(url).hostname.replace('www.', '');
                 console.log(`[Event Scraper] Got ${content.length} chars from ${sourceName}`);
-                
+
                 return {
                     content: `\n--- ${sourceName.toUpperCase()} ---\n${content}\n`,
                     source: sourceName,
@@ -982,16 +982,16 @@ async function scrapeEventSites(dateFilter?: string): Promise<{ events: ScrapedE
         }
         return null;
     });
-    
+
     const results = await Promise.all(scrapePromises);
     const validResults = results.filter(r => r !== null);
-    
+
     // Combine all raw content for AI parsing
     const rawContent = validResults.map(r => r!.content).join('\n');
-    
+
     console.log(`[Event Scraper] Successfully scraped ${validResults.length}/${EVENT_SCRAPE_SITES.length} sites`);
     console.log(`[Event Scraper] Total content: ${rawContent.length} chars`);
-    
+
     // Return raw content - the recommender AI will parse it
     return {
         events: [], // Will be parsed by the recommender
@@ -1074,7 +1074,7 @@ Only mention places that actually appear in the search results.`;
 
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
         const groundingMetadata = data.candidates?.[0]?.groundingMetadata;
-        
+
         // Extract sources from groundingChunks
         const sources: VerifiedSource[] = [];
         if (groundingMetadata?.groundingChunks) {
@@ -1082,21 +1082,21 @@ Only mention places that actually appear in the search results.`;
                 if (chunk.web?.uri) {
                     // Use title if available, otherwise try to extract from URI or use placeholder
                     let title = chunk.web.title || '';
-                    
+
                     // Log what we're getting
                     console.log(`[Grounding] Chunk: title="${title}", uri="${chunk.web.uri?.substring(0, 60)}..."`);
-                    
+
                     // If title is just a domain or empty, try to make it more useful
                     if (!title || title.length < 10 || title === 'reddit.com') {
                         // Will be enriched later with citation text
                         title = `Source ${sources.length + 1}`;
                     }
-                    
+
                     sources.push({ title, url: chunk.web.uri });
                 }
             }
         }
-        
+
         // Enrich source titles with citation text where possible
         if (groundingMetadata?.groundingSupports && sources.length > 0) {
             for (const support of groundingMetadata.groundingSupports) {
@@ -1135,8 +1135,8 @@ Only mention places that actually appear in the search results.`;
                 const url = sources[citation.sourceIndex].url;
                 // Insert citation link after the grounded text
                 const insertPos = citation.endIndex;
-                textWithCitations = textWithCitations.slice(0, insertPos) + 
-                    ` [${sourceNum}](${url})` + 
+                textWithCitations = textWithCitations.slice(0, insertPos) +
+                    ` [${sourceNum}](${url})` +
                     textWithCitations.slice(insertPos);
             }
         }
@@ -1210,12 +1210,12 @@ async function callGeminiWithSearch(query: string, queryType: string = 'food'): 
 
     console.log(`[Gemini Search] Combined: ${combinedText.length} chars, ${allSources.length} sources, ${allCitations.length} citations`);
 
-    return { 
+    return {
         text: combinedText,
         textWithCitations: combinedTextWithCitations,
         sources: allSources,
         citations: allCitations,
-        searchQueries 
+        searchQueries
     };
 }
 
@@ -1258,11 +1258,11 @@ async function searchWeb(query: string): Promise<{ text: string; textWithCitatio
     // DISABLED: General Gemini searches - smart research now handles everything with targeted site: queries
     // All searches are now done in executeSmartResearch with specific site: operators
     console.log('[Web Search] Skipping general Gemini search - smart research handles all targeted searches');
-    
+
     let allTextWithCitations = allText;
     let allCitations: GroundingCitation[] = [];
 
-    return { 
+    return {
         text: allText || "No results found.",
         textWithCitations: allTextWithCitations || "No results found.",
         sources: allSources,
@@ -1364,11 +1364,11 @@ async function findAndAddPlace(placeName: string, location: string = 'New York, 
     const isEvent = extraData.isEvent || false;
     let mainCategory: 'eat' | 'see' = (place as any).mainCategory || 'eat';
     let subtype = (place as any).subtype || 'Restaurant';
-    
+
     if (isEvent) { mainCategory = 'see'; subtype = 'Event'; }
-    const seeTypes = ['activity','attraction','museum','park','theater','shopping','landmark','gallery','entertainment','show','concert','festival'];
+    const seeTypes = ['activity', 'attraction', 'museum', 'park', 'theater', 'shopping', 'landmark', 'gallery', 'entertainment', 'show', 'concert', 'festival'];
     if (extraData.type && seeTypes.includes(extraData.type.toLowerCase())) { mainCategory = 'see'; subtype = extraData.type.charAt(0).toUpperCase() + extraData.type.slice(1); }
-    
+
     let startDate = extraData.startDate || null;
     let endDate = extraData.endDate || null;
     if (isEvent && !startDate) startDate = new Date().toISOString().split('T')[0];
@@ -1717,57 +1717,39 @@ ${conversationText}`;
             if (action.action === 'research' && (action.queries || action.query)) {
                 const queries = (action.queries || [action.query]).slice(0, 2);
                 console.log('[Chat API] ========================================');
-                console.log('[Chat API] Starting PARALLEL Reddit and Web searches...');
+                console.log('[Chat API] Starting PARALLEL Gemini grounding searches...');
                 console.log('[Chat API] QUERIES:', queries);
 
-                // Start both searches in parallel
-                const webSearchPromise = searchWeb(queries[0]);
-                const redditSearchPromise = searchRedditMultiQuery(queries);
+                // Use Gemini grounding with r/subreddit patterns instead of direct Reddit API (avoids rate limits)
+                const subreddits = ['AskNYC', 'FoodNYC', 'NYCbitcheswithtaste'];
+                const redditSearchPromises = queries.flatMap(query =>
+                    subreddits.slice(0, 2).map(sub =>
+                        searchWeb(`${query} r/${sub}`) // Uses Gemini grounding
+                    )
+                );
 
-                const redditPosts = await redditSearchPromise;
-                console.log(`[Chat API] Reddit found ${redditPosts.length} posts`);
+                const webSearchPromise = searchWeb(queries[0]);
+                const redditResults = await Promise.all(redditSearchPromises);
+
+                console.log(`[Chat API] Gemini grounding returned ${redditResults.length} search results`);
 
                 let searchResults = '';
 
-                if (redditPosts.length > 0) {
-                    searchResults += '=== REDDIT RESULTS (PRIORITIZE THESE) ===\n';
-
-                    // Score posts by relevance
-                    const allQueryWords = queries.join(' ').toLowerCase().split(/\s+/).filter((w: string) => w.length > 3);
-                    const scoredPosts = redditPosts.map((post: any) => {
-                        const titleLower = post.title.toLowerCase();
-                        let relevanceScore = 0;
-                        for (const word of allQueryWords) {
-                            if (titleLower.includes(word)) relevanceScore += 10;
-                        }
-                        relevanceScore += Math.log(post.upvotes + post.numComments + 1);
-                        return { ...post, relevanceScore };
-                    }).sort((a: any, b: any) => b.relevanceScore - a.relevanceScore);
-
-                    // Fetch comments for top 5 posts
-                    const topPosts = scoredPosts.slice(0, 5);
-                    const commentPromises = topPosts.map(async (post: any) => {
-                        const comments = await getRedditComments(post.url);
-                        let postResult = `\n--- THREAD: "${post.title}" (r/${post.subreddit}, ${post.upvotes} upvotes) ---\nURL: ${post.url}\n`;
-                        if (comments.length > 0) {
-                            postResult += `TOP COMMENTS:\n`;
-                            for (const comment of comments.slice(0, 10)) {
-                                postResult += `💬 [${comment.upvotes}] u/${comment.author}: "${comment.text}"\n\n`;
-                            }
-                        }
-                        return postResult;
-                    });
-
-                    const commentsResults = await Promise.all(commentPromises);
-                    searchResults += commentsResults.join('');
+                // Combine Reddit-focused Gemini grounding results
+                const validRedditResults = redditResults.filter(r => r.text && r.text.length > 50);
+                if (validRedditResults.length > 0) {
+                    searchResults += '=== REDDIT RESULTS (via Gemini grounding) ===\n';
+                    for (const result of validRedditResults) {
+                        searchResults += result.textWithCitations + '\n\n';
+                    }
                 }
 
                 // Wait for web search - now includes citations!
                 const webResults = await webSearchPromise;
-                
+
                 // Use textWithCitations which has inline [N](url) citations from Gemini grounding
                 searchResults += '\n=== WEB RESEARCH (with citations) ===\n' + webResults.textWithCitations;
-                
+
                 console.log(`[Research] ${webResults.citations.length} native Gemini citations found`);
 
                 // Re-prompt Gemini - DO NOT ask for URLs, LLM always hallucinates them
@@ -1827,17 +1809,17 @@ Assistant:`;
                 // Check for recommendPlaces action
                 const secondExtracted = extractAction(content);
                 console.log(`[Research] Extracted action:`, secondExtracted?.action?.action);
-                
+
                 // Handle both old (places) and new (sections) format
                 const hasSections = secondExtracted?.action?.sections?.length > 0;
                 const hasPlaces = secondExtracted?.action?.places?.length > 0;
                 console.log(`[Research] Has sections: ${hasSections}, Has places (legacy): ${hasPlaces}`);
-                
+
                 if (secondExtracted && secondExtracted.action.action === 'recommendPlaces' && (hasSections || hasPlaces)) {
                     // Get ALL verified sources - no deduplication, show everything
                     const verifiedSources = webResults.sources;
                     console.log(`[Research] All verified sources: ${verifiedSources.length}`);
-                    
+
                     // Helper to extract favicon domain from title
                     const extractDomainForFavicon = (title: string): string => {
                         const titleLower = title.toLowerCase();
@@ -1850,23 +1832,23 @@ Assistant:`;
                         if (titleLower.includes('reddit') || titleLower.includes('r/')) return 'reddit.com';
                         return 'google.com';
                     };
-                    
+
                     // Keep ALL sources (up to 25), no deduplication
                     const allSources = verifiedSources.slice(0, 25);
                     console.log(`[Research] Sources for display: ${allSources.length}`);
-                    
+
                     // Convert legacy flat places array to sections format if needed
-                    let sections = hasSections 
-                        ? secondExtracted.action.sections 
+                    let sections = hasSections
+                        ? secondExtracted.action.sections
                         : [{ title: "Recommendations", places: secondExtracted.action.places }];
-                    
+
                     // Enrich all places in all sections with Google Places data
                     const enrichedSections = await Promise.all(sections.map(async (section: any) => {
                         const enrichedPlaces = await Promise.all((section.places || []).map(async (p: any) => {
                             try {
                                 // For events, generate booking URL instead of venue website
                                 const isEvent = p.type === 'event' || p.startDate || p.isEvent;
-                                
+
                                 // Filter out past events
                                 if (isEvent && p.startDate) {
                                     const eventDate = new Date(p.startDate + 'T12:00:00');
@@ -1877,25 +1859,25 @@ Assistant:`;
                                         return null; // Will be filtered out
                                     }
                                 }
-                                
+
                                 if (isEvent) {
                                     // Generate ticket search URL for events
                                     const eventQuery = encodeURIComponent(`${p.name} ${p.location || ''} tickets`);
                                     const bookingUrl = `https://www.google.com/search?q=${eventQuery}`;
-                                    
+
                                     // Try to get venue image from Google Places
                                     const venueLocation = p.location?.split(',')[0] || p.location; // Extract venue name from "Venue, Neighborhood"
                                     const placeData = await searchGooglePlaces(venueLocation || p.name, 'New York, NY');
-                                    
-                                    return { 
-                                        ...p, 
-                                        imageUrl: placeData?.imageUrl || null, 
+
+                                    return {
+                                        ...p,
+                                        imageUrl: placeData?.imageUrl || null,
                                         rating: null, // Events don't have ratings
                                         website: bookingUrl,
                                         isEvent: true
                                     };
                                 }
-                                
+
                                 // For regular places, use Google Places website
                                 const placeData = await searchGooglePlaces(p.name, p.location || 'New York, NY');
                                 if (placeData) {
@@ -1915,7 +1897,7 @@ Assistant:`;
                     for (const section of enrichedSections) {
                         totalFoodCount += (section.places || []).filter((p: any) => foodTypes.has((p.type || '').toLowerCase())).length;
                     }
-                    
+
                     // If no food/drink options, add a "From Your List" section with saved places
                     if (totalFoodCount === 0 && userPlaces && userPlaces.length > 0) {
                         const fallbackSaved = [...userPlaces]
@@ -1931,20 +1913,20 @@ Assistant:`;
                                 sourceQuote: 'From your saved places'
                             }));
                         if (fallbackSaved.length > 0) {
-                            enrichedSections.unshift({ 
-                                title: "🍽️ From Your List", 
+                            enrichedSections.unshift({
+                                title: "🍽️ From Your List",
                                 intro: "Since you asked about food, here are some spots you've already saved that might hit the spot.",
-                                places: fallbackSaved 
+                                places: fallbackSaved
                             });
                         }
                     }
-                    
+
                     const totalPlaces = enrichedSections.reduce((acc: number, s: any) => acc + (s.places?.length || 0), 0);
                     console.log(`[Research] Final sections: ${enrichedSections.length}, Total places: ${totalPlaces}`);
-                    
+
                     // Return sections + ALL verified sources (frontend shows them in a box)
-                    actionResult = { 
-                        type: 'recommendations', 
+                    actionResult = {
+                        type: 'recommendations',
                         sections: enrichedSections,
                         // ALL sources with title and favicon - no deduplication
                         sources: allSources.map(s => {
@@ -1994,7 +1976,7 @@ Assistant:`;
                 // Log what we got
                 console.log(`[Smart Research] Final searchResults length: ${searchResults.length} chars`);
                 console.log(`[Smart Research] Web sources: ${researchResults.webResults.sources.length}, Events scraped: ${researchResults.eventScrapedContent.length} chars`);
-                
+
                 // If no research data, add a note
                 if (!searchResults.trim()) {
                     console.log('[Smart Research] WARNING: No research data collected!');
@@ -2021,17 +2003,17 @@ Neighborhood Preferences: ${(researchResults.tasteProfile.locationPreferences ||
 
                 // Build LEAN recommender prompt - NO full system prompt!
                 const userQuery = messages[messages.length - 1]?.content || 'recommendations';
-                
+
                 // Count explicit preferences from saved places
                 const prefCounts = countUserPreferences(userPlaces);
-                
+
                 // Build saved places list for recommender to reference
                 const savedPlacesList = userPlaces.slice(0, 30).map((p: any) => {
                     const type = p.cuisine || p.type || 'place';
                     const neighborhood = p.address?.split(',')[1]?.trim() || p.neighborhood || '';
                     return `• ${p.name} (${type}) - ${neighborhood}`;
                 }).join('\n');
-                
+
                 // Build preference summary with counts
                 const preferenceSummary = `
 === 🌟 USER'S SAVED PLACES - PRIORITIZE THESE! 🌟 ===
@@ -2149,7 +2131,7 @@ ${researchResults.toolsUsed.includes('research_places') ? '- For PLACES: "🗽 M
                             try {
                                 // For events, generate booking URL instead of venue website
                                 const isEvent = p.type === 'event' || p.startDate || p.isEvent;
-                                
+
                                 // Filter out past events
                                 if (isEvent && p.startDate) {
                                     const eventDate = new Date(p.startDate + 'T12:00:00');
@@ -2160,25 +2142,25 @@ ${researchResults.toolsUsed.includes('research_places') ? '- For PLACES: "🗽 M
                                         return null; // Will be filtered out
                                     }
                                 }
-                                
+
                                 if (isEvent) {
                                     // Generate ticket search URL for events
                                     const eventQuery = encodeURIComponent(`${p.name} ${p.location || ''} tickets`);
                                     const bookingUrl = `https://www.google.com/search?q=${eventQuery}`;
-                                    
+
                                     // Try to get venue image from Google Places
                                     const venueLocation = p.location?.split(',')[0] || p.location; // Extract venue name from "Venue, Neighborhood"
                                     const placeData = await searchGooglePlaces(venueLocation || p.name, 'New York, NY');
-                                    
-                                    return { 
-                                        ...p, 
-                                        imageUrl: placeData?.imageUrl || null, 
+
+                                    return {
+                                        ...p,
+                                        imageUrl: placeData?.imageUrl || null,
                                         rating: null, // Events don't have ratings
                                         website: bookingUrl,
                                         isEvent: true
                                     };
                                 }
-                                
+
                                 // For regular places, use Google Places website
                                 const placeData = await searchGooglePlaces(p.name, p.location || 'New York, NY');
                                 if (placeData) {
@@ -2236,17 +2218,17 @@ ${researchResults.toolsUsed.includes('research_places') ? '- For PLACES: "🗽 M
             // ============= RECOMMEND PLACES ACTION =============
             else if (action.action === 'recommendPlaces' && (action.sections || action.places)) {
                 // Handle both new (sections) and legacy (places) format
-                let sections = action.sections 
-                    ? action.sections 
+                let sections = action.sections
+                    ? action.sections
                     : [{ title: "Recommendations", places: action.places }];
-                
+
                 // Enrich all places in all sections
                 const enrichedSections = await Promise.all(sections.map(async (section: any) => {
                     const enrichedPlaces = await Promise.all((section.places || []).map(async (p: any) => {
                         try {
                             // For events, generate booking URL instead of venue website
                             const isEvent = p.type === 'event' || p.startDate || p.isEvent;
-                            
+
                             // Filter out past events
                             if (isEvent && p.startDate) {
                                 const eventDate = new Date(p.startDate + 'T12:00:00');
@@ -2257,22 +2239,22 @@ ${researchResults.toolsUsed.includes('research_places') ? '- For PLACES: "🗽 M
                                     return null;
                                 }
                             }
-                            
+
                             if (isEvent) {
                                 const eventQuery = encodeURIComponent(`${p.name} ${p.location || ''} tickets`);
                                 const bookingUrl = `https://www.google.com/search?q=${eventQuery}`;
                                 const venueLocation = p.location?.split(',')[0] || p.location;
                                 const placeData = await searchGooglePlaces(venueLocation || p.name, 'New York, NY');
-                                
-                                return { 
-                                    ...p, 
-                                    imageUrl: placeData?.imageUrl || null, 
+
+                                return {
+                                    ...p,
+                                    imageUrl: placeData?.imageUrl || null,
                                     rating: null,
                                     website: bookingUrl,
                                     isEvent: true
                                 };
                             }
-                            
+
                             const placeData = await searchGooglePlaces(p.name, p.location || 'New York, NY');
                             if (placeData) {
                                 return { ...p, imageUrl: placeData.imageUrl, rating: placeData.rating, website: placeData.sourceUrl };
@@ -2284,32 +2266,32 @@ ${researchResults.toolsUsed.includes('research_places') ? '- For PLACES: "🗽 M
                     }));
                     return { title: section.title, intro: section.intro, places: enrichedPlaces.filter((p: any) => p !== null) };
                 }));
-                
+
                 actionResult = { type: 'recommendations', sections: enrichedSections };
             }
 
             // ============= ADD PLACE ACTION =============
             else if (action.action === 'addPlace' && action.placeName) {
-                    const result = await findAndAddPlace(action.placeName, action.location, action, userId, token);
-                    if (result.added) {
-                        actionResult = { added: true, place: result.place };
+                const result = await findAndAddPlace(action.placeName, action.location, action, userId, token);
+                if (result.added) {
+                    actionResult = { added: true, place: result.place };
                 } else {
                     actionResult = { added: false, message: result.message };
-                    }
-                    }
+                }
+            }
 
             // ============= ADD MULTIPLE PLACES ACTION =============
             else if (action.action === 'addMultiplePlaces' && action.places) {
-                    const results = [];
-                    for (const p of action.places) {
-                        const result = await findAndAddPlace(p.name, p.location, p, userId, token);
-                        results.push({
-                            name: p.name,
-                            status: result.added ? 'added' : 'skipped',
-                            place: result.place
-                        });
-                    }
-                    actionResult = { type: 'batch_add', results };
+                const results = [];
+                for (const p of action.places) {
+                    const result = await findAndAddPlace(p.name, p.location, p, userId, token);
+                    results.push({
+                        name: p.name,
+                        status: result.added ? 'added' : 'skipped',
+                        place: result.place
+                    });
+                }
+                actionResult = { type: 'batch_add', results };
             }
 
             // ============= SCRAPE URL ACTION =============
@@ -2347,8 +2329,8 @@ If no places found, return { "places": [] }.`;
                                 actionResult = { type: 'batch_add', results };
                             } else {
                                 actionResult = { added: false, message: "Could not identify any places in the post." };
-                }
-            } catch (e) {
+                            }
+                        } catch (e) {
                             actionResult = { added: false, error: 'Failed to extract places from post.' };
                         }
                     } else {
@@ -2358,7 +2340,7 @@ If no places found, return { "places": [] }.`;
                     // Non-social media URL - use Jina.ai to scrape and classify
                     console.log(`[URL Scrape] Scraping non-social URL: ${action.url}`);
                     const scrapeResult = await scrapeWebsite(action.url);
-                    
+
                     if (scrapeResult.success && scrapeResult.content) {
                         // Use AI to classify and extract
                         const classifyPrompt = `Analyze this webpage content and determine if it contains information about:
@@ -2389,13 +2371,13 @@ If not relevant, return empty places array.`;
                             const classifyText = classifyResponse.text || '';
                             const cleanJson = classifyText.replace(/```json|```/g, '').trim();
                             const classified = JSON.parse(cleanJson);
-                            
+
                             console.log(`[URL Scrape] Classified as: ${classified.category}, found ${classified.places?.length || 0} places`);
 
                             if (classified.category === 'not_relevant' || !classified.places?.length) {
-                                actionResult = { 
-                                    added: false, 
-                                    message: `This doesn't seem to be about specific places I can save. ${classified.summary || ''}` 
+                                actionResult = {
+                                    added: false,
+                                    message: `This doesn't seem to be about specific places I can save. ${classified.summary || ''}`
                                 };
                             } else {
                                 const results = [];
@@ -2405,10 +2387,10 @@ If not relevant, return empty places array.`;
                                         sourceUrl: action.url
                                     };
                                     const result = await findAndAddPlace(
-                                        item.name, 
-                                        item.location || 'New York, NY', 
-                                        placeData, 
-                                        userId, 
+                                        item.name,
+                                        item.location || 'New York, NY',
+                                        placeData,
+                                        userId,
                                         token
                                     );
                                     results.push({
@@ -2417,8 +2399,8 @@ If not relevant, return empty places array.`;
                                         place: result.place
                                     });
                                 }
-                                actionResult = { 
-                                    type: 'batch_add', 
+                                actionResult = {
+                                    type: 'batch_add',
                                     results,
                                     category: classified.category,
                                     summary: classified.summary

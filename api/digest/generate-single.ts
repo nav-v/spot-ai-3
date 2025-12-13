@@ -177,37 +177,47 @@ async function researchForDigest(): Promise<{
     const dayName = nycTime.toLocaleDateString('en-US', { weekday: 'long' });
     const dateStr = nycTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
-    // Match the same subreddits used in chat.ts
-    const eventSubs = ['nyc', 'AskNYC', 'NYCbitcheswithtaste'];
-    const foodSubs = ['FoodNYC', 'AskNYC', 'NYCbitcheswithtaste', 'nyc'];
+    // ALIGNED with chat.ts subreddits
+    const eventSubs = ['nyc', 'AskNYC', 'NYCbitcheswithtaste', 'newyorkcity'];
+    const foodSubs = ['nyc', 'AskNYC', 'FoodNYC', 'NYCbitcheswithtaste', 'newyorkcity'];
 
-    // Parallel: Reddit searches + Event site scrapes
+    // Parallel: Gemini searches (with r/subreddit pattern) + Site scrapes (same as chat.ts)
     const [
-        // Event Reddit searches
+        // Event Gemini searches
         eventSearch1,
         eventSearch2,
         eventSearch3,
-        // Food Reddit searches
+        // Food Gemini searches
         foodSearch1,
         foodSearch2,
         foodSearch3,
-        // Event site scrapes
+        // Event site scrapes (SAME AS CHAT.TS)
         skintScrape,
         timeoutScrape,
-        ohmyrocknessScrape
+        ohmyrocknessScrape,
+        edmtrainScrape,
+        eventRadarScrape,
+        // Food site scrapes (SAME AS CHAT.TS)
+        eaterScrape,
+        infatuationScrape
     ] = await Promise.all([
-        // Events - use r/subreddit pattern like chat.ts
+        // Events - use r/subreddit pattern in Gemini grounding
         geminiSearchWithSources(`NYC events this weekend ${dateStr} concerts shows r/${eventSubs[0]}`),
         geminiSearchWithSources(`things to do NYC this weekend ${dayName} r/${eventSubs[1]}`),
         geminiSearchWithSources(`NYC events happening now ${dayName} r/${eventSubs[2]}`),
-        // Food - use r/subreddit pattern like chat.ts
+        // Food - use r/subreddit pattern in Gemini grounding
         geminiSearchWithSources(`best restaurants NYC hidden gems highly rated r/${foodSubs[0]}`),
         geminiSearchWithSources(`NYC restaurant recommendations r/${foodSubs[1]}`),
         geminiSearchWithSources(`where to eat NYC this weekend r/${foodSubs[2]}`),
-        // Scrape event sites
+        // Event site scrapes (ALL from chat.ts EVENT_SCRAPE_SITES)
         scrapeWithJina('https://theskint.com/'),
         scrapeWithJina('https://www.timeout.com/newyork/things-to-do/this-weekend'),
-        scrapeWithJina('https://www.ohmyrockness.com/features.atom')
+        scrapeWithJina('https://www.ohmyrockness.com/features.atom'),
+        scrapeWithJina('https://edmtrain.com/new-york-city-ny'),
+        scrapeWithJina('https://ny-event-radar.com'),
+        // Food site scrapes (ALL from chat.ts FOOD_SCRAPE_SITES)
+        scrapeWithJina('https://ny.eater.com/maps/best-new-restaurants-nyc'),
+        scrapeWithJina('https://www.theinfatuation.com/new-york/guides/best-new-restaurants-nyc')
     ]);
 
     // Merge event sources
@@ -235,6 +245,18 @@ ${timeoutScrape}
 
 === OHMYROCKNESS.COM (Live Music) ===
 ${ohmyrocknessScrape}
+
+=== EDMTRAIN.COM (Electronic/Dance Music) ===
+${edmtrainScrape}
+
+=== NY-EVENT-RADAR.COM (Art, Jazz, Markets) ===
+${eventRadarScrape}
+
+=== EATER.COM (Best New Restaurants) ===
+${eaterScrape}
+
+=== THEINFATUATION.COM (Restaurant Guide) ===
+${infatuationScrape}
 
 TODAY IS: ${dayName}, ${dateStr}
 Use ONLY events with dates that match today, tomorrow, or this weekend.`;
