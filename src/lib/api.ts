@@ -246,7 +246,7 @@ export const placesApi = {
             ['restaurant', 'cafe', 'bar'].includes(place.type || '') ? 'eat' : 'see'
         );
         // Determine subtype with fallback logic
-        const subtype = place.subtype || place.cuisine || 
+        const subtype = place.subtype || place.cuisine ||
             (place.type === 'cafe' ? 'Coffee' : place.type === 'bar' ? 'Bar' : 'Restaurant');
 
         const dbPlace = {
@@ -400,7 +400,7 @@ export const scrapeApi = {
 
 // Chat API - still uses Express backend (needs Gemini API key on server)
 export const chatApi = {
-    async send(messages: { role: string; content: string }[], userName?: string, userPreferences?: User['preferences']): Promise<any> {
+    async send(messages: { role: string; content: string }[], userName?: string, userPreferences?: User['preferences'], speedMode?: boolean): Promise<any> {
         const userId = getCurrentUserId();
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
@@ -411,7 +411,7 @@ export const chatApi = {
                 'Content-Type': 'application/json',
                 ...(token ? { 'Authorization': `Bearer ${token}` } : {})
             },
-            body: JSON.stringify({ messages, userName, userPreferences, userId }),
+            body: JSON.stringify({ messages, userName, userPreferences, userId, speedMode }),
         });
         return res.json();
     },
@@ -458,7 +458,7 @@ export const instagramApi = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId, action: 'generate_code' }),
         });
-        
+
         if (!res.ok) throw new Error('Failed to generate verification code');
         return res.json();
     },
@@ -473,9 +473,9 @@ export const instagramApi = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId, action: 'check_status' }),
         });
-        
+
         if (!res.ok) return [];
-        
+
         const data = await res.json();
         return data.accounts || [];
     },
@@ -490,7 +490,7 @@ export const instagramApi = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId, action: 'unlink', accountId }),
         });
-        
+
         if (!res.ok) throw new Error('Failed to unlink Instagram');
     },
 

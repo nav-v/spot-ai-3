@@ -440,7 +440,7 @@ async function generateDigest(
     userPlaces: any[],
     research: Awaited<ReturnType<typeof researchForDigest>>,
     userPreferences?: any
-): Promise<{ intro_text: string; recommendations: DigestRec[]; next_batch: DigestRec[] }> {
+): Promise<{ intro_text: string; recommendations: DigestRec[]; next_batch: DigestRec[]; tasteProfile: any }> {
 
     // Get old saved food spots to bump (sorted by oldest first)
     const savedFood = userPlaces
@@ -625,14 +625,15 @@ PERSONALIZATION: Reference the specific inferences about ${userName} in your des
             return {
                 intro_text: parsed.intro_text || "Here's what's happening in NYC!",
                 recommendations: enriched.slice(0, 15),
-                next_batch: enriched.slice(15, 21)
+                next_batch: enriched.slice(15, 21),
+                tasteProfile // Include for caching
             };
         }
     } catch (error) {
         console.error('[Digest] Generation failed:', error);
     }
 
-    return { intro_text: "Here's what's happening in NYC!", recommendations: [], next_batch: [] };
+    return { intro_text: "Here's what's happening in NYC!", recommendations: [], next_batch: [], tasteProfile: null };
 }
 
 // ============= MAIN HANDLER =============
@@ -823,7 +824,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 greeting: `Good ${getTimeOfDay()} ${userName}`,
                 intro_text: digest.intro_text,
                 recommendations: allRecs, // Store all 21
-                shown_ids: []
+                shown_ids: [],
+                taste_profile: digest.tasteProfile // Cache for speed mode chat
             })
             .eq('id', placeholderId)
             .select()

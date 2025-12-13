@@ -1410,6 +1410,211 @@ async function findAndAddPlace(placeName: string, location: string = 'New York, 
     return { added: true, place: newPlace };
 }
 
+// ============= SPEED MODE (3-CALL FAST FLOW) =============
+
+// Call 1: Determine which subreddits to search based on user query
+async function determineSearchSources(userMessage: string): Promise<{ query: string; subreddits: string[] }> {
+    const availableSubs = [
+        ...TOOL_SUBREDDITS.research_food,
+        ...TOOL_SUBREDDITS.research_places,
+        ...TOOL_SUBREDDITS.research_events,
+        ...ALL_LOCATION_SUBREDDITS
+    ];
+    const uniqueSubs = [...new Set(availableSubs)];
+
+    const prompt = `You are a source selector. Given a user query, pick the most relevant subreddits to search.
+
+AVAILABLE SUBREDDITS: ${uniqueSubs.join(', ')}
+
+USER QUERY: "${userMessage}"
+
+Output JSON only:
+{"query": "cleaned search query without location", "subreddits": ["sub1", "sub2", "sub3"]}
+
+RULES:
+- Pick 2-4 subreddits max
+- Always include at least one base sub (AskNYC, FoodNYC, nyc)
+- Add location-specific subs if query mentions a neighborhood
+- query should be the core search term
+- ONLY pick from the available list above`;
+
+    try {
+        const response = await getAI().models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: [{ role: 'user', parts: [{ text: prompt }] }]
+        });
+
+        const match = (response.text || '{}').match(/\{[\s\S]*\}/);
+        if (match) {
+            const parsed = JSON.parse(match[0]);
+            console.log(`[SpeedMode] Sources: query="${parsed.query}", subs=${parsed.subreddits?.join(', ')}`);
+            return {
+                query: parsed.query || userMessage,
+                subreddits: (parsed.subreddits || ['AskNYC', 'FoodNYC']).slice(0, 4)
+            };
+        }
+    } catch (e) {
+        console.error('[SpeedMode] determineSearchSources error:', e);
+    }
+
+    return { query: userMessage, subreddits: ['AskNYC', 'FoodNYC', 'nyc'] };
+}
+
+// Call 2: Targeted Gemini grounding search with specific subreddits
+async function targetedGeminiSearch(query: string, subreddits: string[]): Promise<{ text: string; sources: Array<{ domain: string; url: string }> }> {
+    const subPattern = subreddits.map(s => `r/${s}`).join(' ');
+    const searchQuery = `${query} NYC ONLY results from ${subPattern}`;
+
+    console.log(`[SpeedMode] Searching: "${searchQuery}"`);
+
+    try {
+        const response = await getAI().models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: [{ role: 'user', parts: [{ text: searchQuery }] }],
+            config: { tools: [{ googleSearch: {} }] }
+        });
+
+        const sources: Array<{ domain: string; url: string }> = [];
+        const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+        for (const chunk of chunks) {
+            if (chunk.web?.uri) {
+                try {
+                    const domain = new URL(chunk.web.uri).hostname.replace('www.', '');
+                    if (!domain.includes('vertexaisearch') && !domain.includes('googleapis')) {
+                        sources.push({ domain, url: chunk.web.uri });
+                    }
+                } catch { }
+            }
+        }
+
+        console.log(`[SpeedMode] Search returned ${sources.length} sources`);
+        return { text: response.text || '', sources };
+    } catch (e) {
+        console.error('[SpeedMode] targetedGeminiSearch error:', e);
+        return { text: '', sources: [] };
+    }
+}
+
+// Get cached taste profile from daily_digests (generated at 3am)
+async function getCachedTasteProfile(userId: string, token?: string): Promise<TasteProfile | null> {
+    try {
+        const { data, error } = await getSupabase(token)
+            .from('daily_digests')
+            .select('taste_profile')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+        if (error || !data?.taste_profile) {
+            console.log('[SpeedMode] No cached taste profile found');
+            return null;
+        }
+
+        console.log(`[SpeedMode] Using cached taste profile with ${data.taste_profile.inferences?.length || 0} inferences`);
+        return data.taste_profile as TasteProfile;
+    } catch (e) {
+        console.error('[SpeedMode] getCachedTasteProfile error:', e);
+        return null;
+    }
+}
+
+// Call 3: Generate recommendations using search results + cached taste profile
+async function generateSpeedRecommendations(
+    searchResults: { text: string; sources: Array<{ domain: string; url: string }> },
+    tasteProfile: TasteProfile | null,
+    userName: string,
+    userMessage: string
+): Promise<{ text: string; places: any[] }> {
+    const tasteContext = tasteProfile?.inferences?.length
+        ? `USER TASTE PROFILE:\n${tasteProfile.inferences.slice(0, 5).join('\n')}`
+        : '';
+
+    const prompt = `You are Spot, a friendly NYC recommendation assistant.
+
+${tasteContext}
+
+USER ASKED: "${userMessage}"
+
+SEARCH RESULTS:
+${searchResults.text.substring(0, 4000)}
+
+Based on the search results, give ${userName} 3-5 specific recommendations.
+
+Write a SHORT intro (1-2 sentences), then output JSON:
+{
+  "action": "recommendPlaces",
+  "places": [
+    {"name": "Place Name", "type": "restaurant", "description": "Why it's great", "location": "Neighborhood", "sources": [{"domain": "reddit.com", "url": "..."}]}
+  ]
+}
+
+Keep descriptions concise. Reference the taste profile if available.`;
+
+    try {
+        const response = await getAI().models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: [{ role: 'user', parts: [{ text: prompt }] }]
+        });
+
+        const text = response.text || '';
+        const jsonMatch = text.match(/\{[\s\S]*"action"[\s\S]*\}/);
+        let places: any[] = [];
+
+        if (jsonMatch) {
+            try {
+                const parsed = JSON.parse(jsonMatch[0]);
+                places = parsed.places || [];
+                // Attach sources from search if not present
+                for (const place of places) {
+                    if (!place.sources?.length && searchResults.sources.length > 0) {
+                        place.sources = searchResults.sources.slice(0, 2);
+                    }
+                }
+            } catch { }
+        }
+
+        // Extract intro text (before the JSON)
+        const introMatch = text.match(/^([\s\S]*?)(?=\{)/);
+        const intro = introMatch ? introMatch[1].trim() : text.split('{')[0].trim();
+
+        console.log(`[SpeedMode] Generated ${places.length} recommendations`);
+        return { text: intro, places };
+    } catch (e) {
+        console.error('[SpeedMode] generateSpeedRecommendations error:', e);
+        return { text: "I found some options for you!", places: [] };
+    }
+}
+
+// Main speed mode handler
+async function handleSpeedMode(
+    userMessage: string,
+    userName: string,
+    userId: string,
+    token?: string
+): Promise<{ response: string; recommendations: any[] }> {
+    console.log('[SpeedMode] ========== SPEED MODE START ==========');
+    const startTime = Date.now();
+
+    // Call 1: Determine sources
+    const sources = await determineSearchSources(userMessage);
+    console.log(`[SpeedMode] Call 1 done: ${Date.now() - startTime}ms`);
+
+    // Call 2: Targeted search
+    const searchResults = await targetedGeminiSearch(sources.query, sources.subreddits);
+    console.log(`[SpeedMode] Call 2 done: ${Date.now() - startTime}ms`);
+
+    // Get cached taste profile (don't generate new one - that's slow!)
+    const tasteProfile = await getCachedTasteProfile(userId, token);
+
+    // Call 3: Generate recommendations
+    const result = await generateSpeedRecommendations(searchResults, tasteProfile, userName, userMessage);
+    console.log(`[SpeedMode] Call 3 done: ${Date.now() - startTime}ms`);
+    console.log(`[SpeedMode] ========== SPEED MODE COMPLETE: ${Date.now() - startTime}ms ==========`);
+
+    return { response: result.text, recommendations: result.places };
+}
+
 // ============= MAIN HANDLER =============
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -1428,18 +1633,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
-        const { messages, userName, userPreferences, userId } = req.body;
+        const { messages, userName, userPreferences, userId, speedMode } = req.body;
         const authHeader = req.headers.authorization;
         const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : undefined;
 
         const today = new Date().toISOString().split('T')[0];
         const currentYear = new Date().getFullYear();
 
-        // Fetch user's places from Supabase
-        let userPlaces: any[] = [];
-        console.log(`[Chat API] ========== REQUEST START ==========`);
-        console.log(`[Chat API] userId: "${userId}", userName: "${userName}"`);
+        // Get the last user message
+        const lastUserMessage = messages?.filter((m: any) => m.role === 'user').pop()?.content || '';
 
+        console.log(`[Chat API] ========== REQUEST START ==========`);
+        console.log(`[Chat API] userId: "${userId}", userName: "${userName}", speedMode: ${speedMode}`);
+
+        // ============= SPEED MODE (3-call fast flow) =============
+        if (speedMode && lastUserMessage && userId) {
+            try {
+                const result = await handleSpeedMode(lastUserMessage, userName || 'friend', userId, token);
+
+                // Format response like regular chat
+                const responseText = result.recommendations.length > 0
+                    ? `${result.response}\n\n${JSON.stringify({ action: 'recommendPlaces', places: result.recommendations })}`
+                    : result.response;
+
+                return res.status(200).json({
+                    content: result.response,
+                    recommendations: result.recommendations,
+                    speedMode: true
+                });
+            } catch (e) {
+                console.error('[SpeedMode] Error, falling back to normal mode:', e);
+                // Fall through to normal mode
+            }
+        }
+
+        // Fetch user's places from Supabase (for non-speed mode)
+        let userPlaces: any[] = [];
         if (userId) {
             const { data, error } = await getSupabase(token)
                 .from('places')

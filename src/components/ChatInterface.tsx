@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Send, MapPin, Loader2, Sparkles, ExternalLink, Calendar, Plus, ArrowRight, Check } from 'lucide-react';
+import { Send, MapPin, Loader2, Sparkles, ExternalLink, Calendar, Plus, ArrowRight, Check, Zap } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { PlaceDetailModal } from './PlaceDetailModal';
 import { DraggableScrollContainer } from './DraggableScrollContainer';
@@ -145,6 +145,9 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
   // Chat persistence state
   const [chatId, setChatId] = useState<string | null>(null);
   const [chatLoading, setChatLoading] = useState(true);
+
+  // Speed mode for fast 3-call chat flow (defaults to ON)
+  const [speedMode, setSpeedMode] = useState(true);
 
   // Load saved places
   useEffect(() => {
@@ -703,7 +706,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
       const history = messages.map(m => ({ role: m.role, content: m.content }));
       history.push({ role: 'user', content: userInput });
 
-      const res = await chatApi.send(history, user?.name, user?.preferences);
+      const res = await chatApi.send(history, user?.name, user?.preferences, speedMode);
 
       // Clear pending search on success
       pendingSearchRef.current = null;
@@ -1593,7 +1596,18 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
         </AlertDialog>
 
         {/* Middle: Input Field */}
-        <div className="flex-1 h-12 bg-background/80 backdrop-blur-md rounded-full border border-border shadow-lg flex items-center px-1">
+        <div className="flex-1 h-12 bg-background/80 backdrop-blur-md rounded-full border border-border shadow-lg flex items-center px-1 gap-1">
+          {/* Speed Mode Toggle */}
+          <button
+            onClick={() => setSpeedMode(!speedMode)}
+            title={speedMode ? "Speed Mode ON" : "Speed Mode OFF"}
+            className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${speedMode
+              ? 'text-orange-500 bg-orange-500/10'
+              : 'text-muted-foreground hover:text-foreground'
+              }`}
+          >
+            <Zap className={`w-4 h-4 ${speedMode ? 'fill-orange-500' : ''}`} />
+          </button>
           <input
             ref={inputRef}
             type="text"
@@ -1601,7 +1615,7 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSend()}
             placeholder="Ask Spot..."
-            className="flex-1 bg-transparent text-foreground h-full rounded-full px-4 focus:outline-none placeholder:text-muted-foreground text-sm"
+            className="flex-1 bg-transparent text-foreground h-full rounded-full px-2 focus:outline-none placeholder:text-muted-foreground text-sm"
           />
         </div>
 
