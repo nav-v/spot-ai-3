@@ -249,32 +249,54 @@ Use ONLY events with dates that match today, tomorrow, or this weekend.`;
 // ============= TASTE ANALYSIS =============
 
 interface TasteProfile {
+    summary: string;
+    inferences: string[];
+    digestGuidance: {
+        eventPriority: string;
+        foodPriority: string;
+        avoidPatterns: string;
+    };
+    // Keep structured data for filtering
     cuisinePreferences: string[];
     vibePreferences: string[];
     priceRange: string;
     neighborhoods: string[];
     eventTypes: string[];
-    interests: string[]; // For "see" places: history, science, art, etc.
+    interests: string[];
 }
 
-async function analyzeTasteProfile(places: any[], userPreferences?: any): Promise<TasteProfile> {
+async function analyzeTasteProfile(places: any[], userPreferences?: any, userName: string = 'User'): Promise<TasteProfile> {
+    const defaultProfile: TasteProfile = {
+        summary: `${userName} is exploring NYC with varied tastes.`,
+        inferences: [],
+        digestGuidance: {
+            eventPriority: 'Mix of cultural events and big-name attractions',
+            foodPriority: 'Variety of cuisines and neighborhood gems',
+            avoidPatterns: 'Generic tourist traps'
+        },
+        cuisinePreferences: [],
+        vibePreferences: [],
+        priceRange: 'moderate',
+        neighborhoods: [],
+        eventTypes: [],
+        interests: []
+    };
+
     if (!places || places.length === 0) {
-        return {
-            cuisinePreferences: [],
-            vibePreferences: [],
-            priceRange: 'moderate',
-            neighborhoods: [],
-            eventTypes: [],
-            interests: []
-        };
+        return defaultProfile;
     }
 
-    const placesSummary = places.slice(0, 30).map(p => {
+    // Include descriptions in the places summary for richer context
+    const placesSummary = places.slice(0, 40).map(p => {
         const parts = [p.name];
         if (p.cuisine) parts.push(`(${p.cuisine})`);
         if (p.type) parts.push(`[${p.type}]`);
         if (p.subtype) parts.push(`{${p.subtype}}`);
         if (p.address) parts.push(`@${p.address.split(',')[0]}`);
+        // Add description for richer context
+        if (p.description) {
+            parts.push(`\n  "${p.description}"`);
+        }
         return parts.join(' ');
     }).join('\n');
 
@@ -284,58 +306,82 @@ User's stated preferences from onboarding:
 - Food cuisines: ${userPreferences.food_cuisines?.join(', ') || 'Not specified'}
 - Event types: ${userPreferences.event_types?.join(', ') || 'Not specified'}
 - Place types: ${userPreferences.place_types?.join(', ') || 'Not specified'}
-- All tags: ${userPreferences.all_tags?.slice(0, 10).join(', ') || 'None'}
+- All tags: ${userPreferences.all_tags?.slice(0, 15).join(', ') || 'None'}
 ` : '';
 
     try {
+        console.log(`[Taste Analysis] Analyzing ${places.length} places for ${userName}...`);
         const response = await getAI().models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-2.5-pro', // Use Pro for nuanced analysis
             contents: [{
                 role: 'user',
                 parts: [{
-                    text: `Analyze this user's saved places and extract their taste profile:
+                    text: `You are analyzing ${userName}'s taste profile based on their saved places and stated preferences.
+Generate 10-15 INSIGHTFUL INFERENCES about ${userName} - these should be specific observations that reveal personality, priorities, and patterns.
 
 ${userPrefsText}
 
-SAVED PLACES:
+SAVED PLACES (with descriptions where available):
 ${placesSummary}
+
+Write in THIRD PERSON using "${userName}" (not "you" or "the user").
 
 Return JSON only:
 {
+    "summary": "A 1-2 sentence summary of ${userName}'s taste profile",
+    "inferences": [
+        "${userName} is drawn to...",
+        "${userName} values...",
+        "${userName} prefers...",
+        // 10-15 specific, insightful observations
+    ],
+    "digestGuidance": {
+        "eventPriority": "What kinds of events to prioritize (MUST include one big-name event like Broadway, MSG, Lincoln Center)",
+        "foodPriority": "What kinds of food to recommend",
+        "avoidPatterns": "What to avoid recommending"
+    },
     "cuisinePreferences": ["cuisine1", "cuisine2"],
     "vibePreferences": ["cozy", "upscale", "casual", etc],
     "priceRange": "budget|moderate|upscale|mixed",
     "neighborhoods": ["neighborhood1", "neighborhood2"],
     "eventTypes": ["concerts", "comedy", "art", etc],
-    "interests": ["history", "science", "art", "music", "nature", "architecture", etc]
+    "interests": ["history", "science", "art", "music", "nature", etc]
 }
 
-IMPORTANT:
-- For "interests": Analyze their saved museums, attractions, and events to infer subject interests
-  Examples: If they saved history museums → "history", science museums → "science", art galleries → "art"
-  Look for patterns: multiple art places = "art", multiple history places = "history", etc.
-- Combine user's stated preferences (from onboarding) with patterns from saved places
-- If user stated preferences exist, prioritize those but also validate against saved places` }]
+EXAMPLES of good inferences:
+- "${userName} is drawn to regional authenticity over fusion - the Indian spots focus on specific regional cuisines"
+- "${userName} has pizza as a love language - 7 pizza spots saved, from neighborhood slices to destination pizzerias"
+- "${userName} appreciates unique NYC experiences most New Yorkers skip"
+- "${userName} is budget-conscious but quality-focused"
+
+Be SPECIFIC - reference actual places they saved!`
+                }]
             }]
         });
 
+        console.log(`[Taste Analysis] Got response from Gemini Pro`);
         const text = response.text || '{}';
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
-            return JSON.parse(jsonMatch[0]);
+            const parsed = JSON.parse(jsonMatch[0]);
+            console.log(`[Taste Analysis] Extracted ${parsed.inferences?.length || 0} inferences`);
+            return {
+                summary: parsed.summary || defaultProfile.summary,
+                inferences: parsed.inferences || [],
+                digestGuidance: parsed.digestGuidance || defaultProfile.digestGuidance,
+                cuisinePreferences: parsed.cuisinePreferences || [],
+                vibePreferences: parsed.vibePreferences || [],
+                priceRange: parsed.priceRange || 'moderate',
+                neighborhoods: parsed.neighborhoods || [],
+                eventTypes: parsed.eventTypes || [],
+                interests: parsed.interests || []
+            };
         }
     } catch (error) {
         console.error('[Taste Analysis] Failed:', error);
     }
 
-    return {
-        cuisinePreferences: [],
-        vibePreferences: [],
-        priceRange: 'moderate',
-        neighborhoods: [],
-        eventTypes: [],
-        interests: []
-    };
+    return defaultProfile;
 }
 
 // ============= DIGEST GENERATION =============
@@ -382,20 +428,9 @@ async function generateDigest(
 
     const savedNames = new Set(userPlaces.map(p => p.name.toLowerCase()));
 
-    // Analyze taste profile using AI (same as generate.ts) - includes user preferences
-    const tasteProfile = await analyzeTasteProfile(userPlaces, userPreferences);
-    const cuisineList = tasteProfile.cuisinePreferences.length > 0
-        ? tasteProfile.cuisinePreferences.join(', ')
-        : 'varied cuisines';
-    const vibeList = tasteProfile.vibePreferences.length > 0
-        ? tasteProfile.vibePreferences.join(', ')
-        : '';
-    const tasteHint = `${cuisineList}${vibeList ? `, ${vibeList}` : ''}` || 'varied tastes';
-
-    // Get user personas
-    const primaryPersona = userPreferences?.primary_persona || '';
-    const secondaryPersona = userPreferences?.secondary_persona || '';
-    const personaText = primaryPersona ? `${primaryPersona}${secondaryPersona ? ` with ${secondaryPersona} tendencies` : ''}` : '';
+    // Analyze taste profile using AI - includes inferences and digestGuidance
+    const tasteProfile = await analyzeTasteProfile(userPlaces, userPreferences, userName);
+    console.log(`[Digest] Taste profile: ${tasteProfile.inferences.length} inferences generated`);
 
     // Build available sources list for the AI to cite
     const availableSources = [
@@ -406,16 +441,21 @@ async function generateDigest(
         'ohmyrockness.com: https://www.ohmyrockness.com/'
     ].slice(0, 20).join('\n');
 
+    // Build inferences text for the prompt
+    const inferencesText = tasteProfile.inferences.length > 0
+        ? `KEY INSIGHTS ABOUT ${userName.toUpperCase()}:\n${tasteProfile.inferences.map((inf, i) => `${i + 1}. ${inf}`).join('\n')}`
+        : '';
+
     const prompt = `You are Spot. Generate a daily digest for ${userName}.
 
-USER PERSONA: ${personaText || 'Adventurous explorer'}
+${tasteProfile.summary}
 
-TASTE PROFILE (in order of importance):
-1. INTERESTS & PASSIONS: ${tasteProfile.interests?.join(', ') || 'varied interests'}
-2. CUISINE PREFERENCES: ${tasteProfile.cuisinePreferences.join(', ') || 'varied cuisines'}
-3. VIBE PREFERENCES: ${tasteProfile.vibePreferences.join(', ') || 'flexible vibes'}
-4. PRICE RANGE: ${tasteProfile.priceRange || 'moderate'}
-5. NEIGHBORHOODS (least important): ${tasteProfile.neighborhoods.join(', ') || 'all NYC'}
+${inferencesText}
+
+RECOMMENDATION GUIDANCE:
+- Event Priority: ${tasteProfile.digestGuidance.eventPriority}
+- Food Priority: ${tasteProfile.digestGuidance.foodPriority}
+- AVOID: ${tasteProfile.digestGuidance.avoidPatterns}
 
 === AVAILABLE SOURCES (cite these!) ===
 ${availableSources}
@@ -432,6 +472,11 @@ DO NOT RECOMMEND (already saved): ${Array.from(savedNames).slice(0, 20).join(', 
 Generate exactly 21 recommendations in 2:1 pattern (EVENT, EVENT, FOOD, repeat 7 times).
 So 14 events + 7 food items.
 
+CRITICAL - BIG NAME EVENT:
+- At least ONE of your first 5 recommendations MUST be a major/big-name event
+- Examples: Broadway show, MSG concert, Lincoln Center performance, major museum exhibition, Radio City, Carnegie Hall
+- This makes the digest feel exciting and aspirational
+
 CRITICAL - DATES:
 - ONLY use dates that appear in the scraped content above
 - If an event says "Saturday December 14" use that EXACT date
@@ -440,28 +485,18 @@ CRITICAL - DATES:
 
 CRITICAL - SOURCES:
 - For each recommendation, include the source where you found it
-- Use the FULL grounding URL from the AVAILABLE SOURCES section above
-- Format: "sources": [{"domain": "reddit.com", "url": "https://vertexaisearch..."}]
-- If from scraped sites: {"domain": "theskint.com", "url": "https://theskint.com/"}
+- Format: "sources": [{"domain": "reddit.com", "url": "https://..."}]
 
 Return JSON:
 {
     "intro_text": "While you were [something fun], I found some gems...",
     "recommendations": [
-        {"name": "Event Name", "type": "event", "description": "Perfect for you because...", "location": "Venue, Neighborhood", "isEvent": true, "startDate": "2024-12-15", "mainCategory": "see", "subtype": "Concert", "sources": [{"domain": "theskint.com", "url": "https://theskint.com/"}]},
-        {"name": "Restaurant", "type": "restaurant", "description": "Since you love Italian...", "location": "Neighborhood", "isEvent": false, "mainCategory": "eat", "subtype": "Italian", "recommendedDishes": ["Pasta"], "sources": [{"domain": "reddit.com", "url": "https://vertexaisearch..."}]}
+        {"name": "Event Name", "type": "event", "description": "Perfect for ${userName} because [reference a specific inference]...", "location": "Venue, Neighborhood", "isEvent": true, "startDate": "2024-12-15", "mainCategory": "see", "subtype": "Concert", "sources": [{"domain": "theskint.com", "url": "https://theskint.com/"}]},
+        {"name": "Restaurant", "type": "restaurant", "description": "Since ${userName} loves [specific cuisine/vibe from inferences]...", "location": "Neighborhood", "isEvent": false, "mainCategory": "eat", "subtype": "Italian", "recommendedDishes": ["Pasta"], "sources": [{"domain": "reddit.com", "url": "https://..."}]}
     ]
 }
 
-CRITICAL FORMATTING:
-- NEVER use underscores in descriptions! Write naturally: "budget friendly" not "budget_friendly"
-- All text should be human-readable, conversational prose
-
-PERSONALIZATION PRIORITY (match to their persona: ${personaText || 'explorer'}):
-1. FIRST reference their INTERESTS: ${tasteProfile.interests?.join(', ') || 'exploration, culture'}
-2. THEN reference CUISINE/VIBE preferences: ${tasteProfile.cuisinePreferences.join(', ') || 'varied'}
-3. ONLY mention location if it's a strong match
-
+PERSONALIZATION: Reference the specific inferences about ${userName} in your descriptions!
 - Follow the 2:1 pattern (event, event, food, event, event, food...)
 - Events MUST have accurate dates from the research
 - Food needs recommendedDishes`;
@@ -469,7 +504,7 @@ PERSONALIZATION PRIORITY (match to their persona: ${personaText || 'explorer'}):
     try {
         console.log(`[Digest] Prompt length: ${prompt.length} chars`);
         const response = await getAI().models.generateContent({
-            model: 'gemini-2.5-flash', // Use flash for speed (90s timeout)
+            model: 'gemini-2.5-pro', // Use Pro for better personalization
             contents: [{ role: 'user', parts: [{ text: prompt }] }]
         });
         console.log(`[Digest] AI response received`);
