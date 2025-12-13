@@ -1596,9 +1596,12 @@ Keep descriptions concise. Reference the taste profile if available.`;
             } catch { }
         }
 
-        // Extract intro text (before the JSON)
-        const introMatch = text.match(/^([\s\S]*?)(?=\{)/);
-        const intro = introMatch ? introMatch[1].trim() : text.split('{')[0].trim();
+        // Extract intro text (before the JSON) and clean it up
+        let intro = text.split('{')[0].trim();
+        // Remove markdown code block syntax
+        intro = intro.replace(/```json\s*$/i, '').replace(/```\s*$/i, '').trim();
+        // Remove trailing colons
+        intro = intro.replace(/:\s*$/, '.').trim();
 
         console.log(`[SpeedMode] Generated ${places.length} recommendations`);
         return { text: intro, places };
