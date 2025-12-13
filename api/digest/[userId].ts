@@ -21,32 +21,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    
+
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
     }
-    
+
     if (req.method !== 'GET') {
         return res.status(405).json({ error: 'Method not allowed' });
     }
-    
+
     const { userId } = req.query;
-    
+
     if (!userId || typeof userId !== 'string') {
         return res.status(400).json({ error: 'userId is required' });
     }
-    
+
     console.log(`[Digest Fetch] Getting digest for user: ${userId}`);
-    
+
     try {
         const db = getSupabase();
-        
+
         // Look for any digest in the last 12 hours (simpler, avoids timezone issues)
         const now = new Date();
         const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
-        
+
         console.log(`[Digest Fetch] User: ${userId}, looking for digests since ${twelveHoursAgo.toISOString()}`);
-        
+
         // Fetch the most recent digest for this user - use limit(1) not single()
         const { data: digests, error } = await db
             .from('daily_digests')
@@ -55,35 +55,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .gte('created_at', twelveHoursAgo.toISOString())
             .order('created_at', { ascending: false })
             .limit(1);
-        
+
         if (error) {
             console.error('[Digest Fetch] Database error:', error);
             return res.status(500).json({ error: 'Failed to fetch digest' });
         }
-        
+
         console.log(`[Digest Fetch] Query returned ${digests?.length || 0} digests`);
-        
+
         const digest = digests && digests.length > 0 ? digests[0] : null;
-        
+
         if (!digest) {
             console.log(`[Digest Fetch] ❌ No digest found for ${userId} today`);
-            return res.status(200).json({ 
+            return res.status(200).json({
                 hasDigest: false,
                 message: 'No digest available for today'
             });
         }
-        
+
         console.log(`[Digest Fetch] ✅ Found digest ID: ${digest.id}, created: ${digest.created_at}`);
-        
+
         const allRecs = digest.recommendations || [];
         console.log(`[Digest Fetch] Found digest with ${allRecs.length} total recommendations`);
-        
+
+        // If recommendations are empty, this is a placeholder still generating
+        if (allRecs.length === 0) {
+            console.log(`[Digest Fetch] ⏳ Digest is a placeholder (still generating), returning generating status`);
+            return res.status(200).json({
+                hasDigest: false,
+                generating: true,
+                message: 'Digest is being generated...'
+            });
+        }
+
         // Split into first 15 (shown) and next 6 (preloaded)
         const recommendations = allRecs.slice(0, 15);
         const next_batch = allRecs.slice(15, 21);
-        
+
         console.log(`[Digest Fetch] Returning ${recommendations.length} recommendations + ${next_batch.length} preloaded`);
-        
+
         // Return formatted digest with split recommendations
         return res.status(200).json({
             hasDigest: true,
@@ -98,7 +108,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 created_at: digest.created_at
             }
         });
-        
+
     } catch (error: any) {
         console.error('[Digest Fetch] Fatal error:', error);
         return res.status(500).json({ error: error.message });

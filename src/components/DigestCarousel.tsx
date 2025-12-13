@@ -55,12 +55,12 @@ function getWeatherIcon(icon: string) {
   return <Cloud className="w-5 h-5 text-slate-400" />;
 }
 
-export function DigestCarousel({ 
-  digest, 
-  savedPlaceNames, 
-  onAddPlace, 
+export function DigestCarousel({
+  digest,
+  savedPlaceNames,
+  onAddPlace,
   onLoadMore,
-  onAskSpot 
+  onAskSpot
 }: DigestCarouselProps) {
   // Start with first 15 recommendations
   const [visibleRecs, setVisibleRecs] = useState(digest.recommendations.slice(0, 15));
@@ -76,38 +76,38 @@ export function DigestCarousel({
   const handleShowMore = async () => {
     // Save the index where new cards will appear (where "Show More" card currently is)
     const firstNewCardIndex = visibleRecs.length;
-    
+
     // Helper to scroll to first new card
     const scrollToFirstNewCard = () => {
       if (!scrollRef.current) return;
-      
+
       // Use requestAnimationFrame for better timing, especially on mobile
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           const container = scrollRef.current;
           if (!container) return;
-          
+
           const cards = container.querySelectorAll('[data-digest-card]');
           const firstNewCard = cards[firstNewCardIndex] as HTMLElement;
-          
+
           if (firstNewCard) {
             // Get positions relative to viewport
             const cardRect = firstNewCard.getBoundingClientRect();
             const containerRect = container.getBoundingClientRect();
-            
+
             // Calculate how much to scroll: card's left edge relative to container's left edge
             // Add current scroll position to get absolute scroll position
             const scrollPosition = container.scrollLeft + (cardRect.left - containerRect.left);
-            
-            container.scrollTo({ 
-              left: Math.max(0, scrollPosition), 
-              behavior: 'smooth' 
+
+            container.scrollTo({
+              left: Math.max(0, scrollPosition),
+              behavior: 'smooth'
             });
           }
         });
       });
     };
-    
+
     // First, use preloaded batch if available (instant)
     if (preloadedBatch.length > 0) {
       const newRecs = preloadedBatch.filter(rec => !shownIds.has(rec.id));
@@ -119,9 +119,9 @@ export function DigestCarousel({
           return next;
         });
         setPreloadedBatch([]); // Clear preloaded batch
-        
+
         scrollToFirstNewCard();
-        
+
         // Preload more in background (for next click)
         onLoadMore().then(more => {
           if (more.length > 0) {
@@ -129,12 +129,12 @@ export function DigestCarousel({
           } else {
             setHasMore(false);
           }
-        }).catch(() => {});
-        
+        }).catch(() => { });
+
         return; // Don't show loading since it was instant
       }
     }
-    
+
     // No preloaded batch, fetch now
     setIsLoading(true);
     try {
@@ -148,7 +148,7 @@ export function DigestCarousel({
             newRecs.forEach(r => next.add(r.id));
             return next;
           });
-          
+
           scrollToFirstNewCard();
         } else {
           setHasMore(false);
@@ -163,7 +163,7 @@ export function DigestCarousel({
 
   const handleAddPlace = async (place: DigestRecommendation) => {
     if (savedPlaceNames.has(place.name.toLowerCase())) return;
-    
+
     setAddingPlaces(prev => new Set(prev).add(place.id));
     try {
       await onAddPlace(place);
@@ -276,9 +276,8 @@ export function DigestCarousel({
                     <button
                       onClick={() => handleAddPlace(place)}
                       disabled={isSaved || isAdding}
-                      className={`${place.website ? 'flex-1' : 'w-full'} flex items-center justify-center gap-1.5 text-[11px] py-2 rounded-lg font-medium ${
-                        isSaved ? 'bg-secondary text-muted-foreground cursor-not-allowed' : 'bg-primary text-primary-foreground hover:bg-primary/90'
-                      }`}
+                      className={`${place.website ? 'flex-1' : 'w-full'} flex items-center justify-center gap-1.5 text-[11px] py-2 rounded-lg font-medium ${isSaved ? 'bg-secondary text-muted-foreground cursor-not-allowed' : 'bg-primary text-primary-foreground hover:bg-primary/90'
+                        }`}
                     >
                       {isAdding ? <Loader2 className="w-3 h-3 animate-spin" /> : isSaved ? <><Check className="w-3 h-3" /> Saved</> : <><Plus className="w-3 h-3" /> Add</>}
                     </button>
@@ -308,7 +307,6 @@ export function DigestCarousel({
       {/* CTA */}
       <p className="text-xs text-muted-foreground">
         Ask me to plan, find, or add food, places and events
-        <span className="inline-block w-1.5 h-1.5 bg-orange-500 rounded-full ml-1 align-middle" style={{ animation: 'pulse-fast 0.4s ease-in-out infinite' }} />
       </p>
     </div>
   );
