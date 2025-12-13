@@ -46,16 +46,16 @@ async function fetchNYCWeather(): Promise<WeatherData> {
             `https://api.openweathermap.org/data/2.5/weather?q=New York&appid=${OPENWEATHER_API_KEY}&units=imperial`
         );
         const data = await response.json();
-        
+
         const temp = Math.round(data.main?.temp || 50);
         const conditions = data.weather?.[0]?.description || 'clear';
         const icon = data.weather?.[0]?.icon || '01d';
-        
+
         let quip = `${temp}°F and ${conditions} - perfect for exploring!`;
         if (temp < 35) quip = `${temp}°F - bundle up, but the city awaits!`;
         else if (temp > 80) quip = `${temp}°F - find some AC or a rooftop!`;
         else if (conditions.includes('rain')) quip = `${temp}°F with rain - cozy indoor vibes today`;
-        
+
         return { temp, feels_like: temp, conditions, icon, spot_quip: quip };
     } catch {
         return { temp: 50, feels_like: 50, conditions: 'clear', icon: '01d', spot_quip: "Perfect day to explore!" };
@@ -124,7 +124,7 @@ async function scrapeWithJina(url: string): Promise<string> {
     try {
         const controller = new AbortController();
         setTimeout(() => controller.abort(), 6000);
-        
+
         const response = await fetch(`https://r.jina.ai/${encodeURIComponent(url)}`, {
             headers: { 'Accept': 'text/plain' },
             signal: controller.signal
@@ -148,7 +148,7 @@ async function geminiSearchWithSources(query: string): Promise<SearchResult> {
             contents: [{ role: 'user', parts: [{ text: query }] }],
             config: { tools: [{ googleSearch: {} }] }
         });
-        
+
         const sources: Array<{ domain: string; url: string }> = [];
         const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
         for (const chunk of chunks) {
@@ -156,10 +156,10 @@ async function geminiSearchWithSources(query: string): Promise<SearchResult> {
                 try {
                     const domain = new URL(chunk.web.uri).hostname.replace('www.', '');
                     sources.push({ domain, url: chunk.web.uri });
-                } catch {}
+                } catch { }
             }
         }
-        
+
         return { text: response.text || '', sources };
     } catch {
         return { text: '', sources: [] };
@@ -176,11 +176,11 @@ async function researchForDigest(): Promise<{
     const nycTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
     const dayName = nycTime.toLocaleDateString('en-US', { weekday: 'long' });
     const dateStr = nycTime.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-    
+
     // Match the same subreddits used in chat.ts
     const eventSubs = ['nyc', 'AskNYC', 'NYCbitcheswithtaste'];
     const foodSubs = ['FoodNYC', 'AskNYC', 'NYCbitcheswithtaste', 'nyc'];
-    
+
     // Parallel: Reddit searches + Event site scrapes
     const [
         // Event Reddit searches
@@ -209,7 +209,7 @@ async function researchForDigest(): Promise<{
         scrapeWithJina('https://www.timeout.com/newyork/things-to-do/this-weekend'),
         scrapeWithJina('https://www.ohmyrockness.com/features.atom')
     ]);
-    
+
     // Merge event sources
     const eventSources = [
         ...eventSearch1.sources,
@@ -217,7 +217,7 @@ async function researchForDigest(): Promise<{
         ...eventSearch3.sources
     ];
     const eventText = [eventSearch1.text, eventSearch2.text, eventSearch3.text].join('\n\n');
-    
+
     // Merge food sources
     const foodSources = [
         ...foodSearch1.sources,
@@ -225,7 +225,7 @@ async function researchForDigest(): Promise<{
         ...foodSearch3.sources
     ];
     const foodText = [foodSearch1.text, foodSearch2.text, foodSearch3.text].join('\n\n');
-    
+
     // Build scraped content with clear source labels
     const scraped = `=== THESKINT.COM (Events ${dateStr}) ===
 ${skintScrape}
@@ -238,7 +238,7 @@ ${ohmyrocknessScrape}
 
 TODAY IS: ${dayName}, ${dateStr}
 Use ONLY events with dates that match today, tomorrow, or this weekend.`;
-    
+
     return {
         events: { text: eventText, sources: eventSources },
         food: { text: foodText, sources: foodSources },
@@ -268,7 +268,7 @@ async function analyzeTasteProfile(places: any[], userPreferences?: any): Promis
             interests: []
         };
     }
-    
+
     const placesSummary = places.slice(0, 30).map(p => {
         const parts = [p.name];
         if (p.cuisine) parts.push(`(${p.cuisine})`);
@@ -277,7 +277,7 @@ async function analyzeTasteProfile(places: any[], userPreferences?: any): Promis
         if (p.address) parts.push(`@${p.address.split(',')[0]}`);
         return parts.join(' ');
     }).join('\n');
-    
+
     // Build user preferences text if available
     const userPrefsText = userPreferences ? `
 User's stated preferences from onboarding:
@@ -286,13 +286,14 @@ User's stated preferences from onboarding:
 - Place types: ${userPreferences.place_types?.join(', ') || 'Not specified'}
 - All tags: ${userPreferences.all_tags?.slice(0, 10).join(', ') || 'None'}
 ` : '';
-    
+
     try {
         const response = await getAI().models.generateContent({
             model: 'gemini-2.5-flash',
             contents: [{
                 role: 'user',
-                parts: [{ text: `Analyze this user's saved places and extract their taste profile:
+                parts: [{
+                    text: `Analyze this user's saved places and extract their taste profile:
 
 ${userPrefsText}
 
@@ -317,7 +318,7 @@ IMPORTANT:
 - If user stated preferences exist, prioritize those but also validate against saved places` }]
             }]
         });
-        
+
         const text = response.text || '{}';
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
@@ -326,7 +327,7 @@ IMPORTANT:
     } catch (error) {
         console.error('[Taste Analysis] Failed:', error);
     }
-    
+
     return {
         cuisinePreferences: [],
         vibePreferences: [],
@@ -372,30 +373,30 @@ async function generateDigest(
     research: Awaited<ReturnType<typeof researchForDigest>>,
     userPreferences?: any
 ): Promise<{ intro_text: string; recommendations: DigestRec[]; next_batch: DigestRec[] }> {
-    
+
     // Get old saved food spots to bump (sorted by oldest first)
     const savedFood = userPlaces
         .filter(p => ['restaurant', 'bar', 'cafe'].includes(p.type?.toLowerCase() || ''))
         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
         .slice(0, 5);
-    
+
     const savedNames = new Set(userPlaces.map(p => p.name.toLowerCase()));
-    
+
     // Analyze taste profile using AI (same as generate.ts) - includes user preferences
     const tasteProfile = await analyzeTasteProfile(userPlaces, userPreferences);
-    const cuisineList = tasteProfile.cuisinePreferences.length > 0 
+    const cuisineList = tasteProfile.cuisinePreferences.length > 0
         ? tasteProfile.cuisinePreferences.join(', ')
         : 'varied cuisines';
     const vibeList = tasteProfile.vibePreferences.length > 0
         ? tasteProfile.vibePreferences.join(', ')
         : '';
     const tasteHint = `${cuisineList}${vibeList ? `, ${vibeList}` : ''}` || 'varied tastes';
-    
+
     // Get user personas
     const primaryPersona = userPreferences?.primary_persona || '';
     const secondaryPersona = userPreferences?.secondary_persona || '';
     const personaText = primaryPersona ? `${primaryPersona}${secondaryPersona ? ` with ${secondaryPersona} tendencies` : ''}` : '';
-    
+
     // Build available sources list for the AI to cite
     const availableSources = [
         ...research.events.sources.map(s => `${s.domain}: ${s.url}`),
@@ -404,7 +405,7 @@ async function generateDigest(
         'timeout.com: https://www.timeout.com/newyork/things-to-do/this-weekend',
         'ohmyrockness.com: https://www.ohmyrockness.com/'
     ].slice(0, 20).join('\n');
-    
+
     const prompt = `You are Spot. Generate a daily digest for ${userName}.
 
 USER PERSONA: ${personaText || 'Adventurous explorer'}
@@ -470,26 +471,26 @@ PERSONALIZATION PRIORITY (match to their persona: ${personaText || 'explorer'}):
             model: 'gemini-2.5-pro',
             contents: [{ role: 'user', parts: [{ text: prompt }] }]
         });
-        
+
         const jsonMatch = (response.text || '{}').match(/\{[\s\S]*\}/);
         if (jsonMatch) {
             const parsed = JSON.parse(jsonMatch[0]);
             const recs = parsed.recommendations || [];
-            
+
             // Merge sources from research
             const allSources = [...research.events.sources, ...research.food.sources];
-            
+
             // Insert 2 saved food items at food positions (positions 2, 5 - 0-indexed)
             const savedToInsert = savedFood.slice(0, 2);
-            
+
             // Enrich with Google Places data
             console.log(`[Digest] Enriching ${recs.length} recommendations...`);
             const enriched: DigestRec[] = [];
-            
+
             let savedIdx = 0;
             for (let i = 0; i < recs.length && enriched.length < 21; i++) {
                 const rec = recs[i];
-                
+
                 // At food positions (2, 5, 8, 11, 14), check if we should insert saved
                 const isFoodPosition = (i + 1) % 3 === 0;
                 if (isFoodPosition && savedIdx < savedToInsert.length) {
@@ -514,10 +515,10 @@ PERSONALIZATION PRIORITY (match to their persona: ${personaText || 'explorer'}):
                     });
                     savedIdx++;
                 }
-                
+
                 // Add the AI recommendation
                 const placeData = await searchGooglePlaces(rec.name, rec.location || 'New York');
-                
+
                 enriched.push({
                     id: `digest-${i}`,
                     name: rec.name,
@@ -535,9 +536,9 @@ PERSONALIZATION PRIORITY (match to their persona: ${personaText || 'explorer'}):
                     sources: rec.sources?.length ? rec.sources : allSources.slice(0, 2)
                 });
             }
-            
+
             console.log(`[Digest] Enriched ${enriched.filter(r => r.imageUrl).length}/${enriched.length} with images`);
-            
+
             return {
                 intro_text: parsed.intro_text || "Here's what's happening in NYC!",
                 recommendations: enriched.slice(0, 15),
@@ -547,7 +548,7 @@ PERSONALIZATION PRIORITY (match to their persona: ${personaText || 'explorer'}):
     } catch (error) {
         console.error('[Digest] Generation failed:', error);
     }
-    
+
     return { intro_text: "Here's what's happening in NYC!", recommendations: [], next_batch: [] };
 }
 
@@ -558,26 +559,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    
+
     if (req.method === 'OPTIONS') return res.status(200).end();
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-    
+
     const { userId } = req.body || {};
     if (!userId) return res.status(400).json({ error: 'userId required' });
-    
+
     console.log(`[Digest] Generating for ${userId}...`);
     const start = Date.now();
-    
+
     try {
         const db = getSupabase();
-        
+
         // FIRST: Check if digest already exists - look for ANY digest in the last 12 hours
         // This is more reliable than date-based checks which can fail due to timezone issues
         const now = new Date();
         const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
-        
+
         console.log(`[Digest] Checking for existing digest for user ${userId} since ${twelveHoursAgo.toISOString()}`);
-        
+
         const { data: existingDigests, error: checkError } = await db
             .from('daily_digests')
             .select('*')
@@ -585,41 +586,67 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .gte('created_at', twelveHoursAgo.toISOString())
             .order('created_at', { ascending: false })
             .limit(1);
-        
+
         if (checkError) {
             console.error(`[Digest] Error checking for existing digest:`, checkError);
         }
-        
+
         console.log(`[Digest] Query returned ${existingDigests?.length || 0} digests`);
-        
+
         const existingDigest = existingDigests && existingDigests.length > 0 ? existingDigests[0] : null;
-        
+
         if (existingDigest) {
-            console.log(`[Digest] ✅ User ${userId} already has a recent digest (ID: ${existingDigest.id}, created: ${existingDigest.created_at}), returning existing one`);
             const allRecs = existingDigest.recommendations || [];
-            const recommendations = allRecs.slice(0, 15);
-            const next_batch = allRecs.slice(15, 21);
-            
-            return res.status(200).json({
-                success: true,
-                hasDigest: true,
-                digest: {
-                    id: existingDigest.id,
-                    greeting: existingDigest.greeting,
-                    weather: existingDigest.weather,
-                    intro_text: existingDigest.intro_text,
-                    recommendations: recommendations,
-                    next_batch: next_batch,
-                    shown_ids: existingDigest.shown_ids,
-                    created_at: existingDigest.created_at
-                }
-            });
+            console.log(`[Digest] Found existing digest ID: ${existingDigest.id}, created: ${existingDigest.created_at}, recs: ${allRecs.length}`);
+
+            // If it has recommendations, return it
+            if (allRecs.length > 0) {
+                console.log(`[Digest] ✅ Returning existing digest with ${allRecs.length} recommendations`);
+                const recommendations = allRecs.slice(0, 15);
+                const next_batch = allRecs.slice(15, 21);
+
+                return res.status(200).json({
+                    success: true,
+                    hasDigest: true,
+                    digest: {
+                        id: existingDigest.id,
+                        greeting: existingDigest.greeting,
+                        weather: existingDigest.weather,
+                        intro_text: existingDigest.intro_text,
+                        recommendations: recommendations,
+                        next_batch: next_batch,
+                        shown_ids: existingDigest.shown_ids,
+                        created_at: existingDigest.created_at
+                    }
+                });
+            }
+
+            // It's a placeholder (empty recs) - check if stale
+            const createdAt = new Date(existingDigest.created_at);
+            const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+            if (createdAt < fiveMinutesAgo) {
+                // Stale placeholder - delete it and regenerate
+                console.log(`[Digest] ⚠️ Stale placeholder (${createdAt.toISOString()}), deleting and regenerating...`);
+                await db.from('daily_digests').delete().eq('id', existingDigest.id);
+                // Fall through to create new digest
+            } else {
+                // Recent placeholder - another request is generating
+                console.log(`[Digest] ⏳ Another request is generating (placeholder age: ${(Date.now() - createdAt.getTime()) / 1000}s), returning generating status`);
+                return res.status(202).json({
+                    success: true,
+                    hasDigest: false,
+                    generating: true,
+                    message: 'Digest is being generated, please wait...'
+                });
+            }
         }
-        
-        console.log(`[Digest] ❌ No existing digest found in last 12 hours, generating new one...`);
-        
+
+        console.log(`[Digest] 🚀 Starting new digest generation...`);
+
         // IMMEDIATELY create a placeholder digest to prevent race conditions
         // Other requests will find this and wait or see "generating" status
+        console.log(`[Digest] Creating placeholder...`);
         const { data: placeholder, error: placeholderError } = await db
             .from('daily_digests')
             .insert({
@@ -632,10 +659,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             })
             .select()
             .single();
-        
+
         if (placeholderError) {
             // If insert failed, another request might have just created one - check again
-            console.log(`[Digest] Placeholder insert failed, checking for existing...`);
+            console.log(`[Digest] Placeholder insert failed:`, placeholderError.message);
             const { data: raceCheck } = await db
                 .from('daily_digests')
                 .select('*')
@@ -643,7 +670,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 .gte('created_at', twelveHoursAgo.toISOString())
                 .order('created_at', { ascending: false })
                 .limit(1);
-            
+
             if (raceCheck && raceCheck.length > 0) {
                 const existing = raceCheck[0];
                 // If it has recommendations, return it; otherwise, tell frontend to wait
@@ -676,11 +703,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 }
             }
         }
-        
+
         const placeholderId = placeholder?.id;
-        console.log(`[Digest] Created placeholder with ID: ${placeholderId}`);
-        
+        console.log(`[Digest] ✅ Created placeholder with ID: ${placeholderId}`);
+
         // Now do the expensive generation
+        console.log(`[Digest] 📡 Fetching weather, research, user data in parallel...`);
         const [weather, research, userResult, placesResult, prefsResult] = await Promise.all([
             fetchNYCWeather(),
             researchForDigest(),
@@ -688,17 +716,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             db.from('places').select('*').eq('user_id', userId).order('created_at', { ascending: true }),
             db.from('user_preferences').select('*').eq('user_id', userId).single()
         ]);
-        
+
+        console.log(`[Digest] ✅ Data fetched: weather=${weather?.temp}°F, user=${userResult.data?.name}, places=${placesResult.data?.length || 0}`);
+        console.log(`[Digest] 📝 Research: events=${research.events.sources.length} sources, food=${research.food.sources.length} sources`);
+
         const userName = userResult.data?.name || 'there';
         const places = placesResult.data || [];
         const userPreferences = prefsResult.data || null;
-        
-        // Generate digest
+
+        // Generate digest with AI
+        console.log(`[Digest] 🤖 Calling Gemini to generate digest...`);
         const digest = await generateDigest(userName, places, research, userPreferences);
-        
+        console.log(`[Digest] ✅ AI generated ${digest.recommendations.length} + ${digest.next_batch.length} recommendations`);
+
         // UPDATE the placeholder with real data (instead of inserting new)
         const allRecs = [...digest.recommendations, ...digest.next_batch];
-        
+        console.log(`[Digest] 💾 Updating placeholder ${placeholderId} with ${allRecs.length} recs...`);
+
         const { data: saved, error: updateError } = await db
             .from('daily_digests')
             .update({
@@ -711,16 +745,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .eq('id', placeholderId)
             .select()
             .single();
-        
+
         if (updateError) {
             console.error(`[Digest] ❌ Failed to update placeholder:`, updateError);
             // Still return the digest even if DB save fails (user can still see it)
         } else {
-            console.log(`[Digest] ✅ Updated placeholder ${placeholderId} with ${allRecs.length} recommendations`);
+            console.log(`[Digest] ✅ DB updated successfully!`);
         }
-        
-        console.log(`[Digest] Done in ${Date.now() - start}ms with ${digest.recommendations.length} + ${digest.next_batch.length} recs`);
-        
+
+        console.log(`[Digest] 🎉 Done in ${Date.now() - start}ms with ${digest.recommendations.length} + ${digest.next_batch.length} recs`);
+
         return res.status(200).json({
             success: true,
             hasDigest: true,
@@ -735,7 +769,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 created_at: new Date().toISOString()
             }
         });
-        
+
     } catch (error: any) {
         console.error('[Digest] Error:', error);
         return res.status(500).json({ error: error.message });
