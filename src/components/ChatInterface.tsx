@@ -894,7 +894,9 @@ export function ChatInterface({ onPlaceAdded }: ChatInterfaceProps) {
             {/* Intro text shown while loading */}
             <p className="text-sm text-foreground">
               Hey! I'm Spot – ask me to plan, find, or add food, places and events
-              <span className="inline-block w-1.5 h-1.5 bg-orange-500 rounded-full ml-1.5 align-middle" style={{ animation: 'pulse-fast 0.4s ease-in-out infinite' }} />
+              {!messages.some(m => m.role === 'user') && (
+                <span className="inline-block w-1.5 h-1.5 bg-orange-500 rounded-full ml-1.5 align-middle" style={{ animation: 'pulse-fast 0.4s ease-in-out infinite' }} />
+              )}
             </p>
 
             {/* Loading spinner */}
