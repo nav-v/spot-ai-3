@@ -13,6 +13,12 @@ function getSupabase() {
     return supabase;
 }
 
+// ============= CONSTANTS FROM ENV =============
+const FACEBOOK_APP_ID = process.env.FACEBOOK_APP_ID || '';
+const FACEBOOK_APP_SECRET = process.env.FACEBOOK_APP_SECRET || '';
+const INSTAGRAM_APP_SECRET = process.env.INSTAGRAM_APP_SECRET || process.env.FACEBOOK_APP_SECRET || '';
+const REDIRECT_URI = process.env.INSTAGRAM_REDIRECT_URI || 'https://spot-ai-3.vercel.app/api/instagram/auth';
+
 // ============= VERIFICATION CODE SYSTEM =============
 // Simple code-based linking: User gets a code from Spot, DMs it to @save.this.spot
 
